@@ -30,14 +30,14 @@ from .github_config import (
 )
 from . import github_ops
 from .cursor_ops import (
-    agent_prompt_from_help,
-    agent_prompt_from_uat_help,
-    ask_cursor_for_build_help,
-    ask_cursor_for_uat_help,
+    build_agent_prompt,
+    build_uat_agent_prompt,
     close_cursor,
+    new_agent_launch_delay_ms,
     open_in_cursor,
-    write_build_help,
-    write_uat_help,
+    open_project_for_new_agent,
+    open_prompt_deeplink,
+    stage_uat_screenshots,
 )
 from .process_ops import (
     command_exists,
@@ -64,6 +64,7 @@ from .service_catalog import (
 from .ui.buttons import make_button, make_menubutton, set_button_enabled
 from .ui.gcp_settings_dialog import show_gcp_settings
 from .ui.github_settings_dialog import show_github_settings
+from .ui.new_agent_dialog import show_new_agent_confirm_dialog
 from .ui.project_bar import ProjectBar
 from .ui.uat_help_dialog import show_uat_help_dialog
 
@@ -512,30 +513,29 @@ class ConsoleApp(tk.Tk):
     def _on_ask_cursor_build_help(self) -> None:
         if not self._require_catalog():
             return
-        assert self.catalog and self.runtime
+        assert self.catalog
         failure = self._last_build_failure
         if not failure:
             messagebox.showinfo("編譯求救", "目前沒有建置錯誤可送出。", parent=self)
             return
-        help_path = write_build_help(
-            self.runtime.build_reports,
+        prompt = build_agent_prompt(
             root=self.catalog.root,
             target=str(failure.get("target") or ""),
             exit_code=int(failure.get("exit_code") or 1),
             log_text=str(failure.get("log") or ""),
         )
-        prompt = agent_prompt_from_help(help_path)
-        try:
-            self.clipboard_clear()
-            self.clipboard_append(prompt)
-        except tk.TclError:
-            pass
-        err = ask_cursor_for_build_help(self.catalog.root, help_path)
-        if err:
-            messagebox.showwarning("Cursor", err, parent=self)
+        ok = show_new_agent_confirm_dialog(
+            self,
+            title="編譯求救",
+            intro=(
+                "確認後會開啟 Cursor 並跳出確認視窗；再按確認即建立 New Agent。"
+                "錯誤內容會直接帶入提示，不會先寫求助檔。"
+            ),
+            prompt=prompt,
+        )
+        if not ok:
             return
-        self._append_build(f"已寫入求助檔：{help_path}（提示已複製，可在 Cursor Agent 貼上）")
-        self.job_var.set("編譯求救已送出（提示在剪貼簿）")
+        self._launch_cursor_new_agent(prompt, status="編譯求救已送出，請在 Cursor 跳出視窗按確認")
 
     def _on_ask_cursor_uat_help(self) -> None:
         if not self._require_catalog():
@@ -544,30 +544,43 @@ class ConsoleApp(tk.Tk):
         payload = show_uat_help_dialog(self)
         if not payload:
             return
-        help_path, report_dir, images = write_uat_help(
-            self.runtime.uat_reports,
+        images: list[Path] = []
+        source_images = list(payload.get("images") or [])
+        if source_images:
+            _report_dir, images = stage_uat_screenshots(
+                self.runtime.uat_reports,
+                title=str(payload.get("title") or "UAT 問題"),
+                source_images=source_images,
+            )
+        prompt = build_uat_agent_prompt(
             root=self.catalog.root,
             title=str(payload.get("title") or "UAT 問題"),
             description=str(payload.get("description") or ""),
-            source_images=list(payload.get("images") or []),
+            image_paths=images,
         )
-        prompt = agent_prompt_from_uat_help(help_path, images)
+        self._launch_cursor_new_agent(prompt, status="UAT 求救已送出，請在 Cursor 跳出視窗按確認")
+
+    def _launch_cursor_new_agent(self, prompt: str, *, status: str) -> None:
+        if not self.catalog:
+            return
         try:
             self.clipboard_clear()
             self.clipboard_append(prompt)
         except tk.TclError:
             pass
-        err = ask_cursor_for_uat_help(self.catalog.root, help_path, images)
+        err = open_project_for_new_agent(self.catalog.root)
         if err:
             messagebox.showwarning("Cursor", err, parent=self)
             return
-        hint = (
-            f"已寫入：{report_dir}\n"
-            f"提示已複製；請在 Cursor Agent 貼上。"
-            f"{' 若 Agent 看不到圖，把截圖檔拖進對話即可。' if images else ''}"
-        )
-        messagebox.showinfo("UAT 求救", hint, parent=self)
-        self.job_var.set(f"UAT 求救已就緒（{report_dir.name}）")
+
+        def fire() -> None:
+            err2 = open_prompt_deeplink(prompt)
+            if err2:
+                messagebox.showwarning("Cursor", err2, parent=self)
+                return
+            self.job_var.set(status)
+
+        self.after(new_agent_launch_delay_ms(), fire)
 
     def _remember_build_failure(self, *, target: str, exit_code: int, log_text: str) -> None:
         self._last_build_failure = {
@@ -576,7 +589,7 @@ class ConsoleApp(tk.Tk):
             "log": log_text,
         }
         self._set_cursor_help_enabled(True)
-        self._append_build("建置失敗 — 可點「編譯求救」")
+        self._append_build("建置失敗 — 可點「編譯求救」開啟 New Agent")
 
     def _render_services(self) -> None:
         for child in self.service_list.winfo_children():

@@ -1,4 +1,4 @@
-"""UAT 問題回報：說明 + 截圖，開啟本機 Cursor。"""
+"""UAT 問題回報：說明 + 截圖，確認後建立 Cursor New Agent。"""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def show_uat_help_dialog(parent: tk.Tk | tk.Toplevel) -> dict | None:
 
     ttk.Label(
         frame,
-        text="說明問題並附上截圖 → 開啟 Cursor，提示會複製到剪貼簿，到 Agent 貼上即可。",
+        text="說明問題並附上截圖。按確認後 Cursor 會跳出視窗，再確認即建立 New Agent（說明直接帶入，不會先寫求助檔）。",
         wraplength=460,
         justify=tk.LEFT,
     ).grid(row=0, column=0, sticky="w", pady=(0, 12))
@@ -167,7 +167,7 @@ def show_uat_help_dialog(parent: tk.Tk | tk.Toplevel) -> dict | None:
     make_button(btns, "取消", dlg.destroy, variant="secondary", small=True).pack(
         side=tk.RIGHT, padx=(6, 0)
     )
-    make_button(btns, "開啟 Cursor", on_ok, variant="primary", small=True).pack(side=tk.RIGHT)
+    make_button(btns, "確認，開啟 New Agent", on_ok, variant="primary", small=True).pack(side=tk.RIGHT)
 
     dlg.bind("<Control-v>", lambda _e: paste_image())
     dlg.bind("<Control-V>", lambda _e: paste_image())

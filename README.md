@@ -2,8 +2,6 @@
 
 通用本機堆疊控制台：選專案目錄 → 掃描服務 → 啟動／建置；並支援 **GitHub**（設定／同步／發布）與 **GCP** 部署設定。
 
-現有 AI_House 控制台（`Scripts/console*`）維持不動。
-
 ## 啟動
 
 ```powershell
@@ -12,13 +10,13 @@ python -m AI_Project_Console
 
 ## Cursor
 
-需本機已安裝 [Cursor](https://cursor.com/)，且 `cursor` 在 PATH（安裝程式通常會帶 CLI）。目前走本機 Cursor（開 IDE + 剪貼簿），不使用雲端 Agent API Key。
+需本機已安裝 [Cursor](https://cursor.com/)，且 `cursor` 在 PATH（安裝程式通常會帶 CLI）。目前走本機 Cursor（開 IDE + New Agent deeplink），不使用雲端 Agent API Key。
 
 | 時機 | 行為 |
 |------|------|
 | 選擇專案目錄 | 啟動時不帶預設專案；可從「歷史專案」下拉選取，或按「選擇專案目錄…」。若勾選「同時開啟 Cursor」，載入後以 `--reuse-window` 開啟 |
-| UAT 求救 | 按鈕 → 填說明／貼截圖 → 寫入 `.ai_project/uat-reports/`、開 Cursor、提示進剪貼簿 |
-| 建置失敗 | 「建置輸出」啟用「編譯求救」→ 寫入 `.ai_project/build-reports/cursor-help.md`、開 Cursor、提示進剪貼簿 |
+| UAT 求救 | 按鈕 → 填說明／貼截圖 → 確認後開啟 Cursor 跳出視窗，再確認即建立 New Agent（說明直接帶入提示） |
+| 建置失敗 | 「建置輸出」啟用「編譯求救」→ 預覽錯誤 → 確認後同樣以 New Agent 帶入錯誤內容（不寫求助檔） |
 
 環境體檢會檢查 Cursor CLI。
 

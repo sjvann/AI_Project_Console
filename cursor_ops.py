@@ -1,16 +1,21 @@
-"""透過 Cursor CLI 開啟專案／帶建置錯誤求助。"""
+"""透過 Cursor CLI 開啟專案，並以 prompt deeplink 建立 New Agent。"""
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
 _ERROR_LINE = re.compile(r"\berror\b", re.IGNORECASE)
-_MAX_LOG_CHARS = 24_000
+_MAX_LOG_CHARS = 8_000
 _MAX_ERROR_LINES = 80
+_DEEPLINK_BASE = "cursor://anysphere.cursor-deeplink/prompt"
+# Windows ShellExecute 對自訂協定較嚴；Cursor 文件上限 8000
+_DEEPLINK_MAX_CHARS = 2048
 
 
 def resolve_cursor_cli() -> str | None:
@@ -25,9 +30,33 @@ def resolve_cursor_cli() -> str | None:
 
 
 def os_localappdata() -> str:
-    import os
-
     return os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+
+
+def is_cursor_running() -> bool:
+    try:
+        if sys.platform == "win32":
+            proc = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq Cursor.exe", "/NH"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+            )
+            return "cursor.exe" in (proc.stdout or "").lower()
+        if sys.platform == "darwin":
+            proc = subprocess.run(["pgrep", "-x", "Cursor"], capture_output=True, timeout=10)
+            return proc.returncode == 0
+        proc = subprocess.run(["pgrep", "-f", "cursor"], capture_output=True, timeout=10)
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def new_agent_launch_delay_ms() -> int:
+    """Cursor 已在跑時稍等即可；剛啟動則多等一會再送 deeplink。"""
+    return 400 if is_cursor_running() else 2200
 
 
 def open_in_cursor(path: Path, *, reuse_window: bool = True, extra_paths: list[Path] | None = None) -> str | None:
@@ -100,114 +129,38 @@ def extract_build_errors(log_text: str) -> list[str]:
     errors = [ln for ln in lines if _ERROR_LINE.search(ln) and "error(s)" not in ln.lower()]
     if errors:
         return errors[:_MAX_ERROR_LINES]
-    # 沒有明確 error 行時，取結尾摘要
     return lines[-min(40, len(lines)) :]
 
 
-def build_help_markdown(*, root: Path, target: str, exit_code: int, log_text: str) -> str:
+def build_agent_prompt(*, root: Path, target: str, exit_code: int, log_text: str) -> str:
+    """建置求救：錯誤內容直接寫進 New Agent 提示，不經過求助檔。"""
     errors = extract_build_errors(log_text)
     log_trim = log_text
     if len(log_trim) > _MAX_LOG_CHARS:
         log_trim = "…（前略）…\n" + log_trim[-_MAX_LOG_CHARS:]
-    error_block = "\n".join(f"- `{e}`" for e in errors) if errors else "- （未能解析具體 error 行，請見下方完整輸出）"
+    error_block = "\n".join(f"- {e}" for e in errors) if errors else "- （未能解析具體 error 行，請見下方輸出）"
     return (
-        f"# 建置失敗 — 請 Cursor 協助修復\n\n"
-        f"請閱讀以下 `dotnet build` 錯誤，找出根因並直接修改程式碼讓建置通過。"
-        f"優先處理 error，不要只做說明。\n\n"
-        f"## 環境\n\n"
-        f"- 專案根目錄：`{root}`\n"
-        f"- 建置目標：`{target}`\n"
-        f"- 結束碼：`{exit_code}`\n\n"
-        f"## 錯誤摘要\n\n"
-        f"{error_block}\n\n"
-        f"## 完整建置輸出\n\n"
-        f"```text\n{log_trim.rstrip()}\n```\n"
+        "建置失敗，請找出根因並直接修改程式碼讓建置通過。優先處理 error，不要只做說明。"
+        "改完後用同樣目標再確認能建置成功。\n\n"
+        f"專案根目錄：{root}\n"
+        f"建置目標：{target}\n"
+        f"結束碼：{exit_code}\n\n"
+        f"錯誤摘要：\n{error_block}\n\n"
+        f"完整建置輸出：\n```text\n{log_trim.rstrip()}\n```\n"
     )
-
-
-def write_build_help(
-    reports_dir: Path,
-    *,
-    root: Path,
-    target: str,
-    exit_code: int,
-    log_text: str,
-) -> Path:
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    help_path = reports_dir / "cursor-help.md"
-    help_path.write_text(
-        build_help_markdown(root=root, target=target, exit_code=exit_code, log_text=log_text),
-        encoding="utf-8",
-    )
-    (reports_dir / "last-build.log").write_text(log_text, encoding="utf-8")
-    return help_path
-
-
-def agent_prompt_from_help(help_path: Path) -> str:
-    return (
-        f"建置失敗了，請依 `{help_path.as_posix()}` 的錯誤摘要與完整輸出修復，"
-        f"改完後用同樣目標再確認能建置成功。"
-    )
-
-
-def ask_cursor_for_build_help(
-    root: Path,
-    help_path: Path,
-) -> str | None:
-    """開啟專案與求助檔；成功回傳 None。"""
-    return open_in_cursor(root, reuse_window=True, extra_paths=[help_path])
 
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
 
-def uat_help_markdown(
-    *,
-    root: Path,
-    title: str,
-    description: str,
-    image_paths: list[Path],
-    report_dir: Path,
-) -> str:
-    desc = description.strip() or "（未填寫說明）"
-    if image_paths:
-        img_lines = []
-        for i, path in enumerate(image_paths, start=1):
-            rel = path.name
-            img_lines.append(f"### 截圖 {i}：`{rel}`\n\n![{rel}]({rel})\n")
-        images_block = "\n".join(img_lines)
-    else:
-        images_block = "（未附截圖）\n"
-    return (
-        f"# UAT 問題 — 請 Cursor 協助排查／修復\n\n"
-        f"這是使用者在 UAT 測試時回報的問題。請依說明與截圖找出根因並直接修改程式碼；"
-        f"優先修復，不要只做說明。\n\n"
-        f"## 環境\n\n"
-        f"- 專案根目錄：`{root}`\n"
-        f"- 回報目錄：`{report_dir}`\n"
-        f"- 標題：{title.strip() or '（未命名）'}\n\n"
-        f"## 問題說明\n\n"
-        f"{desc}\n\n"
-        f"## 截圖\n\n"
-        f"{images_block}\n"
-        f"## 請你做的事\n\n"
-        f"1. 閱讀上方說明與截圖（圖檔與本 md 同目錄）。\n"
-        f"2. 定位相關程式並修復。\n"
-        f"3. 簡短說明改了什麼、如何驗證。\n"
-    )
-
-
-def write_uat_help(
+def stage_uat_screenshots(
     reports_dir: Path,
     *,
-    root: Path,
     title: str,
-    description: str,
     source_images: list[Path],
-) -> tuple[Path, Path, list[Path]]:
-    """寫入 UAT 求助報告。回傳 (help_md, report_dir, copied_images)。"""
+) -> tuple[Path, list[Path]]:
+    """只保存截圖（給 Agent 讀圖用），不寫求助 md。回傳 (report_dir, copied_images)。"""
     from datetime import datetime
-    import shutil
 
     reports_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -224,39 +177,73 @@ def write_uat_help(
         dest = report_dir / f"screenshot-{i:02d}{ext}"
         shutil.copy2(src, dest)
         copied.append(dest)
-
-    help_path = report_dir / "cursor-uat-help.md"
-    help_path.write_text(
-        uat_help_markdown(
-            root=root,
-            title=title,
-            description=description,
-            image_paths=copied,
-            report_dir=report_dir,
-        ),
-        encoding="utf-8",
-    )
-    return help_path, report_dir, copied
+    return report_dir, copied
 
 
-def agent_prompt_from_uat_help(help_path: Path, image_paths: list[Path]) -> str:
-    """給 Cursor IDE Agent 手動貼上用的短提示。"""
-    img_hint = ""
-    if image_paths:
-        listed = "、".join(f"`{p.as_posix()}`" for p in image_paths[:8])
-        img_hint = f" 請一併查看截圖：{listed}。"
-    return (
-        f"UAT 測試發現問題，請依 `{help_path.as_posix()}` 的說明與截圖排查並修復。"
-        f"{img_hint}"
-        f"改完後簡短說明如何驗證。"
-    )
-
-
-def ask_cursor_for_uat_help(
+def build_uat_agent_prompt(
+    *,
     root: Path,
-    help_path: Path,
-    image_paths: list[Path] | None = None,
-) -> str | None:
-    """開啟專案、求助 md 與截圖檔；成功回傳 None。"""
-    extras = [help_path, *(image_paths or [])]
-    return open_in_cursor(root, reuse_window=True, extra_paths=extras)
+    title: str,
+    description: str,
+    image_paths: list[Path],
+) -> str:
+    """UAT 求救：說明直接寫進 New Agent 提示。"""
+    desc = description.strip() or "（未填寫說明）"
+    lines = [
+        "UAT 測試發現問題。請依下列說明與截圖找出根因並直接修改程式碼；優先修復，不要只做說明。",
+        "改完後簡短說明改了什麼、如何驗證。",
+        "",
+        f"專案根目錄：{root}",
+        f"標題：{title.strip() or '（未命名）'}",
+        "",
+        "問題說明：",
+        desc,
+    ]
+    if image_paths:
+        lines.append("")
+        lines.append("請用 Read 查看這些截圖：")
+        for path in image_paths[:8]:
+            lines.append(f"- {path.resolve().as_posix()}")
+    return "\n".join(lines) + "\n"
+
+
+def prompt_deeplink_url(prompt_text: str) -> str:
+    return f"{_DEEPLINK_BASE}?{urlencode({'text': prompt_text})}"
+
+
+def fit_prompt_for_deeplink(prompt: str, *, limit: int = _DEEPLINK_MAX_CHARS) -> str:
+    """截到 deeplink URL 長度限制以內。"""
+    suffix = "\n\n…（內容過長，已截斷；完整內容在剪貼簿，可於 New Agent 貼上）"
+    if len(prompt_deeplink_url(prompt)) <= limit:
+        return prompt
+    lo, hi = 0, len(prompt)
+    best = suffix
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        cand = prompt[:mid].rstrip() + suffix
+        if len(prompt_deeplink_url(cand)) <= limit:
+            best = cand
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
+def open_prompt_deeplink(prompt: str) -> str | None:
+    """開啟 Cursor prompt deeplink（會跳出確認視窗，確認後建立 New Agent）。"""
+    url = prompt_deeplink_url(fit_prompt_for_deeplink(prompt))
+    try:
+        if sys.platform == "win32":
+            os.startfile(url)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", url])
+        else:
+            subprocess.Popen(["xdg-open", url])
+    except OSError as exc:
+        return f"無法開啟 Cursor New Agent：{exc}"
+    return None
+
+
+def open_project_for_new_agent(root: Path) -> str | None:
+    """先把專案開在 Cursor（Agents 視窗若已開，CLI 會再建一個 New Agent）。"""
+    return open_in_cursor(root, reuse_window=True)
