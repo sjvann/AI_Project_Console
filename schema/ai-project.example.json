@@ -1,0 +1,118 @@
+{
+  "name": "AI_House",
+  "services": [
+    {
+      "id": "hub-telemetry",
+      "label": "Hub Telemetry",
+      "project": "ModularIoTHub/src/ModularIoTHub.Telemetry",
+      "port": 5101,
+      "health": "http://127.0.0.1:15101/health",
+      "aspnetUrls": "http://localhost:5101;http://localhost:15101",
+      "group": "Hub"
+    },
+    {
+      "id": "hub-stream",
+      "label": "Hub Stream",
+      "project": "ModularIoTHub/src/ModularIoTHub.Stream",
+      "port": 5102,
+      "health": "http://127.0.0.1:15102/health",
+      "aspnetUrls": "http://localhost:5102;http://localhost:15102",
+      "group": "Hub"
+    },
+    {
+      "id": "hub-api",
+      "label": "Hub Api",
+      "project": "ModularIoTHub/src/ModularIoTHub.Api",
+      "port": 8080,
+      "health": "http://127.0.0.1:8080/api/devices",
+      "openUrl": "http://localhost:8080/scalar",
+      "aspnetUrls": "http://localhost:8080",
+      "group": "Hub"
+    },
+    {
+      "id": "hub-web",
+      "label": "Hub Web",
+      "project": "ModularIoTHub/src/ModularIoTHub.Api",
+      "port": 8080,
+      "health": "http://127.0.0.1:8080/",
+      "openUrl": "http://localhost:8080/",
+      "hostedBy": "hub-api",
+      "group": "Hub"
+    },
+    {
+      "id": "platform-host",
+      "label": "Platform Host",
+      "project": "AiHouse.Platform/src/Platform.Host",
+      "port": 8100,
+      "health": "http://127.0.0.1:8100/api/v1/health",
+      "openUrl": "http://localhost:8100/scalar",
+      "aspnetUrls": "http://localhost:8100",
+      "group": "Platform"
+    },
+    {
+      "id": "exchange-host",
+      "label": "Exchange Host",
+      "project": "AiHouse.Platform/src/Exchange.Host",
+      "port": 8101,
+      "health": "http://127.0.0.1:8101/",
+      "openUrl": "http://localhost:8101/scalar",
+      "aspnetUrls": "http://localhost:8101",
+      "group": "Platform"
+    },
+    {
+      "id": "platform-frontend",
+      "label": "Platform Frontend",
+      "project": "AiHouse.Platform/src/Platform.Frontend",
+      "port": 8102,
+      "health": "http://127.0.0.1:8102/",
+      "openUrl": "http://localhost:8102/",
+      "aspnetUrls": "http://localhost:8102",
+      "group": "Platform"
+    },
+    {
+      "id": "eddss-api",
+      "label": "EDDSS Api",
+      "project": "EventDrivenDSS/src/EventDrivenDSS.Api",
+      "port": 8090,
+      "health": "http://127.0.0.1:8090/health",
+      "openUrl": "http://localhost:8090/scalar",
+      "aspnetUrls": "http://localhost:8090",
+      "group": "EDDSS"
+    },
+    {
+      "id": "eddss-web",
+      "label": "EDDSS Web",
+      "project": "EventDrivenDSS/src/EventDrivenDSS.Web",
+      "port": 8091,
+      "health": "http://127.0.0.1:8091/",
+      "openUrl": "http://localhost:8091/",
+      "aspnetUrls": "http://localhost:8091",
+      "group": "EDDSS"
+    }
+  ],
+  "startOrder": [
+    "hub-telemetry",
+    "hub-stream",
+    "hub-api",
+    "platform-host",
+    "exchange-host",
+    "platform-frontend",
+    "eddss-api",
+    "eddss-web"
+  ],
+  "frontend": "hub-web",
+  "github": {
+    "owner": "",
+    "repo": "",
+    "remote": "origin",
+    "defaultBranch": "main",
+    "url": ""
+  },
+  "gcp": {
+    "projectId": "",
+    "zone": "asia-east1-b",
+    "instance": "ai-house-demo",
+    "host": "",
+    "workflow": "deploy-gcp.yml"
+  }
+}
