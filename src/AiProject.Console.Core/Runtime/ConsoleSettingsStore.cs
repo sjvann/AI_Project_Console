@@ -82,6 +82,23 @@ public static class ConsoleSettingsStore
         data["openWithCursor"] = enabled;
         Save(data);
     }
+
+    public static string? LastCloneParent()
+    {
+        var raw = JsonUtil.Str(Load()["lastCloneParent"]);
+        if (string.IsNullOrEmpty(raw) || !Directory.Exists(raw))
+            return null;
+        return Path.GetFullPath(raw);
+    }
+
+    public static void SetLastCloneParent(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            return;
+        var data = Load();
+        data["lastCloneParent"] = Path.GetFullPath(path);
+        Save(data);
+    }
 }
 
 public sealed class ProjectRuntime

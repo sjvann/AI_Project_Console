@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -85,27 +86,7 @@ def close_cursor() -> str | None:
     """關閉本機 Cursor 行程。成功回傳 None；無法執行時回傳錯誤說明。"""
     try:
         if sys.platform == "win32":
-            # /T 一併結束子行程；找不到行程時 taskkill 結束碼非 0，可視為已關閉
-            names = ("Cursor.exe", "cursor.exe")
-            any_killed = False
-            last_err = ""
-            for name in names:
-                proc = subprocess.run(
-                    ["taskkill", "/IM", name, "/F", "/T"],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=30,
-                )
-                out = ((proc.stdout or "") + (proc.stderr or "")).lower()
-                if proc.returncode == 0:
-                    any_killed = True
-                elif "not found" not in out and "找不到" not in out:
-                    last_err = (proc.stderr or proc.stdout or "").strip()
-            if any_killed or not last_err:
-                return None
-            return last_err or "無法關閉 Cursor"
+            return _close_cursor_windows()
         if sys.platform == "darwin":
             proc = subprocess.run(
                 ["osascript", "-e", 'tell application "Cursor" to quit'],
@@ -122,6 +103,30 @@ def close_cursor() -> str | None:
         return None
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"關閉 Cursor 失敗：{exc}"
+
+
+def _close_cursor_windows() -> str | None:
+    """以 WM_CLOSE 正常關閉 Cursor。不可 taskkill /F：強制結束渲染行程會讓主行程
+    跳出「The window terminated unexpectedly (reason: 'crashed', code: '-1')」。"""
+    subprocess.run(
+        ["taskkill", "/IM", "Cursor.exe"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=15,
+    )
+    _wait_cursor_exit(8.0)
+    return None
+
+
+def _wait_cursor_exit(seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not is_cursor_running():
+            return True
+        time.sleep(0.25)
+    return not is_cursor_running()
 
 
 def extract_build_errors(log_text: str) -> list[str]:

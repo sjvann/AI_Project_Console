@@ -173,9 +173,27 @@ public static class GithubConfigResolver
     }
 }
 
+public readonly record struct CloneResult(string Path, string Message, bool AlreadyExisted);
+
 public static class GitHubService
 {
     public static bool GhAvailable() => CliUtil.CommandExists("gh");
+
+    private static string CanonicalRemote(string url)
+    {
+        var (owner, repo) = GithubConfigResolver.ParseSlug(url);
+        return string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo)
+            ? url.Trim().TrimEnd('/').ToLowerInvariant()
+            : $"github.com/{owner}/{repo}".ToLowerInvariant();
+    }
+
+    private static async Task<bool> SameRemoteAsync(string root, string url)
+    {
+        var (code, existing) = await CliUtil.RunAsync("git", ["remote", "get-url", "origin"], root).ConfigureAwait(false);
+        if (code != 0 || string.IsNullOrEmpty(existing))
+            return false;
+        return CanonicalRemote(existing) == CanonicalRemote(url);
+    }
 
     public static async Task<bool> IsGitRepoAsync(string root)
     {
@@ -325,6 +343,77 @@ public static class GitHubService
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "建立 PR 失敗。" : output);
         }
         return string.IsNullOrEmpty(output) ? "PR 已建立。" : output;
+    }
+
+    public static string NormalizeCloneUrl(string spec)
+    {
+        var text = (spec ?? "").Trim();
+        if (string.IsNullOrEmpty(text))
+            return "";
+        if (text.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("git@", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase))
+            return text;
+        text = text.Replace('\\', '/').Trim('/');
+        if (text.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase))
+            text = "https://" + text;
+        if (text.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            var (owner, repo) = GithubConfigResolver.ParseSlug(text);
+            return string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo)
+                ? text
+                : $"https://github.com/{owner}/{repo}.git";
+        }
+        var parts = text.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2
+            && parts[0].IndexOfAny([':', '@']) < 0
+            && parts[1].IndexOfAny([':', '@']) < 0)
+        {
+            var repo = parts[1].EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? parts[1][..^4] : parts[1];
+            return $"https://github.com/{parts[0]}/{repo}.git";
+        }
+        return "";
+    }
+
+    public static string SuggestFolderName(string spec)
+    {
+        var url = NormalizeCloneUrl(spec);
+        var (_, repo) = GithubConfigResolver.ParseSlug(string.IsNullOrEmpty(url) ? spec : url);
+        return repo;
+    }
+
+    public static async Task<CloneResult> CloneRepositoryAsync(string spec, string destDir, string? branch = null)
+    {
+        if (!CliUtil.CommandExists("git"))
+            throw new InvalidOperationException("找不到 git。請先安裝 Git：https://git-scm.com/");
+        var url = NormalizeCloneUrl(spec);
+        if (string.IsNullOrEmpty(url))
+            throw new InvalidOperationException("請輸入 GitHub URL 或 owner/repo。");
+        destDir = Path.GetFullPath(destDir);
+        if (Directory.Exists(destDir) && Directory.EnumerateFileSystemEntries(destDir).Any())
+        {
+            if (await IsGitRepoAsync(destDir).ConfigureAwait(false)
+                && await SameRemoteAsync(destDir, url).ConfigureAwait(false))
+                return new CloneResult(destDir, $"本機已有此倉庫，直接開啟：{destDir}", true);
+            throw new InvalidOperationException($"目錄已存在且非空：{destDir}");
+        }
+
+        var parent = Path.GetDirectoryName(destDir);
+        if (!string.IsNullOrEmpty(parent))
+            Directory.CreateDirectory(parent);
+
+        var args = new List<string> { "clone" };
+        if (!string.IsNullOrWhiteSpace(branch))
+            args.AddRange(["--branch", branch.Trim(), "--single-branch"]);
+        args.Add(url);
+        args.Add(destDir);
+        var cwd = string.IsNullOrEmpty(parent) ? Environment.CurrentDirectory : parent;
+        var (code, output) = await CliUtil.RunAsync("git", args, cwd, 600_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "git clone 失敗。" : output);
+        return new CloneResult(destDir, $"已 clone 到 {destDir}", false);
     }
 
     public static async Task<string> WatchActionsAsync(ProjectCatalog catalog, GithubConfig? cfg = null)

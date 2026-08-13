@@ -25,6 +25,13 @@
       "confirm": "將編譯專案目錄內全部 csproj（含測試），可能需要數分鐘，確定執行？"
     },
     {
+      "id": "github_clone",
+      "label": "從遠端開啟…",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_clone"
+    },
+    {
       "id": "github_settings",
       "label": "GitHub 設定…",
       "group": "github",

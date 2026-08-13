@@ -2,6 +2,9 @@ using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Deploy;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Scan;
+using AiProject.Console.Core.Util;
+using System.Text;
+using System.Text.Json.Nodes;
 
 namespace AiProject.Console.Core.Tests;
 
@@ -23,6 +26,73 @@ public class CatalogTests
         var ssh = GithubConfigResolver.ParseSlug("git@github.com:acme/app.git");
         Assert.Equal("acme", ssh.Owner);
         Assert.Equal("app", ssh.Repo);
+    }
+
+    [Fact]
+    public void NormalizeCloneUrl_AcceptsSlugAndUrls()
+    {
+        Assert.Equal("https://github.com/acme/app.git", GitHubService.NormalizeCloneUrl("acme/app"));
+        Assert.Equal("https://github.com/acme/app.git", GitHubService.NormalizeCloneUrl("github.com/acme/app"));
+        Assert.Equal("https://github.com/acme/app.git", GitHubService.NormalizeCloneUrl("https://github.com/acme/app.git"));
+        Assert.Equal("git@github.com:acme/app.git", GitHubService.NormalizeCloneUrl("git@github.com:acme/app.git"));
+        Assert.Equal("app", GitHubService.SuggestFolderName("acme/app"));
+        Assert.Equal("", GitHubService.NormalizeCloneUrl("not-a-repo"));
+    }
+
+    [Fact]
+    public void JsonUtil_SaveObject_DoesNotRequireExternalTypeInfoResolver()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ai-console-json-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            JsonUtil.SaveObject(path, new JsonObject { ["recentProjects"] = new JsonArray { @"E:\demo" } });
+            var loaded = JsonUtil.LoadObject(path);
+            Assert.Equal(@"E:\demo", JsonUtil.Str(loaded["recentProjects"]?[0]));
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task LogFileUtil_AllowsConcurrentReadWhileWriting()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ai-console-log-" + Guid.NewGuid().ToString("N") + ".log");
+        try
+        {
+            File.WriteAllText(path, "");
+            using var stream = LogFileUtil.OpenAppend(path);
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
+            var errors = new List<Exception>();
+            var write = Task.Run(() =>
+            {
+                for (var i = 0; i < 200; i++)
+                {
+                    try { lock (writer) writer.WriteLine("line " + i); }
+                    catch (Exception ex) { lock (errors) errors.Add(ex); }
+                }
+            });
+            var read = Task.Run(() =>
+            {
+                for (var i = 0; i < 200; i++)
+                {
+                    try { _ = LogFileUtil.ReadAllBytes(path); }
+                    catch (Exception ex) { lock (errors) errors.Add(ex); }
+                }
+            });
+            await Task.WhenAll(write, read);
+            Assert.Empty(errors);
+            var text = Encoding.UTF8.GetString(LogFileUtil.ReadAllBytes(path));
+            Assert.Contains("line 0", text);
+            Assert.Contains("line 199", text);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
     }
 
     [Fact]

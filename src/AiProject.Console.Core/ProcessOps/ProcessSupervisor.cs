@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using AiProject.Console.Core.Catalog;
@@ -9,6 +10,8 @@ namespace AiProject.Console.Core.ProcessOps;
 
 public static class ProcessSupervisor
 {
+    private static readonly ConcurrentDictionary<string, ServiceLogWriter> LogWriters = new(StringComparer.OrdinalIgnoreCase);
+
     public static async Task<bool> HttpOkAsync(string url, int timeoutMs = 2000)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -217,7 +220,8 @@ public static class ProcessSupervisor
 
         var logFile = rt.LogPath(stem);
         var relProj = Path.GetRelativePath(catalog.Root, Path.GetFullPath(proj));
-        File.AppendAllText(logFile, $"\n=== {host.Label} start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n", Encoding.UTF8);
+        var writer = OpenLog(logFile);
+        writer.WriteLine($"=== {host.Label} start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 
         var psi = new ProcessStartInfo("dotnet")
         {
@@ -237,18 +241,9 @@ public static class ProcessSupervisor
             psi.Environment["ASPNETCORE_URLS"] = host.AspnetUrls;
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        var logLock = new object();
-        void WriteLog(string? line)
-        {
-            if (line is null)
-                return;
-            lock (logLock)
-            {
-                File.AppendAllText(logFile, line + "\n", Encoding.UTF8);
-            }
-        }
-        proc.OutputDataReceived += (_, e) => WriteLog(e.Data);
-        proc.ErrorDataReceived += (_, e) => WriteLog(e.Data);
+        proc.OutputDataReceived += (_, e) => WriteLog(writer, e.Data);
+        proc.ErrorDataReceived += (_, e) => WriteLog(writer, e.Data);
+        proc.Exited += (_, _) => CloseLog(logFile, writer);
         proc.Start();
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
@@ -261,6 +256,7 @@ public static class ProcessSupervisor
         var host = ServiceCatalogBuilder.HostService(catalog, svc);
         KillPidFile(rt, host.Stem);
         ReleasePort(host.Port);
+        CloseLog(rt.LogPath(host.Stem));
     }
 
     public static int? RestartService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
@@ -292,6 +288,7 @@ public static class ProcessSupervisor
                 continue;
             KillPidFile(rt, svc.Stem);
             ReleasePort(svc.Port);
+            CloseLog(rt.LogPath(svc.Stem));
         }
         KillAllPids(rt);
     }
@@ -333,5 +330,87 @@ public static class ProcessSupervisor
         }
         lines.Add(catalog.Manifest.Count > 0 ? "manifest: ai-project.json 已載入" : "manifest: 無（使用掃描結果）");
         return string.Join('\n', lines);
+    }
+
+    private static ServiceLogWriter OpenLog(string logFile)
+    {
+        var writer = new ServiceLogWriter(logFile);
+        if (LogWriters.TryRemove(logFile, out var previous))
+            previous.Dispose();
+        LogWriters[logFile] = writer;
+        return writer;
+    }
+
+    private static void CloseLog(string logFile, ServiceLogWriter? writer = null)
+    {
+        if (writer is null)
+        {
+            if (LogWriters.TryRemove(logFile, out var current))
+                current.Dispose();
+            return;
+        }
+        LogWriters.TryRemove(new KeyValuePair<string, ServiceLogWriter>(logFile, writer));
+        writer.Dispose();
+    }
+
+    private static void WriteLog(ServiceLogWriter writer, string? line)
+    {
+        if (line is null)
+            return;
+        try
+        {
+            writer.WriteLine(line);
+        }
+        catch
+        {
+            // OutputDataReceived / ErrorDataReceived must never crash the host.
+        }
+    }
+
+    private sealed class ServiceLogWriter : IDisposable
+    {
+        private readonly object _lock = new();
+        private readonly StreamWriter _writer;
+        private bool _disposed;
+
+        public ServiceLogWriter(string path)
+        {
+            var stream = LogFileUtil.OpenAppend(path);
+            _writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+            {
+                AutoFlush = true,
+            };
+        }
+
+        public void WriteLine(string line)
+        {
+            lock (_lock)
+            {
+                if (_disposed)
+                    return;
+                try
+                {
+                    _writer.WriteLine(line);
+                }
+                catch (IOException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (_lock)
+            {
+                if (_disposed)
+                    return;
+                _disposed = true;
+                try { _writer.Dispose(); }
+                catch { /* ignore */ }
+            }
+        }
     }
 }

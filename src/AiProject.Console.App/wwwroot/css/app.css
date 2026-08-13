@@ -37,8 +37,13 @@ button, .btn { font: 600 12px "Segoe UI", sans-serif; border: 1px solid transpar
 button:disabled { opacity: .45; cursor: default; }
 .summary { display: flex; gap: 12px; align-items: center; font-weight: 700; }
 .summary .job { font-weight: 400; color: var(--muted); }
-.split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
-.pane { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; min-height: 0; }
+.split { flex: 1; display: grid; grid-template-columns: minmax(180px, 1fr) 8px minmax(180px, 1fr); min-height: 0; }
+.split.is-sized { grid-template-columns: minmax(180px, var(--split-left)) 8px minmax(180px, 1fr); }
+.split-gutter { position: relative; cursor: col-resize; touch-action: none; user-select: none; }
+.split-gutter::before { content: ""; position: absolute; inset: 8px 3px; border-radius: 2px; background: var(--border); }
+.split-gutter:hover::before, .split-gutter.dragging::before { background: var(--accent); }
+.split.dragging, .split.dragging * { cursor: col-resize; user-select: none; }
+.pane { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .tabs { display: flex; background: var(--border); }
 .tab { flex: 1; text-align: center; padding: 9px 6px 6px; background: var(--row-alt); color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; }
 .tab.active { background: var(--panel); color: var(--text); font-weight: 700; border-bottom-color: var(--accent); }
@@ -65,6 +70,8 @@ button:disabled { opacity: .45; cursor: default; }
 .dialog { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 18px; width: min(520px, 92vw); max-height: 88vh; overflow: auto; }
 .dialog h2 { margin: 0 0 10px; font-size: 16px; }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
+.field-inline { display: flex; gap: 8px; align-items: center; }
+.field-inline input { flex: 1; min-width: 0; }
 .field input, .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 .field textarea { min-height: 90px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

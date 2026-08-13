@@ -68,6 +68,10 @@ public sealed class ConsoleSession : IDisposable
     public Func<Task>? ConfirmAction { get; private set; }
     public string AgentPrompt { get; private set; } = "";
     public string AgentIntro { get; private set; } = "";
+    public string CloneSpec { get; set; } = "";
+    public string CloneParent { get; set; } = "";
+    public string CloneFolder { get; set; } = "";
+    public string CloneBranch { get; set; } = "";
 
     public IReadOnlyList<ConsoleAction> BuildActions => ActionCatalog.Load("build");
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
@@ -108,25 +112,35 @@ public sealed class ConsoleSession : IDisposable
             Catalog = catalog;
             Runtime = new ProjectRuntime(catalog.Root);
             Runtime.Ensure();
-            ConsoleSettingsStore.RememberProject(catalog.Root);
+            string? rememberErr = null;
+            try
+            {
+                ConsoleSettingsStore.RememberProject(catalog.Root);
+            }
+            catch (Exception ex)
+            {
+                rememberErr = ex.Message;
+            }
             SelectedServiceId = catalog.Services.FirstOrDefault()?.Id;
             LastBuildFailure = null;
             CompileHelpEnabled = false;
             Health.Clear();
             ReloadLog();
-            JobText = "已載入專案";
+            JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             Notify();
             _ = RefreshBuildStatesAsync();
             if (openCursor)
             {
                 var err = CursorLauncher.OpenInCursor(catalog.Root);
-                JobText = err is null ? "已載入專案，並在 Cursor 開啟" : $"已載入專案（Cursor 未開啟：{err}）";
+                JobText = err is null
+                    ? (rememberErr is null ? "已載入專案，並在 Cursor 開啟" : JobText)
+                    : $"已載入專案（Cursor 未開啟：{err}）";
                 Notify();
             }
         }
         catch (Exception ex)
         {
-            _native.Error("掃描失敗", ex.Message);
+            _native.Error("開啟專案失敗", ex.Message);
         }
         return Task.CompletedTask;
     }
@@ -303,6 +317,9 @@ public sealed class ConsoleSession : IDisposable
             case "gcp_ci_hint":
                 _native.Info("部署說明", DeployConfigResolver.CiHint(Catalog));
                 return;
+            case "github_clone":
+                OpenCloneDialog();
+                return;
             case "github_settings":
                 await EditGithubAsync().ConfigureAwait(false);
                 return;
@@ -353,6 +370,69 @@ public sealed class ConsoleSession : IDisposable
                 RememberBuildFailure(relPath, code, $"=== build {relPath} ===\n{log}\nexit {code}");
             return (string?)null;
         });
+    }
+
+    public void OpenCloneDialog()
+    {
+        CloneSpec = "";
+        CloneFolder = "";
+        CloneBranch = "";
+        CloneParent = ConsoleSettingsStore.LastCloneParent()
+            ?? (RecentProjects.Count > 0 ? Path.GetDirectoryName(RecentProjects[0]) : null)
+            ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Dialog = "clone";
+        Notify();
+    }
+
+    public async Task PickCloneParentAsync()
+    {
+        var path = await _native.PickFolderAsync("選擇 clone 到哪個資料夾").ConfigureAwait(false);
+        if (string.IsNullOrEmpty(path))
+            return;
+        CloneParent = path;
+        Notify();
+    }
+
+    public async Task ConfirmCloneAsync()
+    {
+        var url = GitHubService.NormalizeCloneUrl(CloneSpec);
+        if (string.IsNullOrEmpty(url))
+        {
+            _native.Warn("輸入不完整", "請輸入 GitHub URL 或 owner/repo，例如 acme/app。");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(CloneParent))
+        {
+            _native.Warn("輸入不完整", "請選擇本機父目錄。");
+            return;
+        }
+        var folder = string.IsNullOrWhiteSpace(CloneFolder)
+            ? GitHubService.SuggestFolderName(CloneSpec)
+            : CloneFolder.Trim();
+        if (string.IsNullOrEmpty(folder))
+        {
+            _native.Warn("輸入不完整", "請填寫資料夾名稱。");
+            return;
+        }
+        if (folder.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            _native.Warn("資料夾名稱無效", "請去掉路徑字元，只填資料夾名稱。");
+            return;
+        }
+        var dest = Path.Combine(CloneParent, folder);
+        var parent = CloneParent;
+        var branch = CloneBranch;
+        CloseDialog();
+        string? opened = null;
+        await RunJobAsync("從 GitHub 開啟…", async () =>
+        {
+            var result = await GitHubService.CloneRepositoryAsync(url, dest, branch).ConfigureAwait(false);
+            opened = result.Path;
+            ConsoleSettingsStore.SetLastCloneParent(parent);
+            return result.Message;
+        }).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(opened) && Directory.Exists(opened))
+            await LoadProjectAsync(opened, OpenWithCursor).ConfigureAwait(false);
     }
 
     public void OpenGithubDialog()
@@ -710,7 +790,7 @@ public sealed class ConsoleSession : IDisposable
         if (!File.Exists(path))
             return;
         byte[] data;
-        try { data = File.ReadAllBytes(path); }
+        try { data = LogFileUtil.ReadAllBytes(path); }
         catch { return; }
         string chunk;
         if (full)

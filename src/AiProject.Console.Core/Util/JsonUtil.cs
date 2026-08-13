@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 
 namespace AiProject.Console.Core.Util;
 
@@ -15,6 +16,7 @@ public static class JsonUtil
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
     };
 
     public static JsonObject LoadObject(string path)

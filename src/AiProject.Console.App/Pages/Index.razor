@@ -14,7 +14,7 @@
     <div class="card">
         <div class="row">
             <strong>@(S.Catalog?.Name ?? "尚未選擇專案")</strong>
-            <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄，或從歷史專案載入。")</span>
+            <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄、從歷史載入，或從 GitHub 開啟。")</span>
             <select class="history" @onchange="OnRecent">
                 <option value="">歷史專案</option>
                 @foreach (var p in S.RecentProjects)
@@ -23,6 +23,7 @@
                 }
             </select>
             <button class="btn-sec" @onclick="S.PickProjectAsync">選擇專案目錄…</button>
+            <button class="btn-sec" @onclick="S.OpenCloneDialog">從 GitHub 開啟…</button>
             <label class="check">
                 <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
                 同時開啟 Cursor
@@ -61,7 +62,7 @@
         }
     </div>
 
-    <div class="split">
+    <div class="split" id="split-view">
         <div class="pane">
             <div class="tabs">
                 <div class="tab @(S.LeftTab == "svc" ? "active" : null)" @onclick="@(() => S.LeftTab = "svc")">
@@ -133,6 +134,7 @@
                 }
             </div>
         </div>
+        <div class="split-gutter" title="拖拉調整寬度，連點還原各半"></div>
         <div class="pane">
             <div class="tabs">
                 <div class="tab @(S.RightTab == "log" ? "active" : null)" @onclick="@(() => S.RightTab = "log")">服務 Log</div>
@@ -161,6 +163,30 @@
     </div>
     <div class="foot">關閉控制台不會停止服務 · 狀態寫入選定專案的 .ai_project/</div>
 </div>
+
+@if (S.Dialog == "clone")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true">
+            <h2>從 GitHub 開啟</h2>
+            <p class="hint">輸入遠端倉庫後會 clone 到本機，再當作專案開啟。若目錄已存在且是同一倉庫，會直接開啟。</p>
+            <div class="field"><span>倉庫</span><input @bind="S.CloneSpec" placeholder="owner/repo 或 https://github.com/owner/repo.git" /></div>
+            <div class="field">
+                <span>本機目錄</span>
+                <div class="field-inline">
+                    <input @bind="S.CloneParent" placeholder="例如 E:\sjvann" />
+                    <button class="btn-sec" @onclick="S.PickCloneParentAsync">瀏覽…</button>
+                </div>
+            </div>
+            <div class="field"><span>資料夾名稱</span><input @bind="S.CloneFolder" placeholder="空白則用 repo 名稱" /></div>
+            <div class="field"><span>分支（選填）</span><input @bind="S.CloneBranch" placeholder="預設分支" /></div>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ConfirmCloneAsync">Clone 並開啟</button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (S.Dialog == "github")
 {
@@ -295,6 +321,8 @@
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
+        if (first)
+            await Js.InvokeVoidAsync("aiConsole.initSplitter", "split-view");
         if (S.FollowLog && S.RightTab == "log")
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "log-view");
         if (S.RightTab == "build")

@@ -99,13 +99,7 @@ public static class CursorLauncher
         {
             if (OperatingSystem.IsWindows())
             {
-                foreach (var name in new[] { "Cursor", "cursor" })
-                {
-                    foreach (var p in Process.GetProcessesByName(name))
-                    {
-                        try { p.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                    }
-                }
+                CloseCursorWindowsGracefully();
                 return null;
             }
             if (OperatingSystem.IsMacOS())
@@ -120,6 +114,63 @@ public static class CursorLauncher
         {
             return $"關閉 Cursor 失敗：{ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// 對 Cursor 視窗送 WM_CLOSE。不可 Process.Kill／taskkill /F：強制結束渲染行程時，
+    /// 主行程會跳出「The window terminated unexpectedly (reason: 'crashed', code: '-1')」。
+    /// </summary>
+    private static void CloseCursorWindowsGracefully()
+    {
+        var closedAny = false;
+        foreach (var p in Process.GetProcessesByName("Cursor"))
+        {
+            using (p)
+            {
+                try
+                {
+                    if (!p.HasExited && p.MainWindowHandle != IntPtr.Zero)
+                        closedAny |= p.CloseMainWindow();
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
+        if (closedAny && WaitUntilCursorExits(TimeSpan.FromSeconds(8)))
+            return;
+
+        try
+        {
+            using var tk = Process.Start(new ProcessStartInfo("taskkill", "/IM Cursor.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            tk?.WaitForExit(8_000);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        WaitUntilCursorExits(TimeSpan.FromSeconds(5));
+    }
+
+    private static bool WaitUntilCursorExits(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!IsCursorRunning())
+                return true;
+            Thread.Sleep(250);
+        }
+        return !IsCursorRunning();
     }
 
     public static IReadOnlyList<string> ExtractBuildErrors(string logText)
