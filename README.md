@@ -25,6 +25,8 @@ dotnet run --project src/AiProject.Console.App
 powershell -ExecutionPolicy Bypass -File scripts/pack-win.ps1
 ```
 
+升版、打包、推送、建立 GitHub Release 的完整指令見 [`scripts/README.md`](scripts/README.md)。
+
 發布單檔執行檔：
 
 ```powershell
