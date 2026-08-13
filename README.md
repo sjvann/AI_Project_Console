@@ -62,6 +62,9 @@ python -m AI_Project_Console
 | 狀態 | 分支、髒工作區、領先／落後、gh 登入 |
 | 同步（pull） | `git fetch` + `pull --rebase` |
 | 發布（push） | `git push -u` 目前分支 |
+| 發行 Release… | 填版號（SemVer，可 Major／Minor／Patch 遞增）、標題、說明；可草稿／預發行、附加檔案。需 [GitHub CLI](https://cli.github.com/)（`gh`） |
+| Release 列表 | `gh release list` |
+| 開啟 Releases | 瀏覽器開啟 GitHub Releases 頁 |
 | 開啟倉庫 | 瀏覽器開啟 GitHub |
 | 建立／開啟 PR | 需 [GitHub CLI](https://cli.github.com/)（`gh`） |
 | Actions 最近執行 | `gh run list` |

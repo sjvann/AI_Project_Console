@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using AiProject.Console.Core.Runtime;
@@ -175,6 +176,36 @@ public static class GithubConfigResolver
 
 public readonly record struct CloneResult(string Path, string Message, bool AlreadyExisted);
 
+public sealed record ReleaseItem(
+    string Tag,
+    string Name,
+    bool IsLatest,
+    bool IsDraft,
+    bool IsPrerelease,
+    string PublishedAt);
+
+public sealed class ReleaseInspect
+{
+    public string LatestGithubTag { get; init; } = "";
+    public string LatestGitTag { get; init; } = "";
+    public string ProjectVersion { get; init; } = "";
+    public string SuggestedTag { get; init; } = "v0.1.0";
+    public string CurrentBranch { get; init; } = "";
+    public string Summary { get; init; } = "";
+    public bool GhOk { get; init; }
+}
+
+public sealed record ReleaseRequest(
+    string Tag,
+    string Title = "",
+    string Notes = "",
+    string Target = "",
+    bool Draft = false,
+    bool Prerelease = false,
+    bool GenerateNotes = true,
+    bool MakeLatest = true,
+    IReadOnlyList<string>? Assets = null);
+
 public static class GitHubService
 {
     public static bool GhAvailable() => CliUtil.CommandExists("gh");
@@ -257,6 +288,12 @@ public static class GitHubService
             "",
             "gh：" + gh,
         ]);
+        var latest = await TryLatestReleaseTagAsync(catalog, cfg).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(latest))
+            lines.Add($"最新 Release：{latest}");
+        var projectVer = ReleaseVersion.DetectProjectVersion(root);
+        if (!string.IsNullOrEmpty(projectVer))
+            lines.Add($"專案檔版號：{projectVer}");
         return string.Join('\n', lines);
     }
 
@@ -428,5 +465,245 @@ public static class GitHubService
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "無法列出 Actions。" : output);
         return string.IsNullOrEmpty(output) ? "（沒有最近的 workflow runs）" : output;
+    }
+
+    public static async Task<ReleaseInspect> InspectReleaseAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    {
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var ghOk = GhAvailable();
+        var latestGh = "";
+        var recentLines = new List<string>();
+        if (!ghOk)
+            recentLines.Add("未安裝 GitHub CLI（gh），無法讀取或建立 Release。請安裝：https://cli.github.com/");
+        else
+        {
+            try
+            {
+                var items = await ListReleaseItemsAsync(catalog, cfg, 8).ConfigureAwait(false);
+                latestGh = items.FirstOrDefault(r => r.IsLatest)?.Tag
+                    ?? items.FirstOrDefault()?.Tag
+                    ?? "";
+                if (items.Count == 0)
+                    recentLines.Add("尚無 GitHub Release。");
+                else
+                {
+                    recentLines.Add("最近發行：");
+                    foreach (var item in items)
+                        recentLines.Add("  " + FormatReleaseLine(item));
+                }
+            }
+            catch (Exception ex)
+            {
+                recentLines.Add("無法讀取 GitHub Releases：" + FirstLine(ex.Message));
+            }
+        }
+
+        var gitTag = await LatestGitTagAsync(catalog.Root).ConfigureAwait(false);
+        var projectVer = ReleaseVersion.DetectProjectVersion(catalog.Root);
+        var (cBranch, branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], catalog.Root).ConfigureAwait(false);
+        if (cBranch != 0 || branch == "HEAD")
+            branch = cfg.DefaultBranch;
+        var suggested = ReleaseVersion.SuggestTag(latestGh, gitTag, projectVer);
+
+        var summary = new List<string>
+        {
+            $"GitHub 最新：{(string.IsNullOrEmpty(latestGh) ? "（尚無）" : latestGh)}",
+            $"git tag：{(string.IsNullOrEmpty(gitTag) ? "（尚無語意化標籤）" : gitTag)}",
+            $"專案檔版號：{(string.IsNullOrEmpty(projectVer) ? "（未偵測到）" : projectVer)}",
+            $"建議下一版：{suggested}",
+            "",
+        };
+        summary.AddRange(recentLines);
+
+        return new ReleaseInspect
+        {
+            LatestGithubTag = latestGh,
+            LatestGitTag = gitTag,
+            ProjectVersion = projectVer,
+            SuggestedTag = suggested,
+            CurrentBranch = branch,
+            Summary = string.Join('\n', summary),
+            GhOk = ghOk,
+        };
+    }
+
+    public static async Task<string> ListReleasesAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    {
+        if (!GhAvailable())
+            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var items = await ListReleaseItemsAsync(catalog, cfg, 15).ConfigureAwait(false);
+        var lines = new List<string>
+        {
+            string.IsNullOrEmpty(cfg.Slug()) ? "GitHub Releases" : $"GitHub Releases · {cfg.Slug()}",
+            "",
+        };
+        if (items.Count == 0)
+            lines.Add("（尚無 Release）");
+        else
+        {
+            foreach (var item in items)
+                lines.Add(FormatReleaseLine(item));
+        }
+        var web = cfg.WebUrl();
+        if (!string.IsNullOrEmpty(web))
+        {
+            lines.Add("");
+            lines.Add(web + "/releases");
+        }
+        return string.Join('\n', lines);
+    }
+
+    public static async Task<bool> OpenReleasesAsync(ProjectCatalog catalog, GithubConfig? cfg = null, string? tag = null)
+    {
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var url = cfg.WebUrl();
+        if (string.IsNullOrEmpty(url))
+            return false;
+        url += string.IsNullOrWhiteSpace(tag) ? "/releases" : "/releases/tag/" + tag.Trim();
+        CliUtil.OpenUrl(url);
+        return true;
+    }
+
+    public static async Task<string> CreateReleaseAsync(ProjectCatalog catalog, ReleaseRequest req, GithubConfig? cfg = null)
+    {
+        if (!GhAvailable())
+            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
+        if (!await IsGitRepoAsync(catalog.Root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+        var tag = (req.Tag ?? "").Trim();
+        if (!ReleaseVersion.IsValidTag(tag))
+            throw new InvalidOperationException("請填寫有效版號／Tag，例如 v1.2.3。");
+        if (ReleaseVersion.TryParse(tag, out var parsed))
+            tag = string.IsNullOrEmpty(parsed.Prefix) ? "v" + parsed.ToTag() : parsed.ToTag();
+
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var title = string.IsNullOrWhiteSpace(req.Title) ? tag : req.Title.Trim();
+        var args = new List<string> { "release", "create", tag, "--title", title };
+        if (!string.IsNullOrEmpty(cfg.Slug()))
+            args.AddRange(["--repo", cfg.Slug()]);
+        if (req.GenerateNotes)
+            args.Add("--generate-notes");
+        if (!string.IsNullOrWhiteSpace(req.Notes))
+            args.AddRange(["--notes", req.Notes.Trim()]);
+        else if (!req.GenerateNotes)
+            args.AddRange(["--notes", title]);
+        if (!string.IsNullOrWhiteSpace(req.Target))
+            args.AddRange(["--target", req.Target.Trim()]);
+        if (req.Draft)
+            args.Add("--draft");
+        if (req.Prerelease)
+            args.Add("--prerelease");
+        if (!req.Draft)
+            args.Add(req.MakeLatest && !req.Prerelease ? "--latest" : "--latest=false");
+        foreach (var asset in req.Assets ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(asset))
+                continue;
+            if (!File.Exists(asset))
+                throw new InvalidOperationException("找不到附加檔案：" + asset);
+            args.Add(asset);
+        }
+
+        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 300_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"建立 Release {tag} 失敗。" : output);
+        return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
+    }
+
+    private static async Task<IReadOnlyList<ReleaseItem>> ListReleaseItemsAsync(ProjectCatalog catalog, GithubConfig cfg, int limit)
+    {
+        var args = new List<string>
+        {
+            "release", "list", "--limit", limit.ToString(),
+            "--json", "tagName,name,isLatest,isDraft,isPrerelease,publishedAt",
+        };
+        if (!string.IsNullOrEmpty(cfg.Slug()))
+            args.AddRange(["--repo", cfg.Slug()]);
+        var (code, stdout, stderr) = await CliUtil.RunCaptureAsync("gh", args, catalog.Root, 60_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(stderr) ? (string.IsNullOrEmpty(stdout) ? "無法列出 Releases。" : stdout) : stderr);
+
+        if (string.IsNullOrWhiteSpace(stdout))
+            return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(stdout);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return [];
+            var list = new List<ReleaseItem>();
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                list.Add(new ReleaseItem(
+                    Tag: el.TryGetProperty("tagName", out var tag) ? tag.GetString() ?? "" : "",
+                    Name: el.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
+                    IsLatest: el.TryGetProperty("isLatest", out var latest) && latest.ValueKind == JsonValueKind.True,
+                    IsDraft: el.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True,
+                    IsPrerelease: el.TryGetProperty("isPrerelease", out var pre) && pre.ValueKind == JsonValueKind.True,
+                    PublishedAt: el.TryGetProperty("publishedAt", out var at) ? at.GetString() ?? "" : ""));
+            }
+            return list;
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException(string.IsNullOrEmpty(stdout) ? "無法解析 Release 列表。" : stdout);
+        }
+    }
+
+    private static async Task<string> TryLatestReleaseTagAsync(ProjectCatalog catalog, GithubConfig cfg)
+    {
+        if (!GhAvailable())
+            return "";
+        try
+        {
+            var items = await ListReleaseItemsAsync(catalog, cfg, 1).ConfigureAwait(false);
+            return items.FirstOrDefault()?.Tag ?? "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static async Task<string> LatestGitTagAsync(string root)
+    {
+        var (code, output) = await CliUtil.RunAsync("git", ["tag", "--list", "--sort=-v:refname"], root).ConfigureAwait(false);
+        if (code != 0 || string.IsNullOrEmpty(output))
+            return "";
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (ReleaseVersion.TryParse(line, out _))
+                return line;
+        }
+        return "";
+    }
+
+    private static string FormatReleaseLine(ReleaseItem item)
+    {
+        var flags = new List<string>();
+        if (item.IsLatest)
+            flags.Add("Latest");
+        if (item.IsDraft)
+            flags.Add("draft");
+        if (item.IsPrerelease)
+            flags.Add("pre");
+        var mark = flags.Count == 0 ? "" : "  [" + string.Join(", ", flags) + "]";
+        var title = string.IsNullOrEmpty(item.Name) || item.Name == item.Tag ? "" : "  " + item.Name;
+        var when = FormatPublishedAt(item.PublishedAt);
+        return $"{item.Tag}{title}{mark}{(string.IsNullOrEmpty(when) ? "" : "  " + when)}";
+    }
+
+    private static string FormatPublishedAt(string iso)
+    {
+        if (string.IsNullOrWhiteSpace(iso))
+            return "";
+        return DateTimeOffset.TryParse(iso, out var dt) ? dt.LocalDateTime.ToString("yyyy-MM-dd HH:mm") : iso;
+    }
+
+    private static string FirstLine(string text)
+    {
+        var t = (text ?? "").Trim();
+        var i = t.IndexOfAny(['\r', '\n']);
+        return i < 0 ? t : t[..i];
     }
 }

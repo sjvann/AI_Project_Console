@@ -72,6 +72,18 @@ public sealed class ConsoleSession : IDisposable
     public string CloneParent { get; set; } = "";
     public string CloneFolder { get; set; } = "";
     public string CloneBranch { get; set; } = "";
+    public string ReleaseTag { get; set; } = "";
+    public string ReleaseTitle { get; set; } = "";
+    public string ReleaseNotes { get; set; } = "";
+    public string ReleaseTarget { get; set; } = "";
+    public string ReleaseHint { get; private set; } = "";
+    public string ReleaseLatestTag { get; private set; } = "";
+    public string ReleaseBasisTag { get; private set; } = "";
+    public bool ReleaseDraft { get; set; }
+    public bool ReleasePrerelease { get; set; }
+    public bool ReleaseGenerateNotes { get; set; } = true;
+    public bool ReleaseMakeLatest { get; set; } = true;
+    public List<string> ReleaseAssets { get; } = [];
 
     public IReadOnlyList<ConsoleAction> BuildActions => ActionCatalog.Load("build");
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
@@ -342,6 +354,16 @@ public sealed class ConsoleSession : IDisposable
             case "github_actions":
                 await RunJobAsync("Actions…", async () => await GitHubService.WatchActionsAsync(Catalog!)).ConfigureAwait(false);
                 return;
+            case "github_release":
+                await OpenReleaseDialogAsync().ConfigureAwait(false);
+                return;
+            case "github_releases":
+                await RunJobAsync("Release 列表…", async () => await GitHubService.ListReleasesAsync(Catalog!)).ConfigureAwait(false);
+                return;
+            case "github_open_releases":
+                if (Catalog is null || !await GitHubService.OpenReleasesAsync(Catalog).ConfigureAwait(false))
+                    _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo）。");
+                return;
             case "build_stale":
             case "build_services":
             case "build_projects":
@@ -433,6 +455,79 @@ public sealed class ConsoleSession : IDisposable
         }).ConfigureAwait(false);
         if (!string.IsNullOrEmpty(opened) && Directory.Exists(opened))
             await LoadProjectAsync(opened, OpenWithCursor).ConfigureAwait(false);
+    }
+
+    public void BumpRelease(string part)
+    {
+        SemVer source;
+        if (ReleaseVersion.TryParse(ReleaseLatestTag, out var published))
+            source = published;
+        else if (ReleaseVersion.TryParse(ReleaseTag, out var current))
+            source = current;
+        else
+            source = new SemVer(0, 1, 0, "", "v");
+        if (string.IsNullOrEmpty(source.Prefix))
+            source = source with { Prefix = "v" };
+        var next = ReleaseVersion.Bump(source, part).ToTag();
+        if (string.IsNullOrWhiteSpace(ReleaseTitle) || ReleaseTitle == ReleaseTag)
+            ReleaseTitle = next;
+        ReleaseTag = next;
+        Notify();
+    }
+
+    public async Task AddReleaseAssetAsync()
+    {
+        var files = await _native.PickFilesAsync(
+            "選擇 Release 附件",
+            ("安裝包／壓縮檔", [".zip", ".exe", ".msi", ".nupkg", ".tar", ".gz", ".7z"]),
+            ("所有檔案", ["*"])).ConfigureAwait(false);
+        if (files is null)
+            return;
+        foreach (var f in files)
+        {
+            if (!ReleaseAssets.Contains(f))
+                ReleaseAssets.Add(f);
+        }
+        Notify();
+    }
+
+    public void RemoveReleaseAsset(string path)
+    {
+        ReleaseAssets.Remove(path);
+        Notify();
+    }
+
+    public async Task ConfirmReleaseAsync()
+    {
+        if (Catalog is null)
+            return;
+        var tag = ReleaseTag.Trim();
+        if (!ReleaseVersion.IsValidTag(tag))
+        {
+            _native.Warn("版號無效", "請填寫版號／Tag，例如 v1.2.3（不可含空白）。");
+            return;
+        }
+        if (!GitHubService.GhAvailable())
+        {
+            _native.Error("需要 GitHub CLI", "請安裝 gh：https://cli.github.com/ 並執行 gh auth login。");
+            return;
+        }
+        var title = string.IsNullOrWhiteSpace(ReleaseTitle) ? tag : ReleaseTitle.Trim();
+        var kind = ReleaseDraft ? "草稿" : ReleasePrerelease ? "預發行" : "正式發行";
+        if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}\n\n確定發行？"))
+            return;
+        var req = new ReleaseRequest(
+            Tag: tag,
+            Title: title,
+            Notes: ReleaseNotes,
+            Target: ReleaseTarget,
+            Draft: ReleaseDraft,
+            Prerelease: ReleasePrerelease,
+            GenerateNotes: ReleaseGenerateNotes,
+            MakeLatest: ReleaseMakeLatest,
+            Assets: [.. ReleaseAssets]);
+        CloseDialog();
+        await RunJobAsync("發行 Release…", async () => await GitHubService.CreateReleaseAsync(Catalog, req)).ConfigureAwait(false);
     }
 
     public void OpenGithubDialog()
@@ -680,6 +775,38 @@ public sealed class ConsoleSession : IDisposable
     }
 
     private Task EditGithubAsync() => OpenGithubDialogAsync();
+
+    private async Task OpenReleaseDialogAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (!GitHubService.GhAvailable())
+        {
+            _native.Error("需要 GitHub CLI", "發行 Release 需要 gh。請安裝：https://cli.github.com/ 並執行 gh auth login。");
+            return;
+        }
+        ReleaseInspect? inspect = null;
+        await RunJobAsync("讀取 Release…", async () =>
+        {
+            inspect = await GitHubService.InspectReleaseAsync(Catalog!).ConfigureAwait(false);
+            return (string?)null;
+        }).ConfigureAwait(false);
+        if (inspect is null)
+            return;
+        ReleaseTag = inspect.SuggestedTag;
+        ReleaseTitle = inspect.SuggestedTag;
+        ReleaseNotes = "";
+        ReleaseTarget = inspect.CurrentBranch;
+        ReleaseDraft = false;
+        ReleasePrerelease = false;
+        ReleaseGenerateNotes = true;
+        ReleaseMakeLatest = true;
+        ReleaseAssets.Clear();
+        ReleaseHint = inspect.Summary;
+        ReleaseLatestTag = inspect.LatestGithubTag;
+        Dialog = "release";
+        Notify();
+    }
 
     private async Task RunBuildActionAsync(string handler)
     {

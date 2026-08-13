@@ -62,18 +62,21 @@ button:disabled { opacity: .45; cursor: default; }
 .log { background: var(--log-bg); color: var(--log-fg); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; white-space: pre; overflow: auto; flex: 1; margin: 0 8px 8px; padding: 10px; border-radius: 3px; min-height: 0; }
 .foot { color: var(--muted); font-size: 12px; }
 .menu { position: relative; display: inline-block; }
-.menu-list { display: none; position: absolute; top: 100%; left: 0; z-index: 20; background: var(--panel); border: 1px solid var(--border); min-width: 180px; padding: 4px 0; }
+.menu-list { display: none; position: absolute; top: 100%; left: 0; z-index: 20; background: var(--panel); border: 1px solid var(--border); min-width: 200px; padding: 4px 0; }
 .menu.open .menu-list { display: block; }
 .menu-list button { display: block; width: 100%; text-align: left; background: none; border: none; font-weight: 600; padding: 8px 12px; }
 .menu-list button:hover { background: var(--sel); }
 .overlay { position: fixed; inset: 0; background: rgba(28, 36, 48, .35); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .dialog { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 18px; width: min(520px, 92vw); max-height: 88vh; overflow: auto; }
+.dialog-lg { width: min(640px, 94vw); }
 .dialog h2 { margin: 0 0 10px; font-size: 16px; }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
 .field-inline { display: flex; gap: 8px; align-items: center; }
 .field-inline input { flex: 1; min-width: 0; }
 .field input, .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 .field textarea { min-height: 90px; }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.prewrap { white-space: pre-wrap; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 select.history { max-width: 360px; padding: 6px 8px; }
 label.check { display: flex; align-items: center; gap: 6px; color: var(--muted); }

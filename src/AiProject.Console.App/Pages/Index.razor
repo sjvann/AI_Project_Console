@@ -193,7 +193,7 @@
     <div class="overlay" @onclick="S.CloseDialog">
         <div class="dialog" @onclick:stopPropagation="true">
             <h2>GitHub 設定</h2>
-            <p class="hint">設定遠端倉庫後可同步（pull）與發布（push）。可從 git remote 預填。</p>
+            <p class="hint">設定遠端倉庫後可同步（pull）、發布（push）與發行 Release。可從 git remote 預填。</p>
             <div class="field"><span>Owner</span><input @bind="S.GithubDraft.Owner" /></div>
             <div class="field"><span>Repository</span><input @bind="S.GithubDraft.Repo" /></div>
             <div class="field"><span>Remote 名稱</span><input @bind="S.GithubDraft.Remote" /></div>
@@ -205,6 +205,52 @@
             <div class="dialog-actions">
                 <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
                 <button class="btn-primary" @onclick="S.SaveGithubAsync">儲存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "release")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog dialog-lg" @onclick:stopPropagation="true">
+            <h2>發行 GitHub Release</h2>
+            <p class="hint prewrap">@S.ReleaseHint</p>
+            <div class="field">
+                <span>版號／Tag</span>
+                <div>
+                    <input @bind="S.ReleaseTag" placeholder="v1.2.3" />
+                    <div class="btn-row">
+                        <button class="btn-sec" @onclick="@(() => S.BumpRelease("major"))">Major</button>
+                        <button class="btn-sec" @onclick="@(() => S.BumpRelease("minor"))">Minor</button>
+                        <button class="btn-sec" @onclick="@(() => S.BumpRelease("patch"))">Patch</button>
+                    </div>
+                </div>
+            </div>
+            <div class="field"><span>標題</span><input @bind="S.ReleaseTitle" placeholder="空白則使用版號" /></div>
+            <div class="field"><span>說明</span><textarea @bind="S.ReleaseNotes" placeholder="選填。勾選自動產生時，會作為補充說明加在前面。"></textarea></div>
+            <div class="field"><span>目標</span><input @bind="S.ReleaseTarget" placeholder="分支或 SHA，空白＝目前 HEAD" /></div>
+            <label class="check"><input type="checkbox" checked="@S.ReleaseGenerateNotes" @onchange="e => S.ReleaseGenerateNotes = (bool)(e.Value ?? false)" /> 由 GitHub 依提交／PR 自動產生說明</label>
+            <label class="check"><input type="checkbox" checked="@S.ReleaseDraft" @onchange="e => S.ReleaseDraft = (bool)(e.Value ?? false)" /> 草稿（draft，先不公開）</label>
+            <label class="check"><input type="checkbox" checked="@S.ReleasePrerelease" @onchange="e => S.ReleasePrerelease = (bool)(e.Value ?? false)" /> 預發行（prerelease，例如 beta／rc）</label>
+            <label class="check"><input type="checkbox" checked="@S.ReleaseMakeLatest" @onchange="e => S.ReleaseMakeLatest = (bool)(e.Value ?? false)" /> 標為 Latest（正式發行時）</label>
+            <div class="field" style="align-items:start">
+                <span>附加檔案</span>
+                <div>
+                    @if (S.ReleaseAssets.Count == 0)
+                    {
+                        <p class="hint">選填。可附加安裝包、zip 等資產。</p>
+                    }
+                    @foreach (var f in S.ReleaseAssets)
+                    {
+                        <div class="row"><span class="grow hint">@f</span><button class="btn-link" @onclick="@(() => S.RemoveReleaseAsset(f))">移除</button></div>
+                    }
+                    <button class="btn-sec" @onclick="S.AddReleaseAssetAsync">加入檔案…</button>
+                </div>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ConfirmReleaseAsync">發行</button>
             </div>
         </div>
     </div>

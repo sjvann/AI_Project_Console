@@ -39,6 +39,75 @@ public class CatalogTests
         Assert.Equal("", GitHubService.NormalizeCloneUrl("not-a-repo"));
     }
 
+    [Theory]
+    [InlineData("v1.2.3", 1, 2, 3, "", "v")]
+    [InlineData("1.2.3", 1, 2, 3, "", "")]
+    [InlineData("v2.0", 2, 0, 0, "", "v")]
+    [InlineData("1.4.0-rc.1", 1, 4, 0, "rc.1", "")]
+    [InlineData("v0.3.1-beta.2", 0, 3, 1, "beta.2", "v")]
+    public void ReleaseVersion_ParsesSemVer(string text, int maj, int min, int pat, string pre, string prefix)
+    {
+        Assert.True(ReleaseVersion.TryParse(text, out var ver));
+        Assert.Equal(maj, ver.Major);
+        Assert.Equal(min, ver.Minor);
+        Assert.Equal(pat, ver.Patch);
+        Assert.Equal(pre, ver.PreRelease);
+        Assert.Equal(prefix, ver.Prefix);
+    }
+
+    [Fact]
+    public void ReleaseVersion_BumpsAndSuggests()
+    {
+        Assert.True(ReleaseVersion.TryParse("v1.2.3", out var stable));
+        Assert.Equal("v1.2.4", ReleaseVersion.Bump(stable, "patch").ToTag());
+        Assert.Equal("v1.3.0", ReleaseVersion.Bump(stable, "minor").ToTag());
+        Assert.Equal("v2.0.0", ReleaseVersion.Bump(stable, "major").ToTag());
+
+        Assert.True(ReleaseVersion.TryParse("v1.2.3-rc.1", out var pre));
+        Assert.Equal("v1.2.3", ReleaseVersion.Bump(pre, "patch").ToTag());
+        Assert.Equal("v1.3.0", ReleaseVersion.Bump(pre, "minor").ToTag());
+
+        Assert.Equal("v1.2.4", ReleaseVersion.SuggestNext("v1.2.3"));
+        Assert.Equal("v0.1.0", ReleaseVersion.SuggestNext(""));
+        Assert.Equal("v1.2.3", ReleaseVersion.NormalizeTag("1.2.3"));
+        Assert.Equal("v1.2.3", ReleaseVersion.NormalizeTag("v1.2.3"));
+        Assert.True(ReleaseVersion.IsValidTag("v1.2.3"));
+        Assert.False(ReleaseVersion.IsValidTag("v1 2 3"));
+        Assert.False(ReleaseVersion.IsValidTag(""));
+    }
+
+    [Fact]
+    public void ReleaseVersion_SuggestTag_PrefersGithubThenExisting()
+    {
+        Assert.Equal("v0.3.2", ReleaseVersion.SuggestTag("v0.3.1", "v0.3.1", "0.3.1"));
+        Assert.Equal("v0.3.1", ReleaseVersion.SuggestTag("", "v0.3.1", "0.2.0"));
+        Assert.Equal("v0.2.0", ReleaseVersion.SuggestTag("", "", "0.2.0"));
+        Assert.Equal("v0.1.0", ReleaseVersion.SuggestTag("", "", ""));
+    }
+
+    [Fact]
+    public void ReleaseVersion_DetectsFromProjectFiles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-ver-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "src"));
+            File.WriteAllText(Path.Combine(root, "src", "App.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+                <Version>1.4.2</Version>
+              </PropertyGroup>
+            </Project>
+            """);
+            Assert.Equal("1.4.2", ReleaseVersion.DetectProjectVersion(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void JsonUtil_SaveObject_DoesNotRequireExternalTypeInfoResolver()
     {

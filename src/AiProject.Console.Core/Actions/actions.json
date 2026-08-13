@@ -64,6 +64,30 @@
       "confirm": "將 push 目前分支到 remote。確定？"
     },
     {
+      "id": "github_release",
+      "label": "發行 Release…",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_release",
+      "requiresGithub": true
+    },
+    {
+      "id": "github_releases",
+      "label": "Release 列表",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_releases",
+      "requiresGithub": true
+    },
+    {
+      "id": "github_open_releases",
+      "label": "開啟 Releases",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_open_releases",
+      "requiresGithub": true
+    },
+    {
       "id": "github_open",
       "label": "開啟倉庫",
       "group": "github",

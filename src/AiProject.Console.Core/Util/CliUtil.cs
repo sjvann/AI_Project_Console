@@ -37,6 +37,18 @@ public static class CliUtil
         int timeoutMs = 120_000,
         CancellationToken ct = default)
     {
+        var (code, stdout, stderr) = await RunCaptureAsync(fileName, args, cwd, timeoutMs, ct).ConfigureAwait(false);
+        var output = string.Join('\n', new[] { stdout, stderr }.Where(s => !string.IsNullOrEmpty(s))).Trim();
+        return (code, output);
+    }
+
+    public static async Task<(int Code, string StdOut, string StdErr)> RunCaptureAsync(
+        string fileName,
+        IEnumerable<string> args,
+        string? cwd = null,
+        int timeoutMs = 120_000,
+        CancellationToken ct = default)
+    {
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
@@ -54,9 +66,10 @@ public static class CliUtil
         try
         {
             using var proc = new Process { StartInfo = psi };
-            var sb = new StringBuilder();
-            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) sb.AppendLine(e.Data); };
-            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) sb.AppendLine(e.Data); };
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
+            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
             proc.Start();
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
@@ -69,13 +82,14 @@ public static class CliUtil
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
                 try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                return (1, sb.ToString().Trim() + "\n（逾時）");
+                stderr.AppendLine("（逾時）");
+                return (1, stdout.ToString().Trim(), stderr.ToString().Trim());
             }
-            return (proc.ExitCode, sb.ToString().Trim());
+            return (proc.ExitCode, stdout.ToString().Trim(), stderr.ToString().Trim());
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException)
         {
-            return (1, ex.Message);
+            return (1, "", ex.Message);
         }
     }
 
