@@ -99,6 +99,34 @@ public static class ConsoleSettingsStore
         data["lastCloneParent"] = Path.GetFullPath(path);
         Save(data);
     }
+
+    public static bool ShouldAutoCheckUpdate(TimeSpan minInterval)
+    {
+        var raw = JsonUtil.Str(Load()["updateLastCheckUtc"]);
+        if (!DateTimeOffset.TryParse(raw, out var last))
+            return true;
+        return DateTimeOffset.UtcNow - last >= minInterval;
+    }
+
+    public static void MarkUpdateChecked()
+    {
+        var data = Load();
+        data["updateLastCheckUtc"] = DateTimeOffset.UtcNow.ToString("o");
+        Save(data);
+    }
+
+    public static string SkippedUpdateTag() => JsonUtil.Str(Load()["skippedUpdateTag"]);
+
+    public static void SetSkippedUpdateTag(string? tag)
+    {
+        var data = Load();
+        var t = (tag ?? "").Trim();
+        if (string.IsNullOrEmpty(t))
+            data.Remove("skippedUpdateTag");
+        else
+            data["skippedUpdateTag"] = t;
+        Save(data);
+    }
 }
 
 public sealed class ProjectRuntime

@@ -4,6 +4,7 @@ using System.Text;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Cursor;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.ProcessOps;
@@ -300,7 +301,7 @@ public static class ProcessSupervisor
             "AI_Project 環境體檢",
             "",
             $".NET: {Environment.Version}",
-            $"控制台: {AppInfo.Version}",
+            $"控制台: {AppInfo.Version}（{SelfUpdate.DetectInstallKind()}）",
             $"dotnet: {(CliUtil.CommandExists("dotnet") ? "OK" : "缺少")}",
             $"git: {(CliUtil.CommandExists("git") ? "OK" : "缺少")}",
             $"gh: {(CliUtil.CommandExists("gh") ? "OK" : "缺少（GitHub CLI，選用）")}",

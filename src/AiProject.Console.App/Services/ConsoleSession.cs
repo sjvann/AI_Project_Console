@@ -8,6 +8,7 @@ using AiProject.Console.Core.Deploy;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 using Microsoft.JSInterop;
 using Photino.NET;
@@ -25,6 +26,7 @@ public sealed class ConsoleSession : IDisposable
         _native = native;
         OpenWithCursor = ConsoleSettingsStore.GetOpenWithCursor();
         _ = PollLoopAsync();
+        _ = CheckUpdateOnStartAsync();
     }
 
     public IJSRuntime? Js { get; set; }
@@ -84,6 +86,7 @@ public sealed class ConsoleSession : IDisposable
     public bool ReleaseGenerateNotes { get; set; } = true;
     public bool ReleaseMakeLatest { get; set; } = true;
     public List<string> ReleaseAssets { get; } = [];
+    public AvailableUpdate? UpdateAvailable { get; private set; }
 
     public IReadOnlyList<ConsoleAction> BuildActions => ActionCatalog.Load("build");
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
@@ -283,6 +286,124 @@ public sealed class ConsoleSession : IDisposable
 
     public void Doctor() => _native.Info("環境體檢", ProcessSupervisor.DoctorReport(Catalog));
 
+    public Task CheckUpdateAsync() =>
+        RunJobAsync("檢查更新…", async () =>
+        {
+            var update = await SelfUpdate.CheckLatestAsync(_cts.Token).ConfigureAwait(false);
+            ConsoleSettingsStore.MarkUpdateChecked();
+            if (update is null)
+            {
+                UpdateAvailable = null;
+                return $"目前已是最新版本 v{AppInfo.Version}。";
+            }
+            UpdateAvailable = update;
+            Notify();
+            return $"發現新版本 {update.Tag}（目前 v{AppInfo.Version}）。可按「立即更新」下載並安裝。";
+        });
+
+    public void DismissUpdate()
+    {
+        if (UpdateAvailable is not null)
+            ConsoleSettingsStore.SetSkippedUpdateTag(UpdateAvailable.Tag);
+        UpdateAvailable = null;
+        Notify();
+    }
+
+    public void OpenUpdatePage()
+    {
+        SelfUpdate.OpenReleases(UpdateAvailable?.HtmlUrl);
+    }
+
+    public async Task ApplyUpdateAsync()
+    {
+        var update = UpdateAvailable;
+        if (update is null)
+        {
+            await CheckUpdateAsync().ConfigureAwait(false);
+            update = UpdateAvailable;
+            if (update is null)
+                return;
+        }
+
+        var kind = SelfUpdate.DetectInstallKind();
+        var mode = SelfUpdate.ResolveApplyMode(update, kind);
+        if (mode is UpdateApplyMode.None or UpdateApplyMode.OpenReleases)
+        {
+            SelfUpdate.OpenReleases(update.HtmlUrl);
+            _native.Info("無法自動覆蓋", SelfUpdate.DevelopmentHint(update));
+            return;
+        }
+
+        var asset = mode == UpdateApplyMode.Installer ? update.SetupAsset : update.ZipAsset;
+        if (asset is null)
+        {
+            SelfUpdate.OpenReleases(update.HtmlUrl);
+            _native.Info("找不到安裝包", $"Release {update.Tag} 沒有適用於 {SelfUpdate.RuntimeId()} 的安裝檔。請從 Releases 頁手動下載。");
+            return;
+        }
+
+        if (!_native.Confirm(
+            "更新控制台",
+            $"將下載並安裝 {update.Tag}（目前 v{AppInfo.Version}）。\n控制台會關閉以便覆蓋檔案。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            return;
+
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return;
+        }
+
+        JobBusy = true;
+        JobText = "下載更新…";
+        Notify();
+        try
+        {
+            var progress = new Progress<string>(text =>
+            {
+                JobText = text;
+                Notify();
+            });
+            var downloaded = await SelfUpdate.DownloadAssetAsync(update, asset, progress, _cts.Token).ConfigureAwait(false);
+            JobText = "套用更新…";
+            Notify();
+            SelfUpdate.LaunchApply(downloaded, mode);
+            _native.Close();
+        }
+        catch (Exception ex)
+        {
+            JobBusy = false;
+            JobText = "錯誤";
+            Notify();
+            _native.Error("更新失敗", ex.Message);
+        }
+    }
+
+    private async Task CheckUpdateOnStartAsync()
+    {
+        try
+        {
+            await Task.Delay(1500, _cts.Token).ConfigureAwait(false);
+            if (!ConsoleSettingsStore.ShouldAutoCheckUpdate(TimeSpan.FromHours(6)))
+                return;
+            var update = await SelfUpdate.CheckLatestAsync(_cts.Token).ConfigureAwait(false);
+            ConsoleSettingsStore.MarkUpdateChecked();
+            if (update is null)
+                return;
+            if (string.Equals(ConsoleSettingsStore.SkippedUpdateTag(), update.Tag, StringComparison.OrdinalIgnoreCase))
+                return;
+            UpdateAvailable = update;
+            Notify();
+        }
+        catch (OperationCanceledException)
+        {
+            // shutdown
+        }
+        catch
+        {
+            // 背景檢查失敗不打擾使用者
+        }
+    }
+
     public async Task OnActionAsync(ConsoleAction action)
     {
         var handler = action.Handler;
@@ -363,6 +484,9 @@ public sealed class ConsoleSession : IDisposable
             case "github_open_releases":
                 if (Catalog is null || !await GitHubService.OpenReleasesAsync(Catalog).ConfigureAwait(false))
                     _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo）。");
+                return;
+            case "console_check_update":
+                await CheckUpdateAsync().ConfigureAwait(false);
                 return;
             case "build_stale":
             case "build_services":

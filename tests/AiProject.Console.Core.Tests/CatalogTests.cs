@@ -74,6 +74,11 @@ public class CatalogTests
         Assert.True(ReleaseVersion.IsValidTag("v1.2.3"));
         Assert.False(ReleaseVersion.IsValidTag("v1 2 3"));
         Assert.False(ReleaseVersion.IsValidTag(""));
+        Assert.True(ReleaseVersion.IsNewer("v0.3.3", "0.3.2"));
+        Assert.False(ReleaseVersion.IsNewer("v0.3.2", "0.3.2"));
+        Assert.False(ReleaseVersion.IsNewer("v0.3.1", "0.3.2"));
+        Assert.True(ReleaseVersion.IsNewer("1.0.0", "1.0.0-rc.1"));
+        Assert.False(ReleaseVersion.IsNewer("1.0.0-rc.1", "1.0.0"));
     }
 
     [Fact]

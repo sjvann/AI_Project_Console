@@ -1,0 +1,353 @@
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using AiProject.Console.Core.GitHub;
+using AiProject.Console.Core.Util;
+
+namespace AiProject.Console.Core.Update;
+
+public enum InstallKind
+{
+    Development,
+    Installed,
+    Portable,
+}
+
+public enum UpdateApplyMode
+{
+    None,
+    Installer,
+    PortableZip,
+    OpenReleases,
+}
+
+public sealed record ReleaseAsset(string Name, string Url, long Size);
+
+public sealed record AvailableUpdate(
+    string Tag,
+    string Title,
+    string HtmlUrl,
+    ReleaseAsset? SetupAsset,
+    ReleaseAsset? ZipAsset);
+
+public static class SelfUpdate
+{
+    private static readonly HttpClient Http = CreateClient();
+
+    public static string RuntimeId()
+    {
+        if (OperatingSystem.IsWindows())
+            return "win-x64";
+        if (OperatingSystem.IsMacOS())
+            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
+    }
+
+    public static InstallKind DetectInstallKind(string? baseDir = null)
+    {
+        var dir = Path.GetFullPath(baseDir ?? AppContext.BaseDirectory);
+        var parts = dir.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            if (!parts[i].Equals("bin", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (parts[i + 1].Equals("Debug", StringComparison.OrdinalIgnoreCase)
+                || parts[i + 1].Equals("Release", StringComparison.OrdinalIgnoreCase))
+                return InstallKind.Development;
+        }
+
+        var cur = new DirectoryInfo(dir);
+        for (var i = 0; i < 6 && cur is not null; i++, cur = cur.Parent)
+        {
+            if (File.Exists(Path.Combine(cur.FullName, "AiProject.Console.App.csproj")))
+                return InstallKind.Development;
+        }
+
+        try
+        {
+            if (Directory.GetFiles(dir, "unins*.exe").Length > 0)
+                return InstallKind.Installed;
+        }
+        catch (IOException)
+        {
+            // ignore
+        }
+
+        return InstallKind.Portable;
+    }
+
+    public static UpdateApplyMode ResolveApplyMode(AvailableUpdate update, InstallKind kind)
+    {
+        if (kind == InstallKind.Development)
+            return UpdateApplyMode.OpenReleases;
+        if (kind == InstallKind.Installed && update.SetupAsset is not null)
+            return UpdateApplyMode.Installer;
+        if (update.ZipAsset is not null)
+            return UpdateApplyMode.PortableZip;
+        if (update.SetupAsset is not null)
+            return UpdateApplyMode.Installer;
+        return UpdateApplyMode.OpenReleases;
+    }
+
+    public static AvailableUpdate? ParseLatest(string json, string currentVersion, string? runtimeId = null)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            return null;
+        if (root.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String)
+        {
+            var text = msg.GetString() ?? "";
+            if (!string.IsNullOrEmpty(text) && !root.TryGetProperty("tag_name", out _))
+                throw new InvalidOperationException("GitHub API：" + text);
+        }
+
+        var tag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(tag) || !ReleaseVersion.IsNewer(tag, currentVersion))
+            return null;
+
+        var title = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
+        var html = root.TryGetProperty("html_url", out var htmlEl) ? htmlEl.GetString() ?? "" : "";
+        var rid = string.IsNullOrWhiteSpace(runtimeId) ? RuntimeId() : runtimeId;
+        ReleaseAsset? setup = null;
+        ReleaseAsset? zip = null;
+        if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var el in assets.EnumerateArray())
+            {
+                var asset = ReadAsset(el);
+                if (asset is null)
+                    continue;
+                if (IsSetupAsset(asset.Name, rid))
+                    setup = asset;
+                else if (IsZipAsset(asset.Name, rid))
+                    zip = asset;
+            }
+        }
+
+        return new AvailableUpdate(
+            Tag: tag,
+            Title: string.IsNullOrWhiteSpace(title) ? tag : title,
+            HtmlUrl: string.IsNullOrWhiteSpace(html) ? AppInfo.ReleasesUrl : html,
+            SetupAsset: setup,
+            ZipAsset: zip);
+    }
+
+    public static async Task<AvailableUpdate?> CheckLatestAsync(CancellationToken ct = default)
+    {
+        var body = await FetchLatestJsonAsync(ct).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(body) ? null : ParseLatest(body, AppInfo.Version);
+    }
+
+    public static async Task<string> DownloadAssetAsync(
+        AvailableUpdate update,
+        ReleaseAsset asset,
+        IProgress<string>? progress = null,
+        CancellationToken ct = default)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(dir);
+        var dest = Path.Combine(dir, Path.GetFileName(asset.Name));
+        if (File.Exists(dest))
+            File.Delete(dest);
+
+        if (CliUtil.CommandExists("gh"))
+        {
+            progress?.Report("下載更新（gh）…");
+            var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
+                "gh",
+                [
+                    "release", "download", update.Tag,
+                    "--repo", AppInfo.GitHubSlug,
+                    "--pattern", asset.Name,
+                    "--dir", dir,
+                    "--clobber",
+                ],
+                timeoutMs: 600_000,
+                ct: ct).ConfigureAwait(false);
+            if (code != 0 || !File.Exists(dest))
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
+                    ? (string.IsNullOrWhiteSpace(stdout) ? "gh 下載 Release 失敗。" : stdout)
+                    : stderr);
+            return dest;
+        }
+
+        progress?.Report("下載更新…");
+        using var req = new HttpRequestMessage(HttpMethod.Get, asset.Url);
+        req.Headers.Accept.Clear();
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+        AttachToken(req);
+        using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            throw new InvalidOperationException("無法下載安裝包。倉庫若為私人，請先安裝並登入 GitHub CLI（gh auth login）。");
+        resp.EnsureSuccessStatusCode();
+        var total = resp.Content.Headers.ContentLength ?? (asset.Size > 0 ? asset.Size : 0);
+        await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        await using var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, 81_920, useAsync: true);
+        var buffer = new byte[81_920];
+        long copied = 0;
+        int read;
+        while ((read = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        {
+            await dst.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+            copied += read;
+            if (progress is null)
+                continue;
+            progress.Report(total > 0
+                ? $"下載更新 {copied / 1_048_576.0:0.0} / {total / 1_048_576.0:0.0} MB"
+                : $"下載更新 {copied / 1_048_576.0:0.0} MB");
+        }
+        return dest;
+    }
+
+    public static string LaunchApply(string downloadedPath, UpdateApplyMode mode, string? installDir = null)
+    {
+        var target = Path.GetFullPath(installDir ?? AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (mode == UpdateApplyMode.Installer)
+        {
+            var args = "/SILENT /CLOSEAPPLICATIONS /NORESTART /SUPPRESSMSGBOXES /DIR=\"" + target + "\"";
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = downloadedPath,
+                Arguments = args,
+                UseShellExecute = true,
+            });
+            return "已啟動安裝程式，控制台即將關閉。";
+        }
+
+        if (mode != UpdateApplyMode.PortableZip)
+            throw new InvalidOperationException("此執行方式無法自動覆蓋，請改從 GitHub Releases 下載。");
+
+        var extractDir = Path.Combine(Path.GetDirectoryName(downloadedPath)!, "extract-" + Guid.NewGuid().ToString("N")[..8]);
+        if (Directory.Exists(extractDir))
+            Directory.Delete(extractDir, recursive: true);
+        ZipFile.ExtractToDirectory(downloadedPath, extractDir);
+        var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : "AI_Project_Console");
+        var script = WriteSwapScript(extractDir, target, Environment.ProcessId, exe);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = OperatingSystem.IsWindows() ? "powershell" : "/bin/bash",
+            Arguments = OperatingSystem.IsWindows()
+                ? "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\""
+                : "\"" + script + "\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        });
+        return "已準備覆蓋檔案，控制台即將關閉並重開。";
+    }
+
+    public static void OpenReleases(string? htmlUrl = null) =>
+        CliUtil.OpenUrl(string.IsNullOrWhiteSpace(htmlUrl) ? AppInfo.ReleasesUrl : htmlUrl);
+
+    public static string DevelopmentHint(AvailableUpdate update) =>
+        $"發現新版本 {update.Tag}（目前 v{AppInfo.Version}）。\n\n目前是從原始碼／開發目錄執行，無法直接覆蓋。\n請 git pull 後重新編譯，或從 Releases 下載安裝包：\n{update.HtmlUrl}";
+
+    public static bool IsSetupAsset(string name, string runtimeId) =>
+        name.Contains(runtimeId, StringComparison.OrdinalIgnoreCase)
+        && name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsZipAsset(string name, string runtimeId) =>
+        name.Contains(runtimeId, StringComparison.OrdinalIgnoreCase)
+        && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+        && !name.Contains("-setup", StringComparison.OrdinalIgnoreCase);
+
+    private static ReleaseAsset? ReadAsset(JsonElement el)
+    {
+        var name = el.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+        var url = el.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(url))
+            return null;
+        var size = el.TryGetProperty("size", out var s) && s.TryGetInt64(out var n64) ? n64 : 0;
+        return new ReleaseAsset(name, url, size);
+    }
+
+    private static string WriteSwapScript(string extractDir, string targetDir, int pid, string exePath)
+    {
+        var script = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", "apply.ps1");
+        Directory.CreateDirectory(Path.GetDirectoryName(script)!);
+        var src = PsQuote(extractDir);
+        var dst = PsQuote(targetDir);
+        var exe = PsQuote(exePath);
+        File.WriteAllText(script,
+            "$ErrorActionPreference = 'Stop'\r\n" +
+            "while (Get-Process -Id " + pid + " -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }\r\n" +
+            "Start-Sleep -Seconds 1\r\n" +
+            "Copy-Item -Path (Join-Path " + src + " '*') -Destination " + dst + " -Recurse -Force\r\n" +
+            "Start-Process -FilePath " + exe + "\r\n");
+        return script;
+    }
+
+    private static string PsQuote(string path) => "'" + path.Replace("'", "''") + "'";
+
+    private static async Task<string?> FetchLatestJsonAsync(CancellationToken ct)
+    {
+        if (CliUtil.CommandExists("gh"))
+        {
+            var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
+                "gh",
+                ["api", $"repos/{AppInfo.GitHubSlug}/releases/latest"],
+                timeoutMs: 30_000,
+                ct: ct).ConfigureAwait(false);
+            if (code != 0)
+            {
+                var err = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+                if (LooksLikeNotFound(err))
+                    return null;
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(err)
+                    ? "無法查詢 GitHub Releases。"
+                    : FirstLine(err));
+            }
+            return stdout;
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Get, AppInfo.LatestReleaseApiUrl);
+        AttachToken(req);
+        using var resp = await Http.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            if (string.IsNullOrEmpty(GithubToken()))
+                throw new InvalidOperationException(
+                    "無法讀取 GitHub Releases（倉庫可能為私人）。請安裝 GitHub CLI 並執行 gh auth login。");
+            return null;
+        }
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(body)
+                ? $"無法查詢 GitHub Releases（HTTP {(int)resp.StatusCode}）。"
+                : FirstLine(body));
+        return body;
+    }
+
+    private static void AttachToken(HttpRequestMessage req)
+    {
+        var token = GithubToken();
+        if (!string.IsNullOrEmpty(token))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }
+
+    private static string GithubToken() =>
+        JsonUtil.Pick(Environment.GetEnvironmentVariable("GH_TOKEN"), Environment.GetEnvironmentVariable("GITHUB_TOKEN"));
+
+    private static bool LooksLikeNotFound(string text) =>
+        text.Contains("Not Found", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("HTTP 404", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("\"status\": \"404\"", StringComparison.OrdinalIgnoreCase);
+
+    private static string FirstLine(string text)
+    {
+        var t = (text ?? "").Trim();
+        var i = t.IndexOfAny(['\r', '\n']);
+        return i < 0 ? t : t[..i];
+    }
+
+    private static HttpClient CreateClient()
+    {
+        var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppInfo.SettingsDirName}/{AppInfo.Version}");
+        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        return http;
+    }
+}

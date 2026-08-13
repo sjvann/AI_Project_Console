@@ -112,6 +112,13 @@
       "requiresGithub": true
     },
     {
+      "id": "console_check_update",
+      "label": "檢查控制台更新",
+      "group": "github",
+      "kind": "internal",
+      "handler": "console_check_update"
+    },
+    {
       "id": "deploy_settings",
       "label": "部署設定…",
       "group": "deploy",

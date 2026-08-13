@@ -40,6 +40,29 @@ public static class ReleaseVersion
         "bin", "obj", "node_modules", ".git", ".ai_project", "dist", "publish", ".vs",
     };
 
+    public static int Compare(SemVer a, SemVer b)
+    {
+        var c = a.Major.CompareTo(b.Major);
+        if (c != 0)
+            return c;
+        c = a.Minor.CompareTo(b.Minor);
+        if (c != 0)
+            return c;
+        c = a.Patch.CompareTo(b.Patch);
+        if (c != 0)
+            return c;
+        if (a.HasPreRelease == b.HasPreRelease)
+            return string.Compare(a.PreRelease, b.PreRelease, StringComparison.OrdinalIgnoreCase);
+        return a.HasPreRelease ? -1 : 1;
+    }
+
+    public static bool IsNewer(string? candidate, string? current)
+    {
+        if (!TryParse(candidate, out var next) || !TryParse(current, out var now))
+            return false;
+        return Compare(next, now) > 0;
+    }
+
     public static bool TryParse(string? text, out SemVer ver)
     {
         ver = default;

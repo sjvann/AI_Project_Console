@@ -8,14 +8,26 @@
         <h1>AI_Project 控制台</h1>
         <span class="hint">通用本機堆疊 · GitHub／部署 · v@(AppInfo.Version)</span>
         <span class="grow"></span>
+        <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
+
+    @if (S.UpdateAvailable is not null)
+    {
+        <div class="update-banner">
+            <span>發現新版本 @S.UpdateAvailable.Tag（目前 v@(AppInfo.Version)）</span>
+            <span class="grow"></span>
+            <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ApplyUpdateAsync">立即更新</button>
+            <button class="btn-sec" @onclick="S.OpenUpdatePage">查看說明</button>
+            <button class="btn-sec" @onclick="S.DismissUpdate">稍後再說</button>
+        </div>
+    }
 
     <div class="card">
         <div class="row">
             <strong>@(S.Catalog?.Name ?? "尚未選擇專案")</strong>
             <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄、從歷史載入，或從 GitHub 開啟。")</span>
-            <select class="history" @onchange="OnRecent">
+            <select class="history" @key="HistorySelectValue" value="@HistorySelectValue" @onchange="OnRecent">
                 <option value="">歷史專案</option>
                 @foreach (var p in S.RecentProjects)
                 {
@@ -358,6 +370,11 @@
 
 @code {
     string? openMenu;
+
+    string HistorySelectValue =>
+        S.Catalog?.Root is { } root
+            ? S.RecentProjects.FirstOrDefault(p => string.Equals(p, root, StringComparison.OrdinalIgnoreCase)) ?? ""
+            : "";
 
     protected override void OnInitialized()
     {

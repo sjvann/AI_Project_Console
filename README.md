@@ -33,6 +33,18 @@ dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained 
 
 macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
 
+### 檢查更新
+
+啟動約 1.5 秒後會查詢本倉庫 [GitHub Releases](https://github.com/sjvann/AI_Project_Console/releases) 的 latest。若有比目前 `AppInfo.Version` 更新的版本，標題列下方會出現橫幅。
+
+- **Inno 安裝版**（資料夾內有 `unins*.exe`）：下載 `*-win-x64-setup.exe`，靜默安裝到目前目錄後關閉控制台。
+- **zip 免安裝版**：下載 zip，等程式結束後覆蓋檔案並重開。
+- **從原始碼執行**（`dotnet run` / `bin\Debug`）：無法直接覆蓋開發目錄；請 `git pull` 後重新編譯，或改用 Releases 安裝包。
+
+私人倉庫需 [GitHub CLI](https://cli.github.com/) 已登入（`gh auth login`），否則匿名 API 會 404。也可設定環境變數 `GH_TOKEN`。
+
+也可按標題列「檢查更新」，或 GitHub 選單「檢查控制台更新」。按「稍後再說」會略過該版號，直到出現更新的 tag。背景檢查最多每 6 小時一次。
+
 ## 啟動（Python，舊版）
 
 ```powershell
@@ -68,6 +80,7 @@ python -m AI_Project_Console
 | 開啟倉庫 | 瀏覽器開啟 GitHub |
 | 建立／開啟 PR | 需 [GitHub CLI](https://cli.github.com/)（`gh`） |
 | Actions 最近執行 | `gh run list` |
+| 檢查控制台更新 | 查詢本控制台 GitHub Releases 是否有新版本（不需先設定專案 GitHub） |
 
 未設定時會先開設定對話框；也可從既有 `git remote` 自動預填。
 
