@@ -34,17 +34,8 @@ Get-ChildItem $PublishDir -Recurse -Include *.pdb | Remove-Item -Force -ErrorAct
 
 $Zip = Join-Path $Root "dist\AI_Project_Console-$Version-$Runtime.zip"
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
-$zipOk = $false
-foreach ($i in 1..5) {
-    try {
-        Compress-Archive -Path (Join-Path $PublishDir "*") -DestinationPath $Zip -Force
-        $zipOk = $true
-        break
-    } catch {
-        Start-Sleep -Seconds (2 * $i)
-    }
-}
-if (-not $zipOk) { throw "Compress-Archive failed" }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($PublishDir, $Zip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 
 Write-Host "Building installer ..."
 & $Iscc /Q /DMyAppVersion=$Version /DPublishDir=$PublishDir $Iss
