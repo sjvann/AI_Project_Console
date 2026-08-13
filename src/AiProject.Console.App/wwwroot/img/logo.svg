@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="AI_Project 控制台">
+  <defs>
+    <linearGradient id="bg" x1="36" y1="12" x2="220" y2="244" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1aa37c"/>
+      <stop offset="0.42" stop-color="#0b6e56"/>
+      <stop offset="1" stop-color="#052e27"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="50" y="60" width="156" height="136" rx="18"/>
+    <path d="M50 90h156"/>
+    <path d="M72 122l26 22-26 22"/>
+    <path d="M112 166h28"/>
+  </g>
+  <circle cx="72" cy="75" r="5" fill="#fff"/>
+  <circle cx="90" cy="75" r="5" fill="#fff"/>
+  <circle cx="108" cy="75" r="5" fill="#fff"/>
+  <rect x="152" y="118" width="38" height="10" rx="5" fill="#fff"/>
+  <rect x="152" y="138" width="30" height="10" rx="5" fill="#fff"/>
+  <rect x="152" y="158" width="34" height="10" rx="5" fill="#fff"/>
+  <circle cx="200" cy="123" r="7" fill="#d4a017"/>
+</svg>

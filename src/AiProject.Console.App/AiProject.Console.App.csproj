@@ -8,10 +8,11 @@
     <RootNamespace>AiProject.Console.App</RootNamespace>
     <AssemblyName>AI_Project_Console</AssemblyName>
     <ApplicationTitle>AI_Project 控制台</ApplicationTitle>
-    <Version>0.3.3</Version>
-    <InformationalVersion>0.3.3</InformationalVersion>
+    <Version>0.3.4</Version>
+    <InformationalVersion>0.3.4</InformationalVersion>
     <Product>AI_Project 控制台</Product>
     <Authors>sjvann</Authors>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,4 +26,9 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

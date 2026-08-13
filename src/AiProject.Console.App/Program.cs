@@ -9,9 +9,23 @@ namespace AiProject.Console.App;
 
 internal static class Program
 {
+    private static string? ResolveWindowIcon()
+    {
+        var dir = AppContext.BaseDirectory;
+        string[] candidates =
+        [
+            Path.Combine(dir, "wwwroot", "favicon.ico"),
+            Path.Combine(dir, "Assets", "app.ico"),
+            Path.Combine(dir, "app.ico"),
+        ];
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
     [STAThread]
     private static void Main(string[] args)
     {
+        Win32WindowIcon.BindProcessIdentity();
+
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.Services.AddLogging();
         builder.Services.AddSingleton<NativeUi>();
@@ -22,12 +36,20 @@ internal static class Program
         var native = app.Services.GetRequiredService<NativeUi>();
         native.Window = app.MainWindow;
 
-        app.MainWindow
+        var iconFile = ResolveWindowIcon();
+        var window = app.MainWindow
             .SetTitle($"{AppInfo.Product} v{AppInfo.Version}")
+            .SetNotificationRegistrationId(AppInfo.AppUserModelId)
+            .SetNotificationsEnabled(false)
             .SetUseOsDefaultSize(false)
             .SetSize(new Size(1280, 820))
             .SetMinSize(960, 640)
             .Center();
+
+        if (iconFile is not null)
+            window.SetIconFile(iconFile);
+
+        window.RegisterWindowCreatedHandler((_, _) => Win32WindowIcon.Apply(window, iconFile));
 
         AppDomain.CurrentDomain.UnhandledException += (_, error) =>
         {

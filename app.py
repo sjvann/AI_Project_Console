@@ -188,6 +188,7 @@ class ConsoleApp(tk.Tk):
         self.geometry("1280x820")
         self.minsize(960, 640)
         self.configure(bg=C["bg"])
+        self._apply_window_icon()
 
         self.catalog: ProjectCatalog | None = None
         self.runtime: ProjectRuntime | None = None
@@ -205,6 +206,21 @@ class ConsoleApp(tk.Tk):
         self._build_ui()
         self.after(HEALTH_INTERVAL_MS, self._poll_health)
         self.after(LOG_INTERVAL_MS, self._poll_log)
+
+    def _apply_window_icon(self) -> None:
+        root = Path(__file__).resolve().parent
+        candidates = [
+            root / "src" / "AiProject.Console.App" / "Assets" / "app.ico",
+            root / "assets" / "brand" / "app.ico",
+        ]
+        for ico in candidates:
+            if not ico.is_file():
+                continue
+            try:
+                self.iconbitmap(default=str(ico))
+                return
+            except tk.TclError:
+                continue
 
     def _setup_style(self) -> None:
         style = ttk.Style(self)
