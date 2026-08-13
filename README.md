@@ -57,6 +57,7 @@ python -m AI_Project_Console
 
 | 動作 | 說明 |
 |------|------|
+| 從遠端開啟… | 輸入 `owner/repo` 或 URL，clone 到本機後當作專案開啟 |
 | GitHub 設定… | owner／repo／remote／預設分支；可寫本機或 `ai-project.json`，並套用 git remote |
 | 狀態 | 分支、髒工作區、領先／落後、gh 登入 |
 | 同步（pull） | `git fetch` + `pull --rebase` |
