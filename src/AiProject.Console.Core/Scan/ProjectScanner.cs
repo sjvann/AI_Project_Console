@@ -1,0 +1,223 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+
+namespace AiProject.Console.Core.Scan;
+
+public static class ProjectScanner
+{
+    private static readonly HashSet<string> SkipDirNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bin", "obj", ".git", "node_modules", ".ai_project", ".ai_house", "packages",
+    };
+
+    private static readonly Regex UrlRe = new(@"https?://[^\s;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static IReadOnlyList<string> ListCsprojPaths(string root)
+    {
+        root = Path.GetFullPath(root);
+        var found = new List<string>();
+        try
+        {
+            var psi = new ProcessStartInfo("git", "ls-files -c -o --exclude-standard -z")
+            {
+                WorkingDirectory = root,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is not null)
+            {
+                var output = proc.StandardOutput.ReadToEnd();
+                proc.WaitForExit(60_000);
+                if (proc.ExitCode == 0 && output.Length > 0)
+                {
+                    foreach (var rel in output.Split('\0'))
+                    {
+                        if (!rel.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        var path = Path.GetFullPath(Path.Combine(root, rel));
+                        if (File.Exists(path))
+                            found.Add(path);
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            found.Clear();
+        }
+
+        if (found.Count == 0)
+        {
+            foreach (var path in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories))
+            {
+                var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (parts.Any(p => SkipDirNames.Contains(p)))
+                    continue;
+                found.Add(Path.GetFullPath(path));
+            }
+        }
+
+        found.Sort(StringComparer.OrdinalIgnoreCase);
+        return found;
+    }
+
+    public static ScanResult ScanWorkspace(string root)
+    {
+        root = Path.GetFullPath(root);
+        if (!Directory.Exists(root))
+            return new ScanResult(root, [], $"目錄不存在：{root}");
+        var projects = ListCsprojPaths(root).Select(p => ScanProject(p, root)).ToList();
+        return new ScanResult(root, projects);
+    }
+
+    public static IReadOnlyList<ProjectInfo> ExternalServiceCandidates(ScanResult scan) =>
+        scan.Projects.Where(p => p.IsExecutable && (p.Ports.Count > 0 || p.ApplicationUrls.Count > 0)).ToList();
+
+    public static ProjectInfo ScanProject(string csproj, string root)
+    {
+        var projectDir = Path.GetDirectoryName(csproj)!;
+        var (sdk, outputType, isExe, isWeb) = ParseCsprojMeta(csproj);
+        var (urls, ports, launchUrl) = ParseLaunchSettings(projectDir);
+        var relDir = RelPosix(root, projectDir);
+        var name = Path.GetFileNameWithoutExtension(csproj);
+        var parts = relDir.ToLowerInvariant().Split('/');
+        var isTest = parts.Contains("tests")
+            || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("Test", StringComparison.OrdinalIgnoreCase);
+        return new ProjectInfo(
+            RelDir: relDir,
+            Name: name,
+            Csproj: csproj,
+            Sdk: sdk,
+            OutputType: outputType,
+            IsExecutable: isExe && !isTest,
+            IsWeb: isWeb,
+            IsTest: isTest,
+            Ports: ports,
+            ApplicationUrls: urls,
+            LaunchUrl: launchUrl,
+            Group: GuessGroup(relDir));
+    }
+
+    private static string RelPosix(string root, string path)
+    {
+        try
+        {
+            return Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(path)).Replace('\\', '/');
+        }
+        catch (Exception)
+        {
+            return path.Replace('\\', '/');
+        }
+    }
+
+    private static string GuessGroup(string relDir)
+    {
+        var top = relDir.Split('/', 2)[0];
+        return string.IsNullOrEmpty(top) ? "其他" : top;
+    }
+
+    private static string LocalName(XName name) => name.LocalName;
+
+    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb) ParseCsprojMeta(string csproj)
+    {
+        try
+        {
+            var doc = XDocument.Load(csproj);
+            var root = doc.Root;
+            if (root is null)
+                return ("", "Library", false, false);
+            var sdk = (string?)root.Attribute("Sdk") ?? "";
+            var isWeb = sdk.Contains("Microsoft.NET.Sdk.Web", StringComparison.Ordinal);
+            var outputType = "Library";
+            foreach (var elem in root.Descendants())
+            {
+                if (LocalName(elem.Name) == "OutputType" && !string.IsNullOrWhiteSpace(elem.Value))
+                {
+                    outputType = elem.Value.Trim();
+                    break;
+                }
+            }
+            var isExe = outputType.Equals("Exe", StringComparison.OrdinalIgnoreCase)
+                || outputType.Equals("WinExe", StringComparison.OrdinalIgnoreCase)
+                || isWeb;
+            return (sdk.Trim(), outputType, isExe, isWeb);
+        }
+        catch (Exception)
+        {
+            return ("", "Library", false, false);
+        }
+    }
+
+    private static (List<string> Urls, List<int> Ports, string LaunchUrl) ParseLaunchSettings(string projectDir)
+    {
+        var path = Path.Combine(projectDir, "Properties", "launchSettings.json");
+        if (!File.Exists(path))
+            return ([], [], "");
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("profiles", out var profiles) || profiles.ValueKind != JsonValueKind.Object)
+                return ([], [], "");
+
+            var ranked = profiles.EnumerateObject()
+                .OrderBy(p => ProfileRank(p.Name))
+                .ToList();
+            var urls = new List<string>();
+            var ports = new List<int>();
+            var launchUrl = "";
+            foreach (var profile in ranked)
+            {
+                if (profile.Value.ValueKind != JsonValueKind.Object)
+                    continue;
+                if (string.IsNullOrEmpty(launchUrl)
+                    && profile.Value.TryGetProperty("launchUrl", out var lu)
+                    && lu.ValueKind == JsonValueKind.String)
+                    launchUrl = lu.GetString()?.Trim() ?? "";
+                var raw = "";
+                if (profile.Value.TryGetProperty("applicationUrl", out var au) && au.ValueKind == JsonValueKind.String)
+                    raw = au.GetString() ?? "";
+                else if (profile.Value.TryGetProperty("applicationUrls", out var aus) && aus.ValueKind == JsonValueKind.String)
+                    raw = aus.GetString() ?? "";
+                if (string.IsNullOrEmpty(raw))
+                    continue;
+                foreach (Match m in UrlRe.Matches(raw))
+                {
+                    var match = m.Value;
+                    if (match.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    urls.Add(match.TrimEnd('/'));
+                    if (Uri.TryCreate(match, UriKind.Absolute, out var uri))
+                    {
+                        if (uri.Port > 0)
+                            ports.Add(uri.Port);
+                        else if (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase))
+                            ports.Add(80);
+                    }
+                }
+            }
+            return (urls.Distinct().ToList(), ports.Distinct().ToList(), launchUrl);
+        }
+        catch (Exception)
+        {
+            return ([], [], "");
+        }
+    }
+
+    private static int ProfileRank(string name)
+    {
+        var key = name.ToLowerInvariant();
+        if (key is "http" or "development")
+            return 0;
+        if (key.Contains("http") && !key.Contains("https"))
+            return 1;
+        if (key == "https")
+            return 9;
+        return 5;
+    }
+}

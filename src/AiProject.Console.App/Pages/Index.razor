@@ -1,0 +1,316 @@
+@page "/"
+@inject ConsoleSession S
+@inject IJSRuntime Js
+@implements IDisposable
+
+<div class="shell">
+    <div class="head">
+        <h1>AI_Project 控制台</h1>
+        <span class="hint">通用本機堆疊 · GitHub／部署 · v@(AppInfo.Version)</span>
+        <span class="grow"></span>
+        <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
+    </div>
+
+    <div class="card">
+        <div class="row">
+            <strong>@(S.Catalog?.Name ?? "尚未選擇專案")</strong>
+            <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄，或從歷史專案載入。")</span>
+            <select class="history" @onchange="OnRecent">
+                <option value="">歷史專案</option>
+                @foreach (var p in S.RecentProjects)
+                {
+                    <option value="@p">@System.IO.Path.GetFileName(p) — @p</option>
+                }
+            </select>
+            <button class="btn-sec" @onclick="S.PickProjectAsync">選擇專案目錄…</button>
+            <label class="check">
+                <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
+                同時開啟 Cursor
+            </label>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="row">
+            <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.StartAllAsync">啟動</button>
+            <button class="btn-danger" disabled="@S.JobBusy" @onclick="S.StopAllAsync">停止全部</button>
+            <span class="sep"></span>
+            <div class="menu @(openMenu == "urls" ? "open" : null)">
+                <button class="btn-sec" @onclick="@(() => Toggle("urls"))">開啟前端</button>
+                <div class="menu-list">
+                    <button @onclick="@(() => { S.OpenUrls(true); openMenu = null; })">開啟前端</button>
+                    <button @onclick="@(() => { S.OpenUrls(false); openMenu = null; })">開啟全部 URL</button>
+                </div>
+            </div>
+            <button class="btn-primary" @onclick="S.OpenUatDialog">UAT 求救</button>
+            <span class="sep"></span>
+            <button class="btn-sec" @onclick="S.Doctor">環境體檢</button>
+            <span class="sep"></span>
+            <ActionMenu Title="建置" Actions="S.BuildActions" Session="S" @bind-Open="openMenu" Key="build" />
+            <ActionMenu Title="GitHub" Actions="S.GithubActions" Session="S" @bind-Open="openMenu" Key="github" />
+            <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
+        </div>
+    </div>
+
+    <div class="summary">
+        <span>@S.ReadyText</span>
+        <span class="job">@S.JobText</span>
+        @if (!string.IsNullOrEmpty(S.WarnText))
+        {
+            <span class="warn">@S.WarnText</span>
+        }
+    </div>
+
+    <div class="split">
+        <div class="pane">
+            <div class="tabs">
+                <div class="tab @(S.LeftTab == "svc" ? "active" : null)" @onclick="@(() => S.LeftTab = "svc")">
+                    服務 <span class="badge">@S.ReadyCount/@S.ServiceCount</span>
+                </div>
+                <div class="tab @(S.LeftTab == "prj" ? "active" : null)" @onclick="@(() => S.LeftTab = "prj")">
+                    專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
+                </div>
+            </div>
+            <div class="pane-body">
+                @if (S.LeftTab == "svc")
+                {
+                    @if (S.Catalog is null || S.Catalog.Services.Count == 0)
+                    {
+                        <p class="hint">沒有對外服務。可放置 ai-project.json，或確認 launchSettings 有 applicationUrl。</p>
+                    }
+                    else
+                    {
+                        @foreach (var g in S.ServiceGroups)
+                        {
+                            <div class="group-label">@g.Key</div>
+                            @foreach (var svc in g)
+                            {
+                                var on = S.Health.GetValueOrDefault(svc.Id);
+                                <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null)" @onclick="@(() => S.SelectService(svc.Id))">
+                                    <span class="@(on ? "status-on" : "status-off")">@(on ? "線上" : "離線")</span>
+                                    <span>@svc.Label</span>
+                                    <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
+                                    <span>
+                                        @if (!string.IsNullOrEmpty(svc.OpenUrl))
+                                        {
+                                            <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.OpenServiceUrl(svc))">開啟</button>
+                                        }
+                                        @if (!string.IsNullOrEmpty(svc.HostedBy))
+                                        {
+                                            <span class="hint">隨 @svc.HostedBy</span>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
+                                            <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
+                                        }
+                                    </span>
+                                </div>
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    <div class="row">
+                        <label class="check"><input type="checkbox" checked="@S.StaleOnly" @onchange="e => { S.StaleOnly = (bool)(e.Value ?? false); }" /> 只看需重編</label>
+                        <button class="btn-sec" @onclick="S.RefreshBuildStatesAsync">刷新</button>
+                    </div>
+                    @foreach (var p in S.VisibleProjects)
+                    {
+                        var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
+                        <div class="prj">
+                            <span class="grow">@p.Name</span>
+                            <span class="meta">@p.System · @p.Kind</span>
+                            <span class="badge-stale">@badge</span>
+                            <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
+                        </div>
+                    }
+                    @if (!S.VisibleProjects.Any())
+                    {
+                        <p class="hint">@(S.Catalog is null ? "請先選擇專案目錄。" : "沒有專案。")</p>
+                    }
+                }
+            </div>
+        </div>
+        <div class="pane">
+            <div class="tabs">
+                <div class="tab @(S.RightTab == "log" ? "active" : null)" @onclick="@(() => S.RightTab = "log")">服務 Log</div>
+                <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.RightTab = "build")">建置輸出</div>
+            </div>
+            @if (S.RightTab == "log")
+            {
+                <div class="log-tools">
+                    <strong>@S.LogTitle</strong>
+                    <label class="check"><input type="checkbox" checked="@S.FollowLog" @onchange="e => S.FollowLog = (bool)(e.Value ?? false)" /> 跟隨最新</label>
+                    <button class="btn-sec" @onclick="S.ReloadLog">重新載入</button>
+                    <button class="btn-sec" @onclick="S.ClearLogView">清空顯示</button>
+                    <button class="btn-sec" @onclick="S.OpenLogDir">開啟資料夾</button>
+                </div>
+                <pre class="log" id="log-view">@S.LogText</pre>
+            }
+            else
+            {
+                <div class="log-tools">
+                    <strong>建置輸出</strong>
+                    <button class="btn-primary" disabled="@(!S.CompileHelpEnabled)" @onclick="S.OpenCompileHelp">編譯求救</button>
+                </div>
+                <pre class="log" id="build-view">@S.BuildText</pre>
+            }
+        </div>
+    </div>
+    <div class="foot">關閉控制台不會停止服務 · 狀態寫入選定專案的 .ai_project/</div>
+</div>
+
+@if (S.Dialog == "github")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true">
+            <h2>GitHub 設定</h2>
+            <p class="hint">設定遠端倉庫後可同步（pull）與發布（push）。可從 git remote 預填。</p>
+            <div class="field"><span>Owner</span><input @bind="S.GithubDraft.Owner" /></div>
+            <div class="field"><span>Repository</span><input @bind="S.GithubDraft.Repo" /></div>
+            <div class="field"><span>Remote 名稱</span><input @bind="S.GithubDraft.Remote" /></div>
+            <div class="field"><span>預設分支</span><input @bind="S.GithubDraft.DefaultBranch" /></div>
+            <div class="field"><span>Remote URL</span><input @bind="S.GithubDraft.Url" /></div>
+            <label class="check"><input type="radio" name="gsave" checked="@(S.GithubSaveTarget=="local")" @onchange="@(() => S.GithubSaveTarget="local")" /> 存到本機 settings</label>
+            <label class="check"><input type="radio" name="gsave" checked="@(S.GithubSaveTarget=="manifest")" @onchange="@(() => S.GithubSaveTarget="manifest")" /> 寫入專案 ai-project.json</label>
+            <label class="check"><input type="checkbox" checked="@S.GithubApplyRemote" @onchange="e => S.GithubApplyRemote = (bool)(e.Value ?? false)" /> 儲存後立即套用到 git remote</label>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.SaveGithubAsync">儲存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "deploy")
+{
+    var d = S.DeployDraft;
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true">
+            <h2>部署設定</h2>
+            <p class="hint">請先選擇發佈目標，再填寫該目標所需的屬性。</p>
+            <div class="field">
+                <span>發佈目標</span>
+                <select @bind="d.Target">
+                    @foreach (var t in DeployTargets.All)
+                    {
+                        <option value="@t.Key">@t.Label</option>
+                    }
+                </select>
+            </div>
+            <p class="hint">@(DeployTargets.Hints.GetValueOrDefault(d.NormalizedTarget()))</p>
+            @if (d.NormalizedTarget() == DeployTargets.Gcp)
+            {
+                <div class="field"><span>Project ID</span><input @bind="d.Gcp.ProjectId" /></div>
+                <div class="field"><span>Zone</span><input @bind="d.Gcp.Zone" /></div>
+                <div class="field"><span>Instance</span><input @bind="d.Gcp.Instance" /></div>
+                <div class="field"><span>Host</span><input @bind="d.Gcp.Host" /></div>
+                <div class="field"><span>Workflow</span><input @bind="d.Gcp.Workflow" /></div>
+            }
+            else if (d.NormalizedTarget() == DeployTargets.Onprem)
+            {
+                <div class="field">
+                    <span>協定</span>
+                    <select @bind="d.Onprem.Protocol">
+                        @foreach (var p in DeployTargets.Protocols)
+                        {
+                            <option value="@p.Key">@p.Value</option>
+                        }
+                    </select>
+                </div>
+                <div class="field"><span>主機</span><input @bind="d.Onprem.Host" /></div>
+                <div class="field"><span>連接埠</span><input @bind="d.Onprem.Port" /></div>
+                <div class="field"><span>帳號</span><input @bind="d.Onprem.User" /></div>
+                <div class="field"><span>遠端路徑</span><input @bind="d.Onprem.RemotePath" /></div>
+                <div class="field"><span>SSH 金鑰</span><input @bind="d.Onprem.KeyPath" /></div>
+                <div class="field"><span>對外網址</span><input @bind="d.Onprem.OpenUrl" /></div>
+            }
+            else if (d.NormalizedTarget() == DeployTargets.Azure)
+            {
+                <div class="field"><span>Subscription</span><input @bind="d.Azure.SubscriptionId" /></div>
+                <div class="field"><span>Resource Group</span><input @bind="d.Azure.ResourceGroup" /></div>
+                <div class="field"><span>App Name</span><input @bind="d.Azure.AppName" /></div>
+                <div class="field"><span>Region</span><input @bind="d.Azure.Region" /></div>
+                <div class="field"><span>對外網址</span><input @bind="d.Azure.OpenUrl" /></div>
+                <div class="field"><span>Workflow</span><input @bind="d.Azure.Workflow" /></div>
+            }
+            <label class="check"><input type="radio" name="dsave" checked="@(S.DeploySaveTarget=="local")" @onchange="@(() => S.DeploySaveTarget="local")" /> 存到本機 settings</label>
+            <label class="check"><input type="radio" name="dsave" checked="@(S.DeploySaveTarget=="manifest")" @onchange="@(() => S.DeploySaveTarget="manifest")" /> 寫入專案 ai-project.json</label>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.SaveDeploy">儲存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "uat")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true">
+            <h2>UAT 求救</h2>
+            <div class="field"><span>標題</span><input @bind="S.UatTitle" /></div>
+            <div class="field"><span>說明</span><textarea @bind="S.UatDescription"></textarea></div>
+            <div class="row">
+                <button class="btn-sec" @onclick="S.AddUatFileAsync">加入檔案</button>
+                <button class="btn-sec" @onclick="S.PasteUatClipboard">貼上截圖</button>
+            </div>
+            @foreach (var img in S.UatImages)
+            {
+                <div class="row"><span class="grow hint">@img</span><button class="btn-link" @onclick="@(() => S.RemoveUatImage(img))">移除</button></div>
+            }
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.SubmitUatAsync">送出</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "agent")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true">
+            <h2>編譯求救</h2>
+            <p class="hint">@S.AgentIntro</p>
+            <textarea readonly style="width:100%;min-height:180px">@S.AgentPrompt</textarea>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.ConfirmAgentAsync">確認送出</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    string? openMenu;
+
+    protected override void OnInitialized()
+    {
+        S.Js = Js;
+        S.Changed += OnChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (S.FollowLog && S.RightTab == "log")
+            await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "log-view");
+        if (S.RightTab == "build")
+            await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "build-view");
+    }
+
+    void OnChanged() => InvokeAsync(StateHasChanged);
+
+    void Toggle(string key) => openMenu = openMenu == key ? null : key;
+
+    async Task OnRecent(ChangeEventArgs e)
+    {
+        var path = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(path))
+            await S.LoadRecentAsync(path);
+    }
+
+    public void Dispose() => S.Changed -= OnChanged;
+}

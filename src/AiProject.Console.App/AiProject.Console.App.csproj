@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AiProject.Console.App</RootNamespace>
+    <AssemblyName>AI_Project_Console</AssemblyName>
+    <ApplicationTitle>AI_Project 控制台</ApplicationTitle>
+    <Version>0.3.0</Version>
+    <InformationalVersion>0.3.0</InformationalVersion>
+    <Product>AI_Project 控制台</Product>
+    <Authors>sjvann</Authors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+    <ProjectReference Include="..\AiProject.Console.Core\AiProject.Console.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

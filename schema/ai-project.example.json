@@ -108,11 +108,31 @@
     "defaultBranch": "main",
     "url": ""
   },
+  "deploy": {
+    "target": "none"
+  },
   "gcp": {
     "projectId": "",
     "zone": "asia-east1-b",
     "instance": "ai-house-demo",
     "host": "",
     "workflow": "deploy-gcp.yml"
+  },
+  "onprem": {
+    "protocol": "ssh",
+    "host": "",
+    "port": "22",
+    "user": "",
+    "remotePath": "",
+    "openUrl": "",
+    "keyPath": ""
+  },
+  "azure": {
+    "subscriptionId": "",
+    "resourceGroup": "",
+    "appName": "",
+    "region": "eastasia",
+    "openUrl": "",
+    "workflow": "deploy-azure.yml"
   }
 }

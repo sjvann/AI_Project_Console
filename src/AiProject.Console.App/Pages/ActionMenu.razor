@@ -1,0 +1,28 @@
+@using AiProject.Console.Core
+
+<div class="menu @(Open == Key ? "open" : null)">
+    <button class="btn-sec" @onclick="Toggle">@Title</button>
+    <div class="menu-list">
+        @foreach (var a in Actions)
+        {
+            <button @onclick="@(() => Run(a))">@a.Label</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public IEnumerable<ConsoleAction> Actions { get; set; } = [];
+    [Parameter] public ConsoleSession Session { get; set; } = default!;
+    [Parameter] public string? Open { get; set; }
+    [Parameter] public EventCallback<string?> OpenChanged { get; set; }
+
+    async Task Toggle() => await OpenChanged.InvokeAsync(Open == Key ? null : Key);
+
+    async Task Run(ConsoleAction a)
+    {
+        await OpenChanged.InvokeAsync(null);
+        await Session.OnActionAsync(a);
+    }
+}

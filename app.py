@@ -14,13 +14,15 @@ from tkinter import messagebox, ttk
 
 from . import __version__
 from .build_state import all_project_build_states, all_service_build_states
-from .gcp_config import (
+from .deploy_config import (
+    TARGET_NONE,
     ci_hint,
     open_host,
-    resolve_gcp,
-    save_gcp_local,
-    status_report as gcp_status_report,
-    write_gcp_to_manifest,
+    resolve_deploy,
+    save_deploy_local,
+    status_report as deploy_status_report,
+    target_label,
+    write_deploy_to_manifest,
 )
 from .github_config import (
     apply_remote,
@@ -62,7 +64,7 @@ from .service_catalog import (
     service_by_id,
 )
 from .ui.buttons import make_button, make_menubutton, set_button_enabled
-from .ui.gcp_settings_dialog import show_gcp_settings
+from .ui.deploy_settings_dialog import show_deploy_settings
 from .ui.github_settings_dialog import show_github_settings
 from .ui.new_agent_dialog import show_new_agent_confirm_dialog
 from .ui.project_bar import ProjectBar
@@ -232,7 +234,7 @@ class ConsoleApp(tk.Tk):
         head.pack(fill=tk.X)
         ttk.Label(head, text="AI_Project 控制台", style="Title.TLabel").pack(side=tk.LEFT)
         ttk.Label(
-            head, text=f"通用本機堆疊 · GitHub／GCP · v{__version__}", style="Hint.TLabel",
+            head, text=f"通用本機堆疊 · GitHub／部署 · v{__version__}", style="Hint.TLabel",
         ).pack(side=tk.LEFT, padx=(14, 0), pady=(8, 0))
         make_button(
             head, "離開", self._on_exit, variant="danger", colors=C, fonts=F,
@@ -331,12 +333,12 @@ class ConsoleApp(tk.Tk):
 
         _sep()
 
-        # 區 4：建置／GitHub／GCP
+        # 區 4：建置／GitHub／部署
         g4 = tk.Frame(action_inner, bg=C["panel"])
         g4.pack(side=tk.LEFT)
         self._build_action_menu(g4, "build", "建置")
         self._build_action_menu(g4, "github", "GitHub")
-        self._build_action_menu(g4, "gcp", "GCP 部署")
+        self._build_action_menu(g4, "deploy", "部署")
 
     def _build_action_menu(self, parent: tk.Frame, group: str, title: str) -> None:
         actions = load_actions(group)
@@ -983,27 +985,27 @@ class ConsoleApp(tk.Tk):
                     return
         self.destroy()
 
-    def _ensure_gcp(self) -> bool:
+    def _ensure_deploy(self) -> bool:
         if not self._require_catalog():
             return False
-        if resolve_gcp(self.catalog).is_complete():
+        if resolve_deploy(self.catalog).is_complete():
             return True
-        return self._edit_gcp_settings()
+        return self._edit_deploy_settings()
 
-    def _edit_gcp_settings(self) -> bool:
+    def _edit_deploy_settings(self) -> bool:
         if not self.catalog:
             return False
-        result = show_gcp_settings(self, resolve_gcp(self.catalog))
+        result = show_deploy_settings(self, resolve_deploy(self.catalog))
         if not result:
             return False
         cfg, target = result
         if target == "manifest":
-            write_gcp_to_manifest(self.catalog, cfg)
+            write_deploy_to_manifest(self.catalog, cfg)
             self.catalog = build_catalog(self.catalog.root)
             self.project_bar.set_catalog(self.catalog)
         else:
-            save_gcp_local(self.catalog.root, cfg)
-        self.job_var.set("已儲存 GCP 設定")
+            save_deploy_local(self.catalog.root, cfg)
+        self.job_var.set(f"已儲存部署設定（{target_label(cfg.normalized_target())}）")
         return True
 
     def _ensure_github(self) -> bool:
@@ -1037,8 +1039,8 @@ class ConsoleApp(tk.Tk):
 
     def _on_action(self, action: dict) -> None:
         handler = str(action.get("handler") or "")
-        if action.get("requiresGcp") and handler != "gcp_settings":
-            if not self._ensure_gcp():
+        if action.get("requiresDeploy") and handler not in {"deploy_settings", "gcp_settings"}:
+            if not self._ensure_deploy():
                 return
         if action.get("requiresGithub") and handler != "github_settings":
             if not self._ensure_github():
@@ -1048,18 +1050,22 @@ class ConsoleApp(tk.Tk):
         if confirm and not messagebox.askyesno("確認", str(confirm), parent=self):
             return
 
-        if handler == "gcp_settings":
-            self._edit_gcp_settings()
+        if handler in {"deploy_settings", "gcp_settings"}:
+            self._edit_deploy_settings()
             return
-        if handler == "gcp_status":
-            messagebox.showinfo("GCP 狀態", gcp_status_report(self.catalog), parent=self)
+        if handler in {"deploy_status", "gcp_status"}:
+            messagebox.showinfo("部署狀態", deploy_status_report(self.catalog), parent=self)
             return
-        if handler == "gcp_open":
-            if not open_host(resolve_gcp(self.catalog)):
-                messagebox.showinfo("未設定 host", "請在部署設定中填寫 host。", parent=self)
+        if handler in {"deploy_open", "gcp_open"}:
+            cfg = resolve_deploy(self.catalog)
+            if cfg.normalized_target() == TARGET_NONE:
+                messagebox.showinfo("不下發", "目前選擇不下發（僅本機）。若要開啟線上，請先改選發佈目標。", parent=self)
+                return
+            if not open_host(cfg):
+                messagebox.showinfo("未設定網址", "請在部署設定中填寫對外網址或主機。", parent=self)
             return
-        if handler == "gcp_ci_hint":
-            messagebox.showinfo("CI 部署說明", ci_hint(self.catalog), parent=self)
+        if handler in {"deploy_ci_hint", "gcp_ci_hint"}:
+            messagebox.showinfo("部署說明", ci_hint(self.catalog), parent=self)
             return
 
         if handler == "github_settings":

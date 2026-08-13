@@ -1,0 +1,54 @@
+param(
+    [string]$Version = "0.3.0",
+    [string]$Configuration = "Release",
+    [string]$Runtime = "win-x64"
+)
+
+$ErrorActionPreference = "Stop"
+$Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$PublishDir = Join-Path $Root "dist\$Runtime"
+$Iss = Join-Path $Root "installer\windows\setup.iss"
+$Iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+if (-not (Test-Path $Iscc)) {
+    $Iscc = Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"
+}
+if (-not (Test-Path $Iscc)) {
+    throw "找不到 Inno Setup 6（ISCC.exe）。請先安裝 https://jrsoftware.org/isinfo.php"
+}
+
+Write-Host "Publishing $Runtime $Configuration v$Version ..."
+if (Test-Path $PublishDir) {
+    Remove-Item $PublishDir -Recurse -Force
+}
+dotnet publish (Join-Path $Root "src\AiProject.Console.App\AiProject.Console.App.csproj") `
+    -c $Configuration `
+    -r $Runtime `
+    --self-contained true `
+    -p:PublishReadyToRun=true `
+    -p:DebugType=none `
+    -p:DebugSymbols=false `
+    -o $PublishDir
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+
+Get-ChildItem $PublishDir -Recurse -Include *.pdb | Remove-Item -Force -ErrorAction SilentlyContinue
+
+$Zip = Join-Path $Root "dist\AI_Project_Console-$Version-$Runtime.zip"
+if (Test-Path $Zip) { Remove-Item $Zip -Force }
+$zipOk = $false
+foreach ($i in 1..5) {
+    try {
+        Compress-Archive -Path (Join-Path $PublishDir "*") -DestinationPath $Zip -Force
+        $zipOk = $true
+        break
+    } catch {
+        Start-Sleep -Seconds (2 * $i)
+    }
+}
+if (-not $zipOk) { throw "Compress-Archive failed" }
+
+Write-Host "Building installer ..."
+& $Iscc /Q /DMyAppVersion=$Version /DPublishDir=$PublishDir $Iss
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed" }
+
+Write-Host "Done."
+Get-ChildItem (Join-Path $Root "dist") -File | Select-Object Name, @{N="SizeMB";E={[math]::Round($_.Length/1MB,2)}} | Format-Table -AutoSize
