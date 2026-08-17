@@ -65,3 +65,20 @@ public sealed record ConsoleAction(
     string? Confirm = null);
 
 public sealed record BuildFailure(string Target, int ExitCode, string Log);
+
+public sealed record GitBriefStatus(string Branch, int DirtyCount, int? Ahead, int? Behind)
+{
+    public string Format()
+    {
+        var parts = new List<string> { Branch };
+        if (DirtyCount > 0)
+            parts.Add($"{DirtyCount} 未提交");
+        if (Ahead is > 0)
+            parts.Add($"↑{Ahead}");
+        if (Behind is > 0)
+            parts.Add($"↓{Behind}");
+        if (DirtyCount == 0 && Ahead is not > 0 && Behind is not > 0)
+            parts.Add("乾淨");
+        return string.Join(" · ", parts);
+    }
+}

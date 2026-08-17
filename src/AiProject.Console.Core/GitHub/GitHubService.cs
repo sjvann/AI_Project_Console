@@ -232,6 +232,37 @@ public static class GitHubService
         return code == 0;
     }
 
+    public static async Task<int> DirtyCountAsync(string root)
+    {
+        var (code, dirty) = await CliUtil.RunAsync("git", ["status", "--porcelain"], root).ConfigureAwait(false);
+        if (code != 0)
+            return 0;
+        return dirty.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
+    public static async Task<GitBriefStatus?> TryBriefStatusAsync(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root) || !await IsGitRepoAsync(root).ConfigureAwait(false))
+            return null;
+        var (c1, branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).ConfigureAwait(false);
+        if (c1 != 0 || string.IsNullOrWhiteSpace(branch))
+            return null;
+        var dirtyN = await DirtyCountAsync(root).ConfigureAwait(false);
+        int? ahead = null;
+        int? behind = null;
+        var (c4, counts) = await CliUtil.RunAsync("git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"], root).ConfigureAwait(false);
+        if (c4 == 0 && !string.IsNullOrEmpty(counts))
+        {
+            var parts = counts.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2 && int.TryParse(parts[0], out var b) && int.TryParse(parts[1], out var a))
+            {
+                behind = b;
+                ahead = a;
+            }
+        }
+        return new GitBriefStatus(branch.Trim(), dirtyN, ahead, behind);
+    }
+
     public static async Task<string> GhAuthStatusAsync(string root)
     {
         if (!GhAvailable())

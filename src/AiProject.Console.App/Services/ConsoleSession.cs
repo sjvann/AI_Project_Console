@@ -25,8 +25,10 @@ public sealed class ConsoleSession : IDisposable
     {
         _native = native;
         OpenWithCursor = ConsoleSettingsStore.GetOpenWithCursor();
+        RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
+        _ = RestoreLastProjectOnStartAsync();
     }
 
     public IJSRuntime? Js { get; set; }
@@ -37,9 +39,13 @@ public sealed class ConsoleSession : IDisposable
     public ProjectRuntime? Runtime { get; private set; }
     public IReadOnlyList<string> RecentProjects => ConsoleSettingsStore.RecentProjects();
     public bool OpenWithCursor { get; set; }
+    public bool RestoreLastProject { get; set; }
     public string ReadyText { get; private set; } = "就緒 0 / 0";
     public string JobText { get; private set; } = "待命";
     public string WarnText { get; private set; } = "";
+    public string GitStatusText { get; private set; } = "";
+    public string LogFilter { get; private set; } = "";
+    public Dictionary<string, string> StartErrors { get; } = new();
     public bool JobBusy { get; private set; }
     public string LeftTab { get; set; } = "svc";
     public string RightTab { get; set; } = "log";
@@ -50,6 +56,7 @@ public sealed class ConsoleSession : IDisposable
     public bool FollowLog { get; set; } = true;
     public string LogTitle { get; private set; } = "Log · （未選服務）";
     public string LogText { get; private set; } = "";
+    public string VisibleLogText => TextFilter.Apply(LogText, LogFilter);
     public string BuildText { get; private set; } = "";
     public bool CompileHelpEnabled { get; private set; }
     public BuildFailure? LastBuildFailure { get; private set; }
@@ -110,6 +117,19 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
+    public void SetRestoreLastProject(bool value)
+    {
+        RestoreLastProject = value;
+        ConsoleSettingsStore.SetRestoreLastProject(value);
+        Notify();
+    }
+
+    public void SetLogFilter(string value)
+    {
+        LogFilter = value ?? "";
+        Notify();
+    }
+
     public async Task PickProjectAsync()
     {
         var path = await _native.PickFolderAsync().ConfigureAwait(false);
@@ -119,10 +139,72 @@ public sealed class ConsoleSession : IDisposable
 
     public Task LoadRecentAsync(string path) => LoadProjectAsync(path, OpenWithCursor);
 
+    public bool HasProject => Catalog is not null;
+
+    public Task CloseProjectAsync()
+    {
+        if (Catalog is null)
+        {
+            _native.Info("尚未選擇專案", "目前沒有開啟的專案。");
+            return Task.CompletedTask;
+        }
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return Task.CompletedTask;
+        }
+
+        var name = Catalog.Name;
+        var running = Catalog.Services.Where(s => Health.GetValueOrDefault(s.Id)).Select(s => s.Label).ToList();
+        var body = running.Count > 0
+            ? $"確定關閉「{name}」？\n目前有 {running.Count} 個服務在執行，關閉時會一併停止，並回到尚未選擇專案的狀態。"
+            : $"確定關閉「{name}」？\n會回到尚未選擇專案的狀態。";
+        if (!_native.Confirm("關閉專案", body))
+            return Task.CompletedTask;
+
+        var closeIde = _native.Confirm("關閉 Cursor", "要一併關閉 Cursor 嗎？");
+        if (Catalog is not null && Runtime is not null)
+        {
+            try
+            {
+                ProcessSupervisor.StopAll(Catalog, Runtime);
+            }
+            catch (Exception ex)
+            {
+                if (!_native.Confirm("停止服務失敗", $"停止服務時發生問題：\n{ex.Message}\n\n仍要關閉專案嗎？"))
+                    return Task.CompletedTask;
+            }
+        }
+
+        if (closeIde)
+        {
+            var err = CursorLauncher.CloseCursor();
+            if (err is not null)
+                _native.Warn("關閉 Cursor", err);
+        }
+
+        ResetToStartup();
+        try
+        {
+            ConsoleSettingsStore.ClearLastProject();
+        }
+        catch
+        {
+            // 歷史仍保留，還原標記失敗不阻擋關閉
+        }
+        JobText = closeIde ? "已關閉專案，並關閉 Cursor" : "已關閉專案";
+        Notify();
+        return Task.CompletedTask;
+    }
+
     public Task LoadProjectAsync(string root, bool openCursor = false)
     {
         try
         {
+            root = Path.GetFullPath(root);
+            if (!TryStopCurrentProjectForSwitch(root))
+                return Task.CompletedTask;
+
             var catalog = ServiceCatalogBuilder.Build(root);
             Catalog = catalog;
             Runtime = new ProjectRuntime(catalog.Root);
@@ -140,10 +222,14 @@ public sealed class ConsoleSession : IDisposable
             LastBuildFailure = null;
             CompileHelpEnabled = false;
             Health.Clear();
+            StartErrors.Clear();
+            LogFilter = "";
+            GitStatusText = "";
             ReloadLog();
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             Notify();
             _ = RefreshBuildStatesAsync();
+            _ = RefreshGitStatusAsync();
             if (openCursor)
             {
                 var err = CursorLauncher.OpenInCursor(catalog.Root);
@@ -158,6 +244,34 @@ public sealed class ConsoleSession : IDisposable
             _native.Error("開啟專案失敗", ex.Message);
         }
         return Task.CompletedTask;
+    }
+
+    private bool TryStopCurrentProjectForSwitch(string nextRoot)
+    {
+        if (Catalog is null || Runtime is null)
+            return true;
+        if (string.Equals(Catalog.Root, nextRoot, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var running = Catalog.Services.Where(s => Health.GetValueOrDefault(s.Id)).Select(s => s.Label).ToList();
+        if (running.Count > 0)
+        {
+            if (!_native.Confirm(
+                "切換專案",
+                $"將關閉「{Catalog.Name}」並開啟新專案。\n目前有 {running.Count} 個服務在執行，會先停止。\n\n確定切換？"))
+                return false;
+        }
+
+        try
+        {
+            ProcessSupervisor.StopAll(Catalog, Runtime);
+        }
+        catch (Exception ex)
+        {
+            if (!_native.Confirm("停止服務失敗", $"停止舊專案服務時發生問題：\n{ex.Message}\n\n仍要開啟新專案嗎？"))
+                return false;
+        }
+        return true;
     }
 
     public void SelectService(string id)
@@ -202,13 +316,46 @@ public sealed class ConsoleSession : IDisposable
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
+        var health = new Dictionary<string, bool>(Health);
+        IReadOnlyList<(string Id, string Label, string? Error)> results = [];
         await RunJobAsync("啟動中…", () =>
         {
-            ProcessSupervisor.StopAll(catalog, runtime);
-            Thread.Sleep(500);
-            ProcessSupervisor.StartAll(catalog, runtime);
+            results = ProcessSupervisor.StartOffline(catalog, runtime, health);
             return Task.FromResult<string?>(null);
         }).ConfigureAwait(false);
+        ApplyStartResults(results);
+        if (results.Count == 0 && !JobBusy)
+            JobText = "所有服務已在線";
+        Notify();
+    }
+
+    public Task StartOneAsync(ServiceEntry svc)
+    {
+        if (!RequireCatalog())
+            return Task.CompletedTask;
+        if (!string.IsNullOrEmpty(svc.HostedBy))
+        {
+            _native.Info("隨宿主啟動", $"「{svc.Label}」隨 {svc.HostedBy} 一併提供，請啟動宿主服務。");
+            return Task.CompletedTask;
+        }
+        if (Health.GetValueOrDefault(svc.Id))
+        {
+            _native.Info("已在線", $"「{svc.Label}」已在執行。");
+            return Task.CompletedTask;
+        }
+        if (!CliUtil.CommandExists("dotnet"))
+        {
+            _native.Error("缺少工具", "找不到 dotnet。");
+            return Task.CompletedTask;
+        }
+        var catalog = Catalog!;
+        var runtime = Runtime!;
+        return RunJobAsync($"啟動 {svc.Label}…", () =>
+        {
+            var err = ProcessSupervisor.TryStartService(catalog, runtime, svc);
+            ApplyStartResults([(svc.Id, svc.Label, err)]);
+            return Task.FromResult(err);
+        });
     }
 
     public Task StopAllAsync()
@@ -464,8 +611,16 @@ public sealed class ConsoleSession : IDisposable
                     _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo）。");
                 return;
             case "github_sync":
+            {
+                var dirtyN = await GitHubService.DirtyCountAsync(Catalog!.Root).ConfigureAwait(false);
+                if (dirtyN > 0 && !_native.Confirm(
+                    "工作區有未提交變更",
+                    $"目前有 {dirtyN} 筆未提交變更。pull --rebase 可能失敗。\n\n仍要同步？"))
+                    return;
                 await RunJobAsync("同步中…", async () => await GitHubService.SyncFromRemoteAsync(Catalog!)).ConfigureAwait(false);
+                await RefreshGitStatusAsync().ConfigureAwait(false);
                 return;
+            }
             case "github_publish":
                 await RunJobAsync("發布中…", async () => await GitHubService.PublishBranchAsync(Catalog!)).ConfigureAwait(false);
                 return;
@@ -1126,6 +1281,8 @@ public sealed class ConsoleSession : IDisposable
                         Health[kv.Key] = kv.Value;
                     UpdateReady();
                 }
+                if (healthEvery % 8 == 0 && Catalog is not null)
+                    await RefreshGitStatusAsync().ConfigureAwait(false);
                 Notify();
             }
         }
@@ -1133,6 +1290,108 @@ public sealed class ConsoleSession : IDisposable
         {
             // shutdown
         }
+    }
+
+    private void ResetToStartup()
+    {
+        Catalog = null;
+        Runtime = null;
+        SelectedServiceId = null;
+        LastBuildFailure = null;
+        CompileHelpEnabled = false;
+        Health.Clear();
+        StartErrors.Clear();
+        Projects = [];
+        WarnText = "";
+        GitStatusText = "";
+        LogFilter = "";
+        LogTitle = "Log · （未選服務）";
+        LogText = "";
+        BuildText = "";
+        ReadyText = "就緒 0 / 0";
+        JobText = "待命";
+        JobBusy = false;
+        _logOffset = 0;
+        LeftTab = "svc";
+        RightTab = "log";
+        Dialog = null;
+        GithubDraft = new();
+        GithubSaveTarget = "local";
+        GithubApplyRemote = true;
+        DeployDraft = new();
+        DeploySaveTarget = "local";
+        UatTitle = "";
+        UatDescription = "";
+        UatImages.Clear();
+        ConfirmTitle = "";
+        ConfirmBody = "";
+        ConfirmAction = null;
+        AgentPrompt = "";
+        AgentIntro = "";
+        ReleaseTag = "";
+        ReleaseTitle = "";
+        ReleaseNotes = "";
+        ReleaseTarget = "";
+        ReleaseHint = "";
+        ReleaseLatestTag = "";
+        ReleaseBasisTag = "";
+        ReleaseDraft = false;
+        ReleasePrerelease = false;
+        ReleaseGenerateNotes = true;
+        ReleaseMakeLatest = true;
+        ReleaseAssets.Clear();
+    }
+
+    private async Task RestoreLastProjectOnStartAsync()
+    {
+        if (!RestoreLastProject)
+            return;
+        var path = ConsoleSettingsStore.LastProject();
+        if (string.IsNullOrEmpty(path))
+            return;
+        await LoadProjectAsync(path, openCursor: false).ConfigureAwait(false);
+        if (Catalog is not null && !JobBusy)
+        {
+            JobText = "已還原上次專案";
+            Notify();
+        }
+    }
+
+    private async Task RefreshGitStatusAsync()
+    {
+        var root = Catalog?.Root;
+        if (string.IsNullOrEmpty(root))
+        {
+            GitStatusText = "";
+            return;
+        }
+        try
+        {
+            var brief = await GitHubService.TryBriefStatusAsync(root).ConfigureAwait(false);
+            GitStatusText = brief?.Format() ?? "";
+        }
+        catch
+        {
+            GitStatusText = "";
+        }
+    }
+
+    private void ApplyStartResults(IReadOnlyList<(string Id, string Label, string? Error)> results)
+    {
+        if (results.Count == 0)
+            return;
+        foreach (var (id, _, error) in results)
+        {
+            if (error is null)
+                StartErrors.Remove(id);
+            else
+                StartErrors[id] = error;
+        }
+        var failed = results.Where(r => r.Error is not null).ToList();
+        if (failed.Count > 0)
+            WarnText = string.Join("；", failed.Select(f => $"{f.Label}：{f.Error}"));
+        else if (StartErrors.Count == 0)
+            WarnText = "";
     }
 
     private void UpdateReady()

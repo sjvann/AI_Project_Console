@@ -68,6 +68,36 @@ public static class ConsoleSettingsStore
         return outList;
     }
 
+    public static string? LastProject()
+    {
+        var raw = JsonUtil.Str(Load()["lastProject"]);
+        if (string.IsNullOrEmpty(raw) || !Directory.Exists(raw))
+            return null;
+        return Path.GetFullPath(raw);
+    }
+
+    public static void ClearLastProject()
+    {
+        var data = Load();
+        data.Remove("lastProject");
+        Save(data);
+    }
+
+    public static bool GetRestoreLastProject()
+    {
+        var data = Load();
+        if (data["restoreLastProject"] is null)
+            return true;
+        return data["restoreLastProject"]?.GetValue<bool>() ?? true;
+    }
+
+    public static void SetRestoreLastProject(bool enabled)
+    {
+        var data = Load();
+        data["restoreLastProject"] = enabled;
+        Save(data);
+    }
+
     public static bool GetOpenWithCursor()
     {
         var data = Load();

@@ -252,6 +252,44 @@ public static class ProcessSupervisor
         return proc.Id;
     }
 
+    public static string? TryStartService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
+    {
+        try
+        {
+            var pid = StartService(catalog, rt, svc);
+            if (pid is int p)
+            {
+                Thread.Sleep(600);
+                if (!PidAlive(p))
+                    return "行程立即結束，請查看 Log";
+            }
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    public static IReadOnlyList<(string Id, string Label, string? Error)> StartOffline(
+        ProjectCatalog catalog,
+        ProjectRuntime rt,
+        IReadOnlyDictionary<string, bool> health,
+        int delayMs = 500)
+    {
+        var results = new List<(string Id, string Label, string? Error)>();
+        foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
+        {
+            if (health.GetValueOrDefault(svc.Id))
+                continue;
+            var err = TryStartService(catalog, rt, svc);
+            results.Add((svc.Id, svc.Label, err));
+            if (delayMs > 0)
+                Thread.Sleep(delayMs);
+        }
+        return results;
+    }
+
     public static void StopService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
     {
         var host = ServiceCatalogBuilder.HostService(catalog, svc);

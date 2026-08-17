@@ -37,6 +37,11 @@
             </select>
             <button class="btn-sec" @onclick="S.PickProjectAsync">選擇專案目錄…</button>
             <button class="btn-sec" @onclick="S.OpenCloneDialog">從 GitHub 開啟…</button>
+            <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.CloseProjectAsync">關閉專案</button>
+            <label class="check">
+                <input type="checkbox" checked="@S.RestoreLastProject" @onchange="e => S.SetRestoreLastProject((bool)(e.Value ?? false))" />
+                啟動時還原上次專案
+            </label>
             <label class="check">
                 <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
                 同時開啟 Cursor
@@ -68,6 +73,10 @@
 
     <div class="summary">
         <span>@S.ReadyText</span>
+        @if (!string.IsNullOrEmpty(S.GitStatusText))
+        {
+            <span class="git">@S.GitStatusText</span>
+        }
         <span class="job">@S.JobText</span>
         @if (!string.IsNullOrEmpty(S.WarnText))
         {
@@ -115,8 +124,16 @@
                                         }
                                         else
                                         {
+                                            @if (!on)
+                                            {
+                                                <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.StartOneAsync(svc))">啟動</button>
+                                            }
                                             <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
                                             <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
+                                        }
+                                        @if (S.StartErrors.TryGetValue(svc.Id, out var startErr))
+                                        {
+                                            <span class="svc-err" title="@startErr">失敗</span>
                                         }
                                     </span>
                                 </div>
@@ -159,12 +176,13 @@
             {
                 <div class="log-tools">
                     <strong>@S.LogTitle</strong>
+                    <input class="log-search" placeholder="搜尋 Log…" value="@S.LogFilter" @oninput="OnLogFilter" />
                     <label class="check"><input type="checkbox" checked="@S.FollowLog" @onchange="e => S.FollowLog = (bool)(e.Value ?? false)" /> 跟隨最新</label>
                     <button class="btn-sec" @onclick="S.ReloadLog">重新載入</button>
                     <button class="btn-sec" @onclick="S.ClearLogView">清空顯示</button>
                     <button class="btn-sec" @onclick="S.OpenLogDir">開啟資料夾</button>
                 </div>
-                <pre class="log" id="log-view">@S.LogText</pre>
+                <pre class="log" id="log-view">@S.VisibleLogText</pre>
             }
             else
             {
@@ -405,6 +423,8 @@
         if (!string.IsNullOrEmpty(path))
             await S.LoadRecentAsync(path);
     }
+
+    void OnLogFilter(ChangeEventArgs e) => S.SetLogFilter(e.Value?.ToString() ?? "");
 
     public void Dispose() => S.Changed -= OnChanged;
 }
