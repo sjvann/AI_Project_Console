@@ -117,6 +117,13 @@ public static class ServiceCatalogBuilder
         return ordered;
     }
 
+    internal static string ResolveOpenPath(ProjectInfo info)
+    {
+        if (!string.IsNullOrWhiteSpace(info.LaunchUrl))
+            return info.LaunchUrl.Trim().TrimStart('/');
+        return info.IsWebApi ? "scalar" : "";
+    }
+
     private static string GuessGroupFromProject(string project) =>
         string.IsNullOrEmpty(project) ? "其他" : project.Split('/', 2)[0];
 
@@ -125,19 +132,20 @@ public static class ServiceCatalogBuilder
         int? port = info.Ports.Count > 0 ? info.Ports[0] : null;
         var httpUrls = info.ApplicationUrls.Where(u => u.StartsWith("http://", StringComparison.OrdinalIgnoreCase)).ToList();
         var baseUrl = httpUrls.Count > 0 ? httpUrls[0] : (info.ApplicationUrls.Count > 0 ? info.ApplicationUrls[0] : "");
+        var openPath = ResolveOpenPath(info);
         string health, openUrl;
         string? aspnet;
         if (!string.IsNullOrEmpty(baseUrl))
         {
             var trimmed = baseUrl.TrimEnd('/');
             health = trimmed + "/health";
-            openUrl = trimmed + (string.IsNullOrEmpty(info.LaunchUrl) ? "/" : "/" + info.LaunchUrl);
+            openUrl = string.IsNullOrEmpty(openPath) ? trimmed + "/" : trimmed + "/" + openPath;
             aspnet = string.Join(';', info.ApplicationUrls);
         }
         else if (port is not null)
         {
             health = $"http://127.0.0.1:{port}/health";
-            openUrl = $"http://localhost:{port}/";
+            openUrl = string.IsNullOrEmpty(openPath) ? $"http://localhost:{port}/" : $"http://localhost:{port}/{openPath}";
             aspnet = $"http://localhost:{port}";
         }
         else

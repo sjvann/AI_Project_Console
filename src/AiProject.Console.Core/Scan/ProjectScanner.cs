@@ -14,6 +14,13 @@ public static class ProjectScanner
 
     private static readonly Regex UrlRe = new(@"https?://[^\s;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly HashSet<string> ApiDocPackages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Scalar.AspNetCore",
+        "Microsoft.AspNetCore.OpenApi",
+        "Swashbuckle.AspNetCore",
+    };
+
     public static IReadOnlyList<string> ListCsprojPaths(string root)
     {
         root = Path.GetFullPath(root);
@@ -81,7 +88,7 @@ public static class ProjectScanner
     public static ProjectInfo ScanProject(string csproj, string root)
     {
         var projectDir = Path.GetDirectoryName(csproj)!;
-        var (sdk, outputType, isExe, isWeb) = ParseCsprojMeta(csproj);
+        var (sdk, outputType, isExe, isWeb, hasApiDocs, hasUiMarkers) = ParseCsprojMeta(csproj);
         var (urls, ports, launchUrl) = ParseLaunchSettings(projectDir);
         var relDir = RelPosix(root, projectDir);
         var name = Path.GetFileNameWithoutExtension(csproj);
@@ -89,6 +96,11 @@ public static class ProjectScanner
         var isTest = parts.Contains("tests")
             || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith("Test", StringComparison.OrdinalIgnoreCase);
+        var isWebApi = isWeb
+            && !hasUiMarkers
+            && !NameLooksLikeUiWeb(name)
+            && !HasRazorFiles(projectDir)
+            && (hasApiDocs || NameLooksLikeApi(name));
         return new ProjectInfo(
             RelDir: relDir,
             Name: name,
@@ -97,6 +109,7 @@ public static class ProjectScanner
             OutputType: outputType,
             IsExecutable: isExe && !isTest,
             IsWeb: isWeb,
+            IsWebApi: isWebApi,
             IsTest: isTest,
             Ports: ports,
             ApplicationUrls: urls,
@@ -124,33 +137,81 @@ public static class ProjectScanner
 
     private static string LocalName(XName name) => name.LocalName;
 
-    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb) ParseCsprojMeta(string csproj)
+    private static string LastNameSegment(string name)
+    {
+        var i = name.LastIndexOf('.');
+        return i < 0 ? name : name[(i + 1)..];
+    }
+
+    internal static bool NameLooksLikeApi(string name) =>
+        LastNameSegment(name).Equals("Api", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool NameLooksLikeUiWeb(string name)
+    {
+        var last = LastNameSegment(name);
+        return last.Equals("Web", StringComparison.OrdinalIgnoreCase)
+            || last.Equals("Frontend", StringComparison.OrdinalIgnoreCase)
+            || last.Equals("Blazor", StringComparison.OrdinalIgnoreCase)
+            || last.Equals("Ui", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasRazorFiles(string projectDir)
+    {
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(projectDir, "*.razor", SearchOption.AllDirectories))
+            {
+                var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (parts.Any(p => SkipDirNames.Contains(p)))
+                    continue;
+                return true;
+            }
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        return false;
+    }
+
+    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb, bool HasApiDocs, bool HasUiMarkers) ParseCsprojMeta(string csproj)
     {
         try
         {
             var doc = XDocument.Load(csproj);
             var root = doc.Root;
             if (root is null)
-                return ("", "Library", false, false);
+                return ("", "Library", false, false, false, false);
             var sdk = (string?)root.Attribute("Sdk") ?? "";
             var isWeb = sdk.Contains("Microsoft.NET.Sdk.Web", StringComparison.Ordinal);
             var outputType = "Library";
+            var hasApiDocs = false;
+            var hasUiMarkers = false;
             foreach (var elem in root.Descendants())
             {
-                if (LocalName(elem.Name) == "OutputType" && !string.IsNullOrWhiteSpace(elem.Value))
-                {
+                var local = LocalName(elem.Name);
+                if (local == "OutputType" && !string.IsNullOrWhiteSpace(elem.Value) && outputType == "Library")
                     outputType = elem.Value.Trim();
-                    break;
+                if (local == "PackageReference")
+                {
+                    var include = (string?)elem.Attribute("Include") ?? "";
+                    if (ApiDocPackages.Contains(include))
+                        hasApiDocs = true;
+                    if (include.Contains("Components.Web", StringComparison.OrdinalIgnoreCase)
+                        || include.Contains("Blazor", StringComparison.OrdinalIgnoreCase))
+                        hasUiMarkers = true;
                 }
+                if (local.StartsWith("Blazor", StringComparison.OrdinalIgnoreCase))
+                    hasUiMarkers = true;
             }
             var isExe = outputType.Equals("Exe", StringComparison.OrdinalIgnoreCase)
                 || outputType.Equals("WinExe", StringComparison.OrdinalIgnoreCase)
                 || isWeb;
-            return (sdk.Trim(), outputType, isExe, isWeb);
+            return (sdk.Trim(), outputType, isExe, isWeb, hasApiDocs, hasUiMarkers);
         }
         catch (Exception)
         {
-            return ("", "Library", false, false);
+            return ("", "Library", false, false, false, false);
         }
     }
 

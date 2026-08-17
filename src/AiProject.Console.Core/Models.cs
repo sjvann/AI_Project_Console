@@ -10,6 +10,7 @@ public sealed record ProjectInfo(
     string OutputType,
     bool IsExecutable,
     bool IsWeb,
+    bool IsWebApi,
     bool IsTest,
     IReadOnlyList<int> Ports,
     IReadOnlyList<string> ApplicationUrls,

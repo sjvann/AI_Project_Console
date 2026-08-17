@@ -61,17 +61,24 @@ def _guess_group_from_project(project: str) -> str:
     return project.split("/", 1)[0] if project else "其他"
 
 
+def resolve_open_path(info: ProjectInfo) -> str:
+    if info.launch_url.strip():
+        return info.launch_url.strip().lstrip("/")
+    return "scalar" if info.is_web_api else ""
+
+
 def _service_from_scan(info: ProjectInfo) -> ServiceEntry:
     port = info.ports[0] if info.ports else None
     http_urls = [u for u in info.application_urls if u.lower().startswith("http://")]
     base = http_urls[0] if http_urls else (info.application_urls[0] if info.application_urls else "")
+    open_path = resolve_open_path(info)
     if base:
         health = base.rstrip("/") + "/health"
-        open_url = base.rstrip("/") + (f"/{info.launch_url}" if info.launch_url else "/")
+        open_url = base.rstrip("/") + (f"/{open_path}" if open_path else "/")
         aspnet = ";".join(info.application_urls) if info.application_urls else None
     elif port:
         health = f"http://127.0.0.1:{port}/health"
-        open_url = f"http://localhost:{port}/"
+        open_url = f"http://localhost:{port}/{open_path}" if open_path else f"http://localhost:{port}/"
         aspnet = f"http://localhost:{port}"
     else:
         health, open_url, aspnet = "", "", None

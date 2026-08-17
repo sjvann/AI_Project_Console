@@ -130,16 +130,18 @@
                         <label class="check"><input type="checkbox" checked="@S.StaleOnly" @onchange="e => { S.StaleOnly = (bool)(e.Value ?? false); }" /> 只看需重編</label>
                         <button class="btn-sec" @onclick="S.RefreshBuildStatesAsync">刷新</button>
                     </div>
+                    <div class="prj-list">
                     @foreach (var p in S.VisibleProjects)
                     {
                         var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
                         <div class="prj">
-                            <span class="grow">@p.Name</span>
+                            <span class="prj-name">@p.Name</span>
                             <span class="meta">@p.System · @p.Kind</span>
                             <span class="badge-stale">@badge</span>
                             <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
                         </div>
                     }
+                    </div>
                     @if (!S.VisibleProjects.Any())
                     {
                         <p class="hint">@(S.Catalog is null ? "請先選擇專案目錄。" : "沒有專案。")</p>

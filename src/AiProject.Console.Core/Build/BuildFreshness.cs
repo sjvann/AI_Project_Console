@@ -11,6 +11,21 @@ public static class BuildFreshness
         ".html", ".proto", ".resx",
     };
 
+    /// <summary>
+    /// Runtime profile / config files. <c>dotnet build</c> does not rewrite the assembly when
+    /// these change, so they must not count as compile sources.
+    /// </summary>
+    public static bool IsRuntimeConfig(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (name.Equals("launchSettings.json", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (name.Equals("appsettings.json", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return name.StartsWith("appsettings.", StringComparison.OrdinalIgnoreCase)
+            && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string AssemblyName(string projectDir)
     {
         var csproj = Directory.Exists(projectDir)
@@ -66,6 +81,8 @@ public static class BuildFreshness
             if (parts.Any(p => p is "bin" or "obj"))
                 continue;
             if (!SourceSuffixes.Contains(Path.GetExtension(path)))
+                continue;
+            if (IsRuntimeConfig(path))
                 continue;
             var mtime = File.GetLastWriteTimeUtc(path).Subtract(DateTime.UnixEpoch).TotalSeconds;
             if (mtime > best)

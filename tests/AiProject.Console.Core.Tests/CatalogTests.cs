@@ -223,8 +223,80 @@ public class CatalogTests
             Assert.Single(scan.Projects);
             var p = scan.Projects[0];
             Assert.True(p.IsWeb);
+            Assert.True(p.IsWebApi);
+            Assert.Equal("scalar", p.LaunchUrl);
             Assert.Contains(8080, p.Ports);
             Assert.Contains("http://localhost:8080", p.ApplicationUrls);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_WebApiDefaultsOpenUrlToScalar()
+    {
+        var root = CreateScanOnlyProject("Demo.Api", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+          <ItemGroup>
+            <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+          </ItemGroup>
+        </Project>
+        """, launchUrl: "");
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Single(catalog.Services);
+            Assert.Equal("http://localhost:8080/scalar", catalog.Services[0].OpenUrl);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_WebUiKeepsRootOpenUrl()
+    {
+        var root = CreateScanOnlyProject("Demo.Web", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+            <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+          </PropertyGroup>
+        </Project>
+        """, launchUrl: "", extraFile: ("Home.razor", "<h1>Hi</h1>"));
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Single(catalog.Services);
+            Assert.False(catalog.Scan.Projects[0].IsWebApi);
+            Assert.Equal("http://localhost:8080/", catalog.Services[0].OpenUrl);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_ExplicitLaunchUrlWinsOverScalarDefault()
+    {
+        var root = CreateScanOnlyProject("Demo.Api", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+        </Project>
+        """, launchUrl: "swagger");
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Equal("http://localhost:8080/swagger", catalog.Services[0].OpenUrl);
         }
         finally
         {
@@ -263,6 +335,33 @@ public class CatalogTests
           "frontend": "web"
         }
         """);
+        return root;
+    }
+
+    static string CreateScanOnlyProject(string name, string csproj, string launchUrl, (string Name, string Content)? extraFile = null)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-test-" + Guid.NewGuid().ToString("N"));
+        var proj = Path.Combine(root, "src", name);
+        Directory.CreateDirectory(Path.Combine(proj, "Properties"));
+        File.WriteAllText(Path.Combine(proj, name + ".csproj"), csproj);
+        var launch = string.IsNullOrEmpty(launchUrl)
+            ? """
+            {
+              "profiles": {
+                "http": { "applicationUrl": "http://localhost:8080" }
+              }
+            }
+            """
+            : $$"""
+            {
+              "profiles": {
+                "http": { "applicationUrl": "http://localhost:8080", "launchUrl": "{{launchUrl}}" }
+              }
+            }
+            """;
+        File.WriteAllText(Path.Combine(proj, "Properties", "launchSettings.json"), launch);
+        if (extraFile is { } extra)
+            File.WriteAllText(Path.Combine(proj, extra.Name), extra.Content);
         return root;
     }
 }

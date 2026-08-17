@@ -14,6 +14,15 @@ SOURCE_SUFFIXES = frozenset(
 )
 
 
+def _is_runtime_config(path: Path) -> bool:
+    name = path.name.lower()
+    if name == "launchsettings.json":
+        return True
+    if name == "appsettings.json":
+        return True
+    return name.startswith("appsettings.") and name.endswith(".json")
+
+
 def _tag(elem: ET.Element) -> str:
     return elem.tag.rsplit("}", 1)[-1]
 
@@ -64,6 +73,8 @@ def newest_source(project_dir: Path) -> tuple[float, Path | None]:
         if not path.is_file() or any(part in {"bin", "obj"} for part in path.parts):
             continue
         if path.suffix.lower() not in SOURCE_SUFFIXES:
+            continue
+        if _is_runtime_config(path):
             continue
         try:
             mtime = path.stat().st_mtime

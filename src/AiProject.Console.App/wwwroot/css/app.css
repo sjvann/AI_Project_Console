@@ -57,8 +57,12 @@ button:disabled { opacity: .45; cursor: default; }
 .status-on { color: var(--ok); }
 .status-off { color: var(--down); }
 .warn { color: var(--wait); font-size: 12px; padding: 4px 8px; }
-.prj { display: flex; gap: 8px; align-items: center; padding: 4px 8px; }
-.prj .meta { color: var(--muted); font-size: 12px; width: 140px; }
+.prj-list { display: grid; grid-template-columns: auto minmax(0, 1fr) 56px auto; column-gap: 8px; align-items: center; }
+.prj { display: contents; }
+.prj-name, .prj .meta, .prj .badge-stale, .prj .btn-link { padding-top: 4px; padding-bottom: 4px; }
+.prj-name { padding-left: 8px; white-space: nowrap; }
+.prj .meta { color: var(--muted); font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prj .btn-link { padding-right: 8px; }
 .badge-stale { color: var(--wait); width: 56px; font-size: 12px; }
 .log-tools { display: flex; gap: 8px; align-items: center; padding: 8px 10px; flex-wrap: wrap; }
 .log { background: var(--log-bg); color: var(--log-fg); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; white-space: pre; overflow: auto; flex: 1; margin: 0 8px 8px; padding: 10px; border-radius: 3px; min-height: 0; }

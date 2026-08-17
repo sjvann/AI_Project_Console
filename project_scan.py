@@ -14,6 +14,10 @@ _SKIP_DIR_NAMES = frozenset(
     {"bin", "obj", ".git", "node_modules", ".ai_project", ".ai_house", "packages"}
 )
 _URL_RE = re.compile(r"https?://[^\s;]+", re.I)
+_API_DOC_PACKAGES = frozenset(
+    {"scalar.aspnetcore", "microsoft.aspnetcore.openapi", "swashbuckle.aspnetcore"}
+)
+_UI_NAME_SEGMENTS = frozenset({"web", "frontend", "blazor", "ui"})
 
 
 @dataclass
@@ -25,6 +29,7 @@ class ProjectInfo:
     output_type: str
     is_executable: bool
     is_web: bool
+    is_web_api: bool
     is_test: bool
     ports: list[int] = field(default_factory=list)
     application_urls: list[str] = field(default_factory=list)
@@ -87,20 +92,54 @@ def list_csproj_paths(root: Path) -> list[Path]:
     return found
 
 
-def _parse_csproj_meta(csproj: Path) -> tuple[str, str, bool, bool]:
+def _last_name_segment(name: str) -> str:
+    return name.rsplit(".", 1)[-1]
+
+
+def name_looks_like_api(name: str) -> bool:
+    return _last_name_segment(name).lower() == "api"
+
+
+def name_looks_like_ui_web(name: str) -> bool:
+    return _last_name_segment(name).lower() in _UI_NAME_SEGMENTS
+
+
+def _has_razor_files(project_dir: Path) -> bool:
+    try:
+        for path in project_dir.rglob("*.razor"):
+            if any(part in _SKIP_DIR_NAMES for part in path.parts):
+                continue
+            return True
+    except OSError:
+        return False
+    return False
+
+
+def _parse_csproj_meta(csproj: Path) -> tuple[str, str, bool, bool, bool, bool]:
     try:
         root = ET.parse(csproj).getroot()
     except (OSError, ET.ParseError):
-        return "", "Library", False, False
+        return "", "Library", False, False, False, False
     sdk = (root.get("Sdk") or "").strip()
     is_web = "Microsoft.NET.Sdk.Web" in sdk
     output_type = "Library"
+    has_api_docs = False
+    has_ui_markers = False
     for elem in root.iter():
-        if _tag(elem) == "OutputType" and (elem.text or "").strip():
+        tag = _tag(elem)
+        if tag == "OutputType" and (elem.text or "").strip() and output_type == "Library":
             output_type = elem.text.strip()
-            break
+        if tag == "PackageReference":
+            include = (elem.get("Include") or "").strip()
+            if include.lower() in _API_DOC_PACKAGES:
+                has_api_docs = True
+            lowered = include.lower()
+            if "components.web" in lowered or "blazor" in lowered:
+                has_ui_markers = True
+        if tag.lower().startswith("blazor"):
+            has_ui_markers = True
     is_exe = output_type.lower() in ("exe", "winexe") or is_web
-    return sdk, output_type, is_exe, is_web
+    return sdk, output_type, is_exe, is_web, has_api_docs, has_ui_markers
 
 
 def _parse_launch_settings(project_dir: Path) -> tuple[list[str], list[int], str]:
@@ -156,12 +195,19 @@ def _parse_launch_settings(project_dir: Path) -> tuple[list[str], list[int], str
 
 def scan_project(csproj: Path, root: Path) -> ProjectInfo:
     project_dir = csproj.parent
-    sdk, output_type, is_exe, is_web = _parse_csproj_meta(csproj)
+    sdk, output_type, is_exe, is_web, has_api_docs, has_ui_markers = _parse_csproj_meta(csproj)
     urls, ports, launch_url = _parse_launch_settings(project_dir)
     rel_dir = _rel_posix(root, project_dir)
     name = csproj.stem
     parts = rel_dir.lower().split("/")
     is_test = "tests" in parts or name.lower().endswith(".tests") or name.lower().endswith("test")
+    is_web_api = (
+        is_web
+        and not has_ui_markers
+        and not name_looks_like_ui_web(name)
+        and not _has_razor_files(project_dir)
+        and (has_api_docs or name_looks_like_api(name))
+    )
     return ProjectInfo(
         rel_dir=rel_dir,
         name=name,
@@ -170,6 +216,7 @@ def scan_project(csproj: Path, root: Path) -> ProjectInfo:
         output_type=output_type,
         is_executable=is_exe and not is_test,
         is_web=is_web,
+        is_web_api=is_web_api,
         is_test=is_test,
         ports=ports,
         application_urls=urls,
