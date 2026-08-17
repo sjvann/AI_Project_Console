@@ -8,8 +8,8 @@
     <RootNamespace>AiProject.Console.App</RootNamespace>
     <AssemblyName>AI_Project_Console</AssemblyName>
     <ApplicationTitle>AI_Project 控制台</ApplicationTitle>
-    <Version>0.3.4</Version>
-    <InformationalVersion>0.3.4</InformationalVersion>
+    <Version>0.3.5</Version>
+    <InformationalVersion>0.3.5</InformationalVersion>
     <Product>AI_Project 控制台</Product>
     <Authors>sjvann</Authors>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
