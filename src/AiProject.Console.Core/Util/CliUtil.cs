@@ -47,7 +47,8 @@ public static class CliUtil
         IEnumerable<string> args,
         string? cwd = null,
         int timeoutMs = 120_000,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool trim = true)
     {
         var psi = new ProcessStartInfo
         {
@@ -83,14 +84,23 @@ public static class CliUtil
             {
                 try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
                 stderr.AppendLine("（逾時）");
-                return (1, stdout.ToString().Trim(), stderr.ToString().Trim());
+                return (1, FinishCaptured(stdout, trim), FinishCaptured(stderr, trim));
             }
-            return (proc.ExitCode, stdout.ToString().Trim(), stderr.ToString().Trim());
+            return (proc.ExitCode, FinishCaptured(stdout, trim), FinishCaptured(stderr, trim));
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException)
         {
             return (1, "", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// porcelain 等格式會用開頭空白當欄位；不可 TrimStart。
+    /// </summary>
+    private static string FinishCaptured(StringBuilder sb, bool trim)
+    {
+        var text = sb.ToString();
+        return trim ? text.Trim() : text.TrimEnd('\r', '\n');
     }
 
     public static void OpenUrl(string url)

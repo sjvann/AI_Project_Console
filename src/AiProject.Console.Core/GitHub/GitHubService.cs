@@ -298,7 +298,7 @@ public static class GitHubService
     public static async Task<IReadOnlyList<GitChange>> ListChangesAsync(string root)
     {
         var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
-            "git", ["-c", "core.quotepath=false", "status", "--porcelain"], root).ConfigureAwait(false);
+            "git", ["-c", "core.quotepath=false", "status", "--porcelain"], root, trim: false).ConfigureAwait(false);
         if (code != 0)
         {
             var err = string.IsNullOrEmpty(stderr) ? stdout : stderr;

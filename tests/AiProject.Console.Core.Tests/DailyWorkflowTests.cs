@@ -39,6 +39,48 @@ public class DailyWorkflowTests
         Assert.Equal("修改  src/b.cs", changes[1].Display());
         Assert.Equal("未追蹤  new.txt", changes[2].Display());
         Assert.Equal("重新命名  old.txt → new-name.txt", changes[3].Display());
+        Assert.Equal(" M", changes[0].Code);
+        Assert.Equal("src/a.cs", changes[0].Path);
+    }
+
+    [Fact]
+    public void ParsePorcelain_TrimmedStdoutShiftsUnstagedFirstPath()
+    {
+        const string porcelain = " M alpha.txt\n?? extra.txt";
+        var intact = GitHubService.ParsePorcelain(porcelain);
+        Assert.Equal("alpha.txt", intact[0].Path);
+        Assert.Equal(" M", intact[0].Code);
+
+        var shifted = GitHubService.ParsePorcelain(porcelain.Trim());
+        Assert.Equal("lpha.txt", shifted[0].Path);
+    }
+
+    [Fact]
+    public async Task ListChangesAsync_KeepsUnstagedFirstPath()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-porcelain-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            File.WriteAllText(Path.Combine(root, "alpha.txt"), "one");
+            Assert.Contains("已提交", await GitHubService.CommitAsync(root, "seed"));
+            File.WriteAllText(Path.Combine(root, "alpha.txt"), "two");
+
+            var changes = await GitHubService.ListChangesAsync(root);
+            var only = Assert.Single(changes);
+            Assert.Equal("alpha.txt", only.Path);
+            Assert.Equal(" M", only.Code);
+            Assert.Equal("修改  alpha.txt", only.Display());
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
     }
 
     [Fact]
