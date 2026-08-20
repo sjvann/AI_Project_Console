@@ -93,6 +93,12 @@ public sealed class ConsoleSession : IDisposable
     public bool ReleaseGenerateNotes { get; set; } = true;
     public bool ReleaseMakeLatest { get; set; } = true;
     public List<string> ReleaseAssets { get; } = [];
+    public string CommitMessage { get; set; } = "";
+    public string CommitHint { get; private set; } = "";
+    public bool CommitPushAfter { get; set; }
+    public IReadOnlyList<GitChange> CommitChanges { get; private set; } = [];
+    public GitBriefStatus? GitBrief { get; private set; }
+    public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
     public AvailableUpdate? UpdateAvailable { get; private set; }
 
     public IReadOnlyList<ConsoleAction> BuildActions => ActionCatalog.Load("build");
@@ -606,6 +612,9 @@ public sealed class ConsoleSession : IDisposable
             case "github_status":
                 _native.Info("GitHub 狀態", await GitHubService.StatusReportAsync(Catalog).ConfigureAwait(false));
                 return;
+            case "github_commit":
+                await OpenCommitDialogAsync().ConfigureAwait(false);
+                return;
             case "github_open":
                 if (Catalog is null || !await GitHubService.OpenOnGithubAsync(Catalog).ConfigureAwait(false))
                     _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo）。");
@@ -807,6 +816,70 @@ public sealed class ConsoleSession : IDisposable
             Assets: [.. ReleaseAssets]);
         CloseDialog();
         await RunJobAsync("發行 Release…", async () => await GitHubService.CreateReleaseAsync(Catalog, req)).ConfigureAwait(false);
+    }
+
+    public async Task OpenCommitDialogAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (!await GitHubService.IsGitRepoAsync(Catalog!.Root).ConfigureAwait(false))
+        {
+            _native.Info("不是 git 倉庫", "目前專案目錄不是 git 倉庫，無法提交。");
+            return;
+        }
+        IReadOnlyList<GitChange>? changes = null;
+        await RunJobAsync("讀取變更…", async () =>
+        {
+            changes = await GitHubService.ListChangesAsync(Catalog!.Root).ConfigureAwait(false);
+            return (string?)null;
+        }).ConfigureAwait(false);
+        if (changes is null)
+            return;
+        if (changes.Count == 0)
+        {
+            _native.Info("沒有未提交變更", "工作區是乾淨的，沒有可提交的檔案。");
+            return;
+        }
+        CommitChanges = changes;
+        CommitMessage = "";
+        CommitPushAfter = false;
+        CommitHint = $"{changes.Count} 筆未提交變更（將全部加入後提交）";
+        Dialog = "commit";
+        Notify();
+    }
+
+    public async Task ConfirmCommitAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        var message = CommitMessage;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            _native.Warn("請填寫說明", "提交說明不可空白。");
+            return;
+        }
+        var n = CommitChanges.Count;
+        var push = CommitPushAfter;
+        if (!_native.Confirm(
+            "提交",
+            $"將提交 {n} 筆變更到目前分支。{(push ? "\n提交後會再 push。" : "")}\n\n確定？"))
+            return;
+        CloseDialog();
+        await RunJobAsync("提交中…", async () =>
+        {
+            var result = await GitHubService.CommitAsync(Catalog!.Root, message).ConfigureAwait(false);
+            if (!push)
+                return result;
+            try
+            {
+                return result + "\n\n" + await GitHubService.PublishBranchAsync(Catalog!).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                return result + "\n\n提交成功，但發布失敗：\n" + ex.Message;
+            }
+        }).ConfigureAwait(false);
+        await RefreshGitStatusAsync().ConfigureAwait(false);
     }
 
     public void OpenGithubDialog()
@@ -1304,6 +1377,11 @@ public sealed class ConsoleSession : IDisposable
         Projects = [];
         WarnText = "";
         GitStatusText = "";
+        GitBrief = null;
+        CommitMessage = "";
+        CommitHint = "";
+        CommitPushAfter = false;
+        CommitChanges = [];
         LogFilter = "";
         LogTitle = "Log · （未選服務）";
         LogText = "";
@@ -1362,16 +1440,19 @@ public sealed class ConsoleSession : IDisposable
         var root = Catalog?.Root;
         if (string.IsNullOrEmpty(root))
         {
+            GitBrief = null;
             GitStatusText = "";
             return;
         }
         try
         {
             var brief = await GitHubService.TryBriefStatusAsync(root).ConfigureAwait(false);
+            GitBrief = brief;
             GitStatusText = brief?.Format() ?? "";
         }
         catch
         {
+            GitBrief = null;
             GitStatusText = "";
         }
     }

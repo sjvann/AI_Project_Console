@@ -1,4 +1,6 @@
 using AiProject.Console.Core;
+using AiProject.Console.Core.Actions;
+using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Tests;
@@ -12,6 +14,75 @@ public class DailyWorkflowTests
         Assert.Equal("feat · 3 未提交 · ↑2 · ↓1", new GitBriefStatus("feat", 3, 2, 1).Format());
         Assert.Equal("dev · 乾淨", new GitBriefStatus("dev", 0, null, null).Format());
         Assert.Equal("main · ↑1", new GitBriefStatus("main", 0, 1, 0).Format());
+    }
+
+    [Fact]
+    public void ActionCatalog_IncludesLocalCommit()
+    {
+        var commit = ActionCatalog.Load("github").Single(a => a.Id == "github_commit");
+        Assert.Equal("提交…", commit.Label);
+        Assert.Equal("github_commit", commit.Handler);
+        Assert.False(commit.RequiresGithub);
+    }
+
+    [Fact]
+    public void ParsePorcelain_KeepsUnstagedAndRenames()
+    {
+        var changes = GitHubService.ParsePorcelain("""
+             M src/a.cs
+            M  src/b.cs
+            ?? new.txt
+            R  old.txt -> new-name.txt
+            """);
+        Assert.Equal(4, changes.Count);
+        Assert.Equal("修改  src/a.cs", changes[0].Display());
+        Assert.Equal("修改  src/b.cs", changes[1].Display());
+        Assert.Equal("未追蹤  new.txt", changes[2].Display());
+        Assert.Equal("重新命名  old.txt → new-name.txt", changes[3].Display());
+    }
+
+    [Fact]
+    public async Task CommitAsync_StagesAndCommitsDirtyFiles()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-commit-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+            var result = await GitHubService.CommitAsync(root, "Add a.txt");
+            Assert.Contains("已提交", result);
+            Assert.Equal(0, await GitHubService.DirtyCountAsync(root));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.CommitAsync(root, "   "));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.CommitAsync(root, "nothing left"));
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    static void TryDeleteDirectory(string root)
+    {
+        if (!Directory.Exists(root))
+            return;
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            try { File.SetAttributes(file, FileAttributes.Normal); }
+            catch { /* ignore */ }
+        }
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch
+        {
+            // Windows 可能短暫鎖住 .git
+        }
     }
 
     [Fact]

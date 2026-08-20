@@ -46,6 +46,13 @@
       "handler": "github_status"
     },
     {
+      "id": "github_commit",
+      "label": "提交…",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_commit"
+    },
+    {
       "id": "github_sync",
       "label": "同步（pull）",
       "group": "github",

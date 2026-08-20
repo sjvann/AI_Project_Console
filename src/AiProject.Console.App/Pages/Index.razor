@@ -76,6 +76,10 @@
         @if (!string.IsNullOrEmpty(S.GitStatusText))
         {
             <span class="git">@S.GitStatusText</span>
+            @if (S.HasUncommitted)
+            {
+                <button class="btn-link" disabled="@S.JobBusy" @onclick="S.OpenCommitDialogAsync">提交…</button>
+            }
         }
         <span class="job">@S.JobText</span>
         @if (!string.IsNullOrEmpty(S.WarnText))
@@ -226,7 +230,7 @@
     <div class="overlay" @onclick="S.CloseDialog">
         <div class="dialog" @onclick:stopPropagation="true">
             <h2>GitHub 設定</h2>
-            <p class="hint">設定遠端倉庫後可同步（pull）、發布（push）與發行 Release。可從 git remote 預填。</p>
+            <p class="hint">設定遠端倉庫後可提交、同步（pull）、發布（push）與發行 Release。可從 git remote 預填。</p>
             <div class="field"><span>Owner</span><input @bind="S.GithubDraft.Owner" /></div>
             <div class="field"><span>Repository</span><input @bind="S.GithubDraft.Repo" /></div>
             <div class="field"><span>Remote 名稱</span><input @bind="S.GithubDraft.Remote" /></div>
@@ -238,6 +242,29 @@
             <div class="dialog-actions">
                 <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
                 <button class="btn-primary" @onclick="S.SaveGithubAsync">儲存</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "commit")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog dialog-lg" @onclick:stopPropagation="true">
+            <h2>提交變更</h2>
+            <p class="hint">@S.CommitHint</p>
+            <div class="field" style="align-items:start">
+                <span>檔案</span>
+                <pre class="change-list">@string.Join('\n', S.CommitChanges.Select(c => c.Display()))</pre>
+            </div>
+            <div class="field" style="align-items:start">
+                <span>說明</span>
+                <textarea @bind="S.CommitMessage" placeholder="例如：修正搜尋條件驗證。" style="min-height:110px"></textarea>
+            </div>
+            <label class="check"><input type="checkbox" checked="@S.CommitPushAfter" @onchange="e => S.CommitPushAfter = (bool)(e.Value ?? false)" /> 提交後發布（push）目前分支</label>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ConfirmCommitAsync">提交</button>
             </div>
         </div>
     </div>

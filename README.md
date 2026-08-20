@@ -74,6 +74,7 @@ python -m AI_Project_Console
 | 從遠端開啟… | 輸入 `owner/repo` 或 URL，clone 到本機後當作專案開啟 |
 | GitHub 設定… | owner／repo／remote／預設分支；可寫本機或 `ai-project.json`，並套用 git remote |
 | 狀態 | 分支、髒工作區、領先／落後、gh 登入 |
+| 提交… | 檢視未提交檔案、填寫說明後 `git add -A` + `git commit`；可選擇提交後 push。不需先完成 GitHub 設定 |
 | 同步（pull） | `git fetch` + `pull --rebase` |
 | 發布（push） | `git push -u` 目前分支 |
 | 發行 Release… | 填版號（SemVer，可 Major／Minor／Patch 遞增）、標題、說明；可草稿／預發行、附加檔案。需 [GitHub CLI](https://cli.github.com/)（`gh`） |

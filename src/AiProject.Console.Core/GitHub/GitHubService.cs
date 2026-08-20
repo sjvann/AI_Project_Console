@@ -195,6 +195,37 @@ public sealed class ReleaseInspect
     public bool GhOk { get; init; }
 }
 
+public sealed record GitChange(string Code, string Path, string? OriginalPath = null)
+{
+    public string Display()
+    {
+        var kind = Describe(Code);
+        return OriginalPath is null
+            ? $"{kind}  {Path}"
+            : $"{kind}  {OriginalPath} → {Path}";
+    }
+
+    public static string Describe(string code)
+    {
+        var c = (code ?? "  ").PadRight(2);
+        var staged = c[0];
+        var work = c[1];
+        var mark = work is not ' ' and not '?' ? work : staged;
+        return mark switch
+        {
+            'M' => "修改",
+            'A' => "新增",
+            'D' => "刪除",
+            'R' => "重新命名",
+            'C' => "複製",
+            'U' => "衝突",
+            '?' => "未追蹤",
+            '!' => "忽略",
+            _ => string.IsNullOrWhiteSpace(code) ? "變更" : code.Trim(),
+        };
+    }
+}
+
 public sealed record ReleaseRequest(
     string Tag,
     string Title = "",
@@ -238,6 +269,79 @@ public static class GitHubService
         if (code != 0)
             return 0;
         return dirty.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
+    public static IReadOnlyList<GitChange> ParsePorcelain(string porcelain)
+    {
+        var list = new List<GitChange>();
+        if (string.IsNullOrEmpty(porcelain))
+            return list;
+        foreach (var raw in porcelain.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (raw.Length < 4)
+                continue;
+            var code = raw[..2];
+            var rest = raw[3..];
+            string? orig = null;
+            var path = rest;
+            var arrow = rest.IndexOf(" -> ", StringComparison.Ordinal);
+            if (arrow >= 0)
+            {
+                orig = rest[..arrow];
+                path = rest[(arrow + 4)..];
+            }
+            list.Add(new GitChange(code, path, orig));
+        }
+        return list;
+    }
+
+    public static async Task<IReadOnlyList<GitChange>> ListChangesAsync(string root)
+    {
+        var (code, stdout, stderr) = await CliUtil.RunCaptureAsync("git", ["status", "--porcelain"], root).ConfigureAwait(false);
+        if (code != 0)
+        {
+            var err = string.IsNullOrEmpty(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrEmpty(err) ? "無法讀取 git 狀態。" : err);
+        }
+        return ParsePorcelain(stdout);
+    }
+
+    public static async Task<string> CommitAsync(string root, string message, bool stageAll = true)
+    {
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+        var msg = (message ?? "").Replace("\r\n", "\n").Trim();
+        if (string.IsNullOrEmpty(msg))
+            throw new InvalidOperationException("請填寫提交說明。");
+
+        if (stageAll)
+        {
+            var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "-A"], root).ConfigureAwait(false);
+            if (addCode != 0)
+                throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? "git add 失敗。" : addOut);
+        }
+
+        var (diffCode, diffOut) = await CliUtil.RunAsync("git", ["diff", "--cached", "--quiet"], root).ConfigureAwait(false);
+        if (diffCode == 0)
+            throw new InvalidOperationException("沒有可提交的變更（工作區為乾淨，或變更尚未暫存）。");
+        if (diffCode != 1)
+            throw new InvalidOperationException(string.IsNullOrEmpty(diffOut) ? "無法判斷暫存區狀態。" : diffOut);
+
+        var (code, output) = await CliUtil.RunAsync("git", ["commit", "-m", msg], root).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "git commit 失敗。" : output);
+
+        var (cSha, sha) = await CliUtil.RunAsync("git", ["rev-parse", "--short", "HEAD"], root).ConfigureAwait(false);
+        var (cBr, branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).ConfigureAwait(false);
+        var lines = new List<string>
+        {
+            $"已提交到 {(cBr == 0 && !string.IsNullOrEmpty(branch) ? branch : "目前分支")}",
+        };
+        if (cSha == 0 && !string.IsNullOrEmpty(sha))
+            lines.Add(sha);
+        if (!string.IsNullOrEmpty(output))
+            lines.Add(output);
+        return string.Join('\n', lines);
     }
 
     public static async Task<GitBriefStatus?> TryBriefStatusAsync(string root)
