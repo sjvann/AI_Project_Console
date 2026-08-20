@@ -259,7 +259,16 @@
             </div>
             <div class="field" style="align-items:start">
                 <span>說明</span>
-                <textarea @bind="S.CommitMessage" placeholder="例如：修正搜尋條件驗證。" style="min-height:110px"></textarea>
+                <div>
+                    <textarea @bind="S.CommitMessage" placeholder="例如：修正搜尋條件驗證。也可按「AI 建議」。" style="min-height:110px"></textarea>
+                    <div class="btn-row">
+                        <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.SuggestCommitMessageAsync">AI 建議</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(S.CommitSuggestHint))
+                    {
+                        <p class="hint">@S.CommitSuggestHint</p>
+                    }
+                </div>
             </div>
             <label class="check"><input type="checkbox" checked="@S.CommitPushAfter" @onchange="e => S.CommitPushAfter = (bool)(e.Value ?? false)" /> 提交後發布（push）目前分支</label>
             <div class="dialog-actions">

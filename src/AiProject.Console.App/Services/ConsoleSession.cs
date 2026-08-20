@@ -97,6 +97,7 @@ public sealed class ConsoleSession : IDisposable
     public string CommitHint { get; private set; } = "";
     public bool CommitPushAfter { get; set; }
     public IReadOnlyList<GitChange> CommitChanges { get; private set; } = [];
+    public string CommitSuggestHint { get; private set; } = "";
     public GitBriefStatus? GitBrief { get; private set; }
     public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
     public AvailableUpdate? UpdateAvailable { get; private set; }
@@ -843,7 +844,37 @@ public sealed class ConsoleSession : IDisposable
         CommitChanges = changes;
         CommitMessage = "";
         CommitPushAfter = false;
+        CommitSuggestHint = "";
         CommitHint = $"{changes.Count} 筆未提交變更（將全部加入後提交）";
+        Dialog = "commit";
+        Notify();
+    }
+
+    public async Task SuggestCommitMessageAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (CommitChanges.Count == 0)
+            return;
+        if (!string.IsNullOrWhiteSpace(CommitMessage)
+            && !_native.Confirm("取代說明", "將用 AI 建議覆蓋目前說明。確定？"))
+            return;
+
+        CommitSuggestion? suggestion = null;
+        await RunJobAsync("AI 建議說明…", async () =>
+        {
+            suggestion = await CommitMessageSuggester.SuggestAsync(Catalog!.Root, CommitChanges).ConfigureAwait(false);
+            return (string?)null;
+        }).ConfigureAwait(false);
+        if (suggestion is null || string.IsNullOrWhiteSpace(suggestion.Message))
+        {
+            _native.Warn("無法產生建議", "請手動填寫提交說明。");
+            return;
+        }
+        CommitMessage = suggestion.Message;
+        CommitSuggestHint = suggestion.Source == "cursor"
+            ? "已用 Cursor Agent 產生，可再修改後提交。"
+            : "已依變更內容產生建議（未偵測到 Cursor Agent CLI）。可再修改後提交。";
         Dialog = "commit";
         Notify();
     }
@@ -1380,6 +1411,7 @@ public sealed class ConsoleSession : IDisposable
         GitBrief = null;
         CommitMessage = "";
         CommitHint = "";
+        CommitSuggestHint = "";
         CommitPushAfter = false;
         CommitChanges = [];
         LogFilter = "";

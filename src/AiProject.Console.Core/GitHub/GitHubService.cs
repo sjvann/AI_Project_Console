@@ -287,17 +287,18 @@ public static class GitHubService
             var arrow = rest.IndexOf(" -> ", StringComparison.Ordinal);
             if (arrow >= 0)
             {
-                orig = rest[..arrow];
+                orig = CommitMessageSuggester.UnescapeGitPath(rest[..arrow]);
                 path = rest[(arrow + 4)..];
             }
-            list.Add(new GitChange(code, path, orig));
+            list.Add(new GitChange(code, CommitMessageSuggester.UnescapeGitPath(path), orig));
         }
         return list;
     }
 
     public static async Task<IReadOnlyList<GitChange>> ListChangesAsync(string root)
     {
-        var (code, stdout, stderr) = await CliUtil.RunCaptureAsync("git", ["status", "--porcelain"], root).ConfigureAwait(false);
+        var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
+            "git", ["-c", "core.quotepath=false", "status", "--porcelain"], root).ConfigureAwait(false);
         if (code != 0)
         {
             var err = string.IsNullOrEmpty(stderr) ? stdout : stderr;

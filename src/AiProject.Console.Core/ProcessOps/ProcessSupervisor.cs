@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Cursor;
+using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
@@ -348,6 +349,10 @@ public static class ProcessSupervisor
         lines.Add(cursor is null
             ? "Cursor CLI: 缺少（選用；安裝 Cursor 後可自動開專案／求救）"
             : "Cursor CLI: OK — " + cursor);
+        var agent = CommitMessageSuggester.ResolveAgentCli();
+        lines.Add(agent is null
+            ? "Cursor Agent CLI: 缺少（選用；提交對話框的「AI 建議」會改依 diff 產生草稿）"
+            : "Cursor Agent CLI: OK — " + agent);
         if (catalog is null)
         {
             lines.Add("");

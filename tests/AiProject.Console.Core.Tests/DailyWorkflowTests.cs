@@ -42,6 +42,50 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public void UnescapeGitPath_DecodesQuotedOctalUtf8()
+    {
+        var path = CommitMessageSuggester.UnescapeGitPath(
+            "\"Requirement/FHIR Profile Server \\346\\226\\207\\344\\273\\266.md\"");
+        Assert.Equal("Requirement/FHIR Profile Server 文件.md", path);
+    }
+
+    [Fact]
+    public void ParsePorcelain_UnescapesQuotedPaths()
+    {
+        var changes = GitHubService.ParsePorcelain(
+            "?? \"Requirement/QA-\\346\\270\\254\\350\\251\\246.md\"");
+        Assert.Single(changes);
+        Assert.Equal("Requirement/QA-測試.md", changes[0].Path);
+        Assert.Equal("未追蹤  Requirement/QA-測試.md", changes[0].Display());
+    }
+
+    [Fact]
+    public void DraftFromContext_SummarizesDocsAndConfig()
+    {
+        var ctx = new CommitContext(
+            [
+                new GitChange("??", "Requirement/FHIR Profile Server 文件.md"),
+                new GitChange("??", "Requirement/QA-測試.md"),
+                new GitChange(" M", ".gitignore"),
+                new GitChange(" M", "ai-project.json"),
+            ],
+            "",
+            "",
+            []);
+        var draft = CommitMessageSuggester.DraftFromContext(ctx);
+        Assert.Contains("文件", draft);
+        Assert.Contains("設定", draft);
+        Assert.Contains("ai-project.json", draft);
+    }
+
+    [Fact]
+    public void CleanMessage_StripsFencesAndPrefix()
+    {
+        var text = CommitMessageSuggester.CleanMessage("```\n提交說明：更新需求文件\n```");
+        Assert.Equal("更新需求文件", text);
+    }
+
+    [Fact]
     public async Task CommitAsync_StagesAndCommitsDirtyFiles()
     {
         if (!CliUtil.CommandExists("git"))
