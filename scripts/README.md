@@ -2,7 +2,7 @@
 
 發佈新版本時依序做：改版號 → 打包 → 推送 → 建立 Release。已安裝舊版的使用者會靠 GitHub Releases 的 latest 做「檢查更新」，因此**不可覆寫舊 tag**，必須升版。
 
-目前程式版號見 `src/AiProject.Console.Core/AppInfo.cs` 的 `Version`（例如 `0.3.6`）。下列指令以 `0.3.7` 為例，請改成實際新版號。
+目前程式版號見 `src/AiProject.Console.Core/AppInfo.cs` 的 `Version`（例如 `0.3.7`）。下列指令以 `0.3.8` 為例，請改成實際新版號。
 
 ## 前置需求
 
@@ -30,7 +30,7 @@ cd E:\sjvann\AI_Project_Console
 
 ```powershell
 git add -A
-git commit -m "Bump version to 0.3.7."
+git commit -m "Bump version to 0.3.8."
 git push
 ```
 
@@ -39,13 +39,13 @@ git push
 ## 3. 打包 Windows x64
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/pack-win.ps1 -Version 0.3.7
+powershell -ExecutionPolicy Bypass -File scripts/pack-win.ps1 -Version 0.3.8
 ```
 
 成功後 `dist\` 會有：
 
-- `AI_Project_Console-0.3.7-win-x64-setup.exe`：安裝程式（開始選單捷徑，可選桌面捷徑）
-- `AI_Project_Console-0.3.7-win-x64.zip`：免安裝壓縮包，解壓後執行 `AI_Project_Console.exe`
+- `AI_Project_Console-0.3.8-win-x64-setup.exe`：安裝程式（開始選單捷徑，可選桌面捷徑）
+- `AI_Project_Console-0.3.8-win-x64.zip`：免安裝壓縮包，解壓後執行 `AI_Project_Console.exe`
 
 只產生單檔執行檔（不經 Inno Setup）可用：
 
@@ -58,29 +58,29 @@ macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
 ## 4. 建立 GitHub Release
 
 ```powershell
-gh release create v0.3.7 --title "v0.3.7 AI_Project 控制台" --notes @"
-## AI_Project 控制台 0.3.7
+gh release create v0.3.8 --title "v0.3.8 AI_Project 控制台" --notes @"
+## AI_Project 控制台 0.3.8
 
 <在此寫本版說明>
 
 ### 下載
 
-- **AI_Project_Console-0.3.7-win-x64-setup.exe**：安裝程式（開始選單捷徑，可選桌面捷徑；安裝到目前使用者的 Local AppData）
-- **AI_Project_Console-0.3.7-win-x64.zip**：免安裝壓縮包，解壓後執行 ``AI_Project_Console.exe``
+- **AI_Project_Console-0.3.8-win-x64-setup.exe**：安裝程式（開始選單捷徑，可選桌面捷徑；安裝到目前使用者的 Local AppData）
+- **AI_Project_Console-0.3.8-win-x64.zip**：免安裝壓縮包，解壓後執行 ``AI_Project_Console.exe``
 
 Windows 10/11 需已安裝 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（系統通常已內建）。
-"@ dist\AI_Project_Console-0.3.7-win-x64-setup.exe dist\AI_Project_Console-0.3.7-win-x64.zip
+"@ dist\AI_Project_Console-0.3.8-win-x64-setup.exe dist\AI_Project_Console-0.3.8-win-x64.zip
 ```
 
 完成後網址：
 
-`https://github.com/sjvann/AI_Project_Console/releases/tag/v0.3.7`
+`https://github.com/sjvann/AI_Project_Console/releases/tag/v0.3.8`
 
 查看、列出：
 
 ```powershell
 gh release list
-gh release view v0.3.7
+gh release view v0.3.8
 ```
 
 ## 重新產生圖示（可選）
