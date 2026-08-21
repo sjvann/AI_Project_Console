@@ -49,7 +49,8 @@ public class BuildFreshnessTests
                 Ports: [8080],
                 ApplicationUrls: ["http://localhost:8080"],
                 LaunchUrl: "",
-                Group: "Demo");
+                Group: "Demo",
+                Language: "C#");
             Assert.Equal("fresh", BuildFreshness.ProjectBuildState(root, info).Status);
         }
         finally
@@ -84,8 +85,11 @@ public class BuildFreshnessTests
                 Ports: [8080],
                 ApplicationUrls: ["http://localhost:8080"],
                 LaunchUrl: "",
-                Group: "Demo");
-            Assert.Equal("stale", BuildFreshness.ProjectBuildState(root, info).Status);
+                Group: "Demo",
+                Language: "C#");
+            var state = BuildFreshness.ProjectBuildState(root, info);
+            Assert.Equal("stale", state.Status);
+            Assert.Equal("C#", state.Language);
         }
         finally
         {

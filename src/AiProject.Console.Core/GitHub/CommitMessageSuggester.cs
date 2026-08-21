@@ -10,7 +10,7 @@ public sealed record CommitContext(
     string Patch,
     IReadOnlyList<string> RecentSubjects);
 
-public sealed record CommitSuggestion(string Message, string Source);
+public sealed record CommitSuggestion(string Message, string Source, string Hint);
 
 public static class CommitMessageSuggester
 {
@@ -27,6 +27,57 @@ public static class CommitMessageSuggester
                 return found;
         }
         return FindWellKnownAgentCli();
+    }
+
+    public static string DoctorLine()
+    {
+        var cli = ResolveAgentCli();
+        if (cli is null)
+            return "Cursor Agent CLI: 缺少（選用；提交對話框的「AI 建議」會改依 diff 產生草稿）";
+        var login = ProbeAgentLogin(cli);
+        return login is null
+            ? "Cursor Agent CLI: OK — " + cli
+            : "Cursor Agent CLI: 已安裝但未登入 — " + cli + "（請在終端機執行 agent login）";
+    }
+
+    public static string LocalDraftHint(string? agentError)
+    {
+        if (string.IsNullOrWhiteSpace(agentError))
+            return "已依變更內容產生建議（未偵測到 Cursor Agent CLI）。可再修改後提交。";
+        return "已依變更內容產生建議（" + SummarizeAgentError(agentError) + "）。可再修改後提交。";
+    }
+
+    public static string SummarizeAgentError(string error)
+    {
+        if (LooksLikeAuthError(error))
+            return "Cursor Agent 尚未登入，請在終端機執行 agent login";
+        if (error.Contains("逾時", StringComparison.Ordinal))
+            return "Cursor Agent 回應逾時";
+        var first = error.Replace("\r\n", "\n").Split('\n')
+            .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))?.Trim() ?? error.Trim();
+        if (first.Length > 120)
+            first = first[..120] + "…";
+        return "Cursor Agent 呼叫失敗：" + first;
+    }
+
+    public static bool LooksLikeAuthError(string error) =>
+        error.Contains("Authentication required", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("Not logged in", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("Not authenticated", StringComparison.OrdinalIgnoreCase);
+
+    private static string? ProbeAgentLogin(string cli)
+    {
+        try
+        {
+            var (_, output) = CliUtil.RunAsync(cli, ["status"], timeoutMs: 20_000).GetAwaiter().GetResult();
+            return LooksLikeAuthError(output)
+                ? "尚未登入"
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? FindWellKnownAgentCli()
@@ -68,14 +119,14 @@ public static class CommitMessageSuggester
             {
                 var text = await RunAgentAsync(cli, root, BuildPrompt(ctx)).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(text))
-                    return new CommitSuggestion(CleanMessage(text), "cursor");
+                    return new CommitSuggestion(CleanMessage(text), "cursor", "已用 Cursor Agent 產生，可再修改後提交。");
             }
-            catch
+            catch (Exception ex)
             {
-                // 改用本機草稿
+                return new CommitSuggestion(DraftFromContext(ctx), "local", LocalDraftHint(ex.Message));
             }
         }
-        return new CommitSuggestion(DraftFromContext(ctx), "local");
+        return new CommitSuggestion(DraftFromContext(ctx), "local", LocalDraftHint(null));
     }
 
     public static string BuildPrompt(CommitContext ctx)
@@ -186,7 +237,7 @@ public static class CommitMessageSuggester
 
     private static async Task<string> RunAgentAsync(string cli, string root, string prompt)
     {
-        var args = new[] { "-p", prompt, "--mode", "ask", "--output-format", "text" };
+        var args = new[] { "-p", prompt, "--mode", "ask", "--output-format", "text", "--trust" };
         var (code, output) = await CliUtil.RunAsync(cli, args, root, 90_000).ConfigureAwait(false);
         if (code != 0 || string.IsNullOrWhiteSpace(output))
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "Cursor Agent 沒有回傳說明。" : output);

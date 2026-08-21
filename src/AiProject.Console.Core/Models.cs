@@ -15,7 +15,8 @@ public sealed record ProjectInfo(
     IReadOnlyList<int> Ports,
     IReadOnlyList<string> ApplicationUrls,
     string LaunchUrl,
-    string Group);
+    string Group,
+    string Language = "");
 
 public sealed record ScanResult(string Root, IReadOnlyList<ProjectInfo> Projects, string Error = "");
 
@@ -53,7 +54,8 @@ public sealed record BuildState(
     string System = "",
     string Kind = "",
     string Output = "",
-    string Label = "");
+    string Label = "",
+    string Language = "");
 
 public sealed record ConsoleAction(
     string Id,

@@ -114,7 +114,24 @@ public static class ProjectScanner
             Ports: ports,
             ApplicationUrls: urls,
             LaunchUrl: launchUrl,
-            Group: GuessGroup(relDir));
+            Group: GuessGroup(relDir),
+            Language: DetectLanguage(csproj));
+    }
+
+    public static string DetectLanguage(string projectFile)
+    {
+        var ext = Path.GetExtension(projectFile);
+        return ext.ToLowerInvariant() switch
+        {
+            ".csproj" => "C#",
+            ".fsproj" => "F#",
+            ".vbproj" => "VB.NET",
+            ".vcxproj" => "C++",
+            ".esproj" or ".njsproj" => "JavaScript",
+            ".tsproj" => "TypeScript",
+            ".pyproj" => "Python",
+            _ => "",
+        };
     }
 
     private static string RelPosix(string root, string path)

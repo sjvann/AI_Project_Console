@@ -128,6 +128,17 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public void LocalDraftHint_MissingCliVsAuthFailure()
+    {
+        Assert.Contains("未偵測到 Cursor Agent CLI", CommitMessageSuggester.LocalDraftHint(null));
+        var hint = CommitMessageSuggester.LocalDraftHint(
+            "Error: Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable.");
+        Assert.Contains("尚未登入", hint);
+        Assert.Contains("agent login", hint);
+        Assert.DoesNotContain("未偵測到", hint);
+    }
+
+    [Fact]
     public async Task CommitAsync_StagesAndCommitsDirtyFiles()
     {
         if (!CliUtil.CommandExists("git"))

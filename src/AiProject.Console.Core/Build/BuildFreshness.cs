@@ -145,7 +145,8 @@ public static class BuildFreshness
             Path: info.RelDir,
             System: info.Group,
             Kind: kind,
-            Output: outPath ?? "");
+            Output: outPath ?? "",
+            Language: info.Language);
     }
 
     public static IReadOnlyList<BuildState> AllProjectBuildStates(ProjectCatalog catalog)
