@@ -16,6 +16,9 @@ public static class CommitMessageSuggester
 {
     private const int MaxPatchChars = 6_000;
     private static readonly Regex FenceRe = new(@"^```(?:\w+)?\s*|\s*```$", RegexOptions.Compiled);
+    private static readonly Regex AgentVersionDirRe = new(
+        @"^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:-\d{2}-\d{2}-\d{2})?-[a-f0-9]+$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly string[] AgentNames = ["agent", "cursor-agent"];
 
     public static string? ResolveAgentCli()
@@ -51,6 +54,8 @@ public static class CommitMessageSuggester
     {
         if (LooksLikeAuthError(error))
             return "Cursor Agent 尚未登入，請在終端機執行 agent login";
+        if (LooksLikeTrustError(error))
+            return "Cursor Agent 需要工作區信任；請在該專案目錄執行 agent 並選擇 Trust，或再試一次";
         if (error.Contains("逾時", StringComparison.Ordinal))
             return "Cursor Agent 回應逾時";
         var first = error.Replace("\r\n", "\n").Split('\n')
@@ -64,6 +69,10 @@ public static class CommitMessageSuggester
         error.Contains("Authentication required", StringComparison.OrdinalIgnoreCase)
         || error.Contains("Not logged in", StringComparison.OrdinalIgnoreCase)
         || error.Contains("Not authenticated", StringComparison.OrdinalIgnoreCase);
+
+    public static bool LooksLikeTrustError(string error) =>
+        error.Contains("Workspace Trust Required", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("Failed to trust workspace", StringComparison.OrdinalIgnoreCase);
 
     private static string? ProbeAgentLogin(string cli)
     {
@@ -235,10 +244,99 @@ public static class CommitMessageSuggester
         return Encoding.UTF8.GetString(bytes.ToArray());
     }
 
+    public static string[] BuildAgentFlags(string root) =>
+        ["-p", "--trust", "--mode", "ask", "--output-format", "text", "--workspace", Path.GetFullPath(root)];
+
+    /// <summary>
+    /// Windows 的 agent.cmd 會再包一層 cmd → PowerShell；長 prompt 與 diff 裡的 -- 會讓
+    /// <c>--trust</c> 沒進 CLI，進而出現 Workspace Trust Required。能解到 node.exe 就直呼。
+    /// </summary>
+    public static (string FileName, string[] PrefixArgs)? TryUnwrapWindowsAgent(string cli)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(cli))
+            return null;
+        var ext = Path.GetExtension(cli);
+        if (!ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+            && !ext.Equals(".ps1", StringComparison.OrdinalIgnoreCase)
+            && !ext.Equals(".bat", StringComparison.OrdinalIgnoreCase))
+            return null;
+        string dir;
+        try { dir = Path.GetDirectoryName(Path.GetFullPath(cli)) ?? ""; }
+        catch { return null; }
+        if (dir.Length == 0)
+            return null;
+
+        var direct = TryNodeEntry(dir);
+        if (direct is not null)
+            return direct;
+
+        var versions = Path.Combine(dir, "versions");
+        if (!Directory.Exists(versions))
+            return null;
+        string? bestDir = null;
+        var bestKey = -1;
+        foreach (var candidate in Directory.EnumerateDirectories(versions))
+        {
+            var name = Path.GetFileName(candidate);
+            var m = AgentVersionDirRe.Match(name);
+            if (!m.Success)
+                continue;
+            var key = int.Parse(m.Groups[1].Value) * 10_000
+                + int.Parse(m.Groups[2].Value) * 100
+                + int.Parse(m.Groups[3].Value);
+            if (key < bestKey)
+                continue;
+            if (TryNodeEntry(candidate) is null)
+                continue;
+            bestKey = key;
+            bestDir = candidate;
+        }
+        return bestDir is null ? null : TryNodeEntry(bestDir);
+    }
+
+    private static bool IsWindowsBatchWrapper(string cli)
+    {
+        var ext = Path.GetExtension(cli);
+        return ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".bat", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".ps1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static (string FileName, string[] PrefixArgs)? TryNodeEntry(string dir)
+    {
+        var node = Path.Combine(dir, "node.exe");
+        var index = Path.Combine(dir, "index.js");
+        if (!File.Exists(node) || !File.Exists(index))
+            return null;
+        return (node, [index]);
+    }
+
     private static async Task<string> RunAgentAsync(string cli, string root, string prompt)
     {
-        var args = new[] { "-p", prompt, "--mode", "ask", "--output-format", "text", "--trust" };
-        var (code, output) = await CliUtil.RunAsync(cli, args, root, 90_000).ConfigureAwait(false);
+        var flags = BuildAgentFlags(root);
+        string fileName;
+        string[] args;
+        string? stdin;
+        var unwrapped = TryUnwrapWindowsAgent(cli);
+        if (unwrapped is { } u)
+        {
+            fileName = u.FileName;
+            args = [.. u.PrefixArgs, .. flags, prompt];
+            stdin = null;
+        }
+        else if (OperatingSystem.IsWindows() && IsWindowsBatchWrapper(cli))
+        {
+            fileName = cli;
+            args = flags;
+            stdin = prompt;
+        }
+        else
+        {
+            fileName = cli;
+            args = [.. flags, prompt];
+            stdin = null;
+        }
+        var (code, output) = await CliUtil.RunAsync(fileName, args, root, 90_000, stdin: stdin).ConfigureAwait(false);
         if (code != 0 || string.IsNullOrWhiteSpace(output))
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "Cursor Agent 沒有回傳說明。" : output);
         return output;

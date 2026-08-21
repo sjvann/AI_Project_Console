@@ -139,6 +139,41 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public void LocalDraftHint_WorkspaceTrust()
+    {
+        var hint = CommitMessageSuggester.LocalDraftHint(
+            "⚠ Workspace Trust Required\n\n  Pass --trust, --yolo, or -f if you trust this directory");
+        Assert.Contains("工作區信任", hint);
+        Assert.DoesNotContain("呼叫失敗", hint);
+    }
+
+    [Fact]
+    public void BuildAgentFlags_PutsTrustBeforeWorkspace()
+    {
+        var flags = CommitMessageSuggester.BuildAgentFlags(@"C:\proj");
+        Assert.Equal("-p", flags[0]);
+        Assert.Contains("--trust", flags);
+        Assert.True(Array.IndexOf(flags, "--trust") < Array.IndexOf(flags, "--workspace"));
+        Assert.DoesNotContain(flags, f => f.Contains("請依") || f.Contains('\n'));
+    }
+
+    [Fact]
+    public void TryUnwrapWindowsAgent_FindsNodeWhenInstalled()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        var cli = CommitMessageSuggester.ResolveAgentCli();
+        if (cli is null)
+            return;
+        var unwrapped = CommitMessageSuggester.TryUnwrapWindowsAgent(cli);
+        if (unwrapped is null)
+            return;
+        Assert.True(File.Exists(unwrapped.Value.FileName));
+        Assert.EndsWith("node.exe", unwrapped.Value.FileName, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(unwrapped.Value.PrefixArgs, a => a.EndsWith("index.js", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task CommitAsync_StagesAndCommitsDirtyFiles()
     {
         if (!CliUtil.CommandExists("git"))
