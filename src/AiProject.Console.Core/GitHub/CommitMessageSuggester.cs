@@ -26,6 +26,21 @@ public static class CommitMessageSuggester
             if (!string.IsNullOrEmpty(found))
                 return found;
         }
+        return FindWellKnownAgentCli();
+    }
+
+    private static string? FindWellKnownAgentCli()
+    {
+        if (!OperatingSystem.IsWindows())
+            return null;
+        var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "Local");
+        foreach (var name in AgentNames)
+        {
+            var cmd = Path.Combine(local, "cursor-agent", name + ".cmd");
+            if (File.Exists(cmd))
+                return cmd;
+        }
         return null;
     }
 
