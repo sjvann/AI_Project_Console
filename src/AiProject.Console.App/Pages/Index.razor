@@ -157,7 +157,7 @@
                         var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
                         <div class="prj">
                             <span class="prj-name">@p.Name</span>
-                            <span class="meta">@p.System · @p.Kind</span>
+                            <span class="meta">@ProjectMeta(p)</span>
                             <span class="badge-stale">@badge</span>
                             <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
                         </div>
@@ -432,6 +432,13 @@
         S.Catalog?.Root is { } root
             ? S.RecentProjects.FirstOrDefault(p => string.Equals(p, root, StringComparison.OrdinalIgnoreCase)) ?? ""
             : "";
+
+    static string ProjectMeta(BuildState p)
+    {
+        if (string.IsNullOrEmpty(p.Language))
+            return $"{p.System} · {p.Kind}";
+        return $"{p.System} · {p.Kind} · {p.Language}";
+    }
 
     protected override void OnInitialized()
     {

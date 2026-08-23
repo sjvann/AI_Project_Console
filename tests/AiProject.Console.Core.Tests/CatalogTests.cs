@@ -213,6 +213,19 @@ public class CatalogTests
         }
     }
 
+    [Theory]
+    [InlineData("App.csproj", "C#")]
+    [InlineData("Lib.fsproj", "F#")]
+    [InlineData("App.vbproj", "VB.NET")]
+    [InlineData("Native.vcxproj", "C++")]
+    [InlineData("Web.esproj", "JavaScript")]
+    [InlineData("App.pyproj", "Python")]
+    [InlineData("unknown.xyz", "")]
+    public void Scanner_DetectsLanguageFromProjectFile(string file, string expected)
+    {
+        Assert.Equal(expected, ProjectScanner.DetectLanguage(file));
+    }
+
     [Fact]
     public void Scanner_ReadsLaunchSettings()
     {
@@ -227,6 +240,7 @@ public class CatalogTests
             Assert.Equal("scalar", p.LaunchUrl);
             Assert.Contains(8080, p.Ports);
             Assert.Contains("http://localhost:8080", p.ApplicationUrls);
+            Assert.Equal("C#", p.Language);
         }
         finally
         {

@@ -48,7 +48,6 @@ public class BuildFreshnessTests
             var (outMtime, _) = BuildFreshness.BuildOutput(projectDir);
             Assert.False(srcPath!.EndsWith("launchSettings.json", StringComparison.OrdinalIgnoreCase));
             Assert.True(srcMtime <= outMtime);
-
             Assert.Equal("fresh", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
         }
         finally
@@ -99,7 +98,9 @@ public class BuildFreshnessTests
             File.SetLastWriteTimeUtc(dll, now.AddMinutes(-5));
             File.SetLastWriteTimeUtc(cs, now);
 
-            Assert.Equal("stale", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("stale", state.Status);
+            Assert.Equal("C#", state.Language);
         }
         finally
         {
@@ -120,7 +121,8 @@ public class BuildFreshnessTests
         Ports: [8080],
         ApplicationUrls: ["http://localhost:8080"],
         LaunchUrl: "",
-        Group: "Demo");
+        Group: "Demo",
+        Language: "C#");
 
     static string CreateProject(string name)
     {

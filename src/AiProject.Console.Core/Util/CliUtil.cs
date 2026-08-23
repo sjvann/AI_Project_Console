@@ -35,9 +35,10 @@ public static class CliUtil
         IEnumerable<string> args,
         string? cwd = null,
         int timeoutMs = 120_000,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? stdin = null)
     {
-        var (code, stdout, stderr) = await RunCaptureAsync(fileName, args, cwd, timeoutMs, ct).ConfigureAwait(false);
+        var (code, stdout, stderr) = await RunCaptureAsync(fileName, args, cwd, timeoutMs, ct, stdin: stdin).ConfigureAwait(false);
         var output = string.Join('\n', new[] { stdout, stderr }.Where(s => !string.IsNullOrEmpty(s))).Trim();
         return (code, output);
     }
@@ -48,19 +49,24 @@ public static class CliUtil
         string? cwd = null,
         int timeoutMs = 120_000,
         CancellationToken ct = default,
-        bool trim = true)
+        bool trim = true,
+        string? stdin = null)
     {
+        var redirectIn = stdin is not null;
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
             WorkingDirectory = cwd ?? Environment.CurrentDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = redirectIn,
             UseShellExecute = false,
             CreateNoWindow = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        if (redirectIn)
+            psi.StandardInputEncoding = Encoding.UTF8;
         foreach (var a in args)
             psi.ArgumentList.Add(a);
 
@@ -74,6 +80,13 @@ public static class CliUtil
             proc.Start();
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
+            if (redirectIn)
+            {
+                await proc.StandardInput.WriteAsync(stdin).ConfigureAwait(false);
+                if (stdin!.Length == 0 || stdin[^1] != '\n')
+                    await proc.StandardInput.WriteAsync('\n').ConfigureAwait(false);
+                proc.StandardInput.Close();
+            }
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeoutMs);
             try

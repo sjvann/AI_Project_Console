@@ -2,7 +2,7 @@ namespace AiProject.Console.Core;
 
 public static class AppInfo
 {
-    public const string Version = "0.3.8";
+    public const string Version = "0.3.9";
     public const string Product = "AI_Project 控制台";
     public const string GitHubOwner = "sjvann";
     public const string GitHubRepo = "AI_Project_Console";

@@ -872,9 +872,7 @@ public sealed class ConsoleSession : IDisposable
             return;
         }
         CommitMessage = suggestion.Message;
-        CommitSuggestHint = suggestion.Source == "cursor"
-            ? "已用 Cursor Agent 產生，可再修改後提交。"
-            : "已依變更內容產生建議（未偵測到 Cursor Agent CLI）。可再修改後提交。";
+        CommitSuggestHint = suggestion.Hint;
         Dialog = "commit";
         Notify();
     }
