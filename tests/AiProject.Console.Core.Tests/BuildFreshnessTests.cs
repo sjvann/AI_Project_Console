@@ -16,6 +16,19 @@ public class BuildFreshnessTests
         Assert.Equal(expected, BuildFreshness.IsRuntimeConfig(relative.Replace('/', Path.DirectorySeparatorChar)));
     }
 
+    [Theory]
+    [InlineData("data/twins.json", true)]
+    [InlineData("data/senml.json", true)]
+    [InlineData("logs/app.log", true)]
+    [InlineData("App_Data/state.json", true)]
+    [InlineData("wwwroot/data.json", false)]
+    [InlineData("Program.cs", false)]
+    [InlineData("config/hub.json", false)]
+    public void IsRuntimeState_SkipsLiveDataJson(string relative, bool expected)
+    {
+        Assert.Equal(expected, BuildFreshness.IsRuntimeState(relative.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
     [Fact]
     public void ProjectStaysFresh_WhenOnlyLaunchSettingsIsNewerThanDll()
     {
@@ -36,21 +49,36 @@ public class BuildFreshnessTests
             Assert.False(srcPath!.EndsWith("launchSettings.json", StringComparison.OrdinalIgnoreCase));
             Assert.True(srcMtime <= outMtime);
 
-            var info = new ProjectInfo(
-                RelDir: "src/Demo.Api",
-                Name: "Demo.Api",
-                Csproj: "Demo.Api.csproj",
-                Sdk: "Microsoft.NET.Sdk.Web",
-                OutputType: "Exe",
-                IsExecutable: true,
-                IsWeb: true,
-                IsWebApi: true,
-                IsTest: false,
-                Ports: [8080],
-                ApplicationUrls: ["http://localhost:8080"],
-                LaunchUrl: "",
-                Group: "Demo");
-            Assert.Equal("fresh", BuildFreshness.ProjectBuildState(root, info).Status);
+            Assert.Equal("fresh", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProjectStaysFresh_WhenOnlyRuntimeDataJsonIsNewerThanDll()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var dataDir = Path.Combine(projectDir, "data");
+            Directory.CreateDirectory(dataDir);
+            var twins = Path.Combine(dataDir, "twins.json");
+            File.WriteAllText(twins, "{ }");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var now = DateTime.UtcNow;
+            StampSources(projectDir, now.AddMinutes(-10));
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-5));
+            File.SetLastWriteTimeUtc(twins, now);
+
+            var (srcMtime, srcPath) = BuildFreshness.NewestSource(projectDir);
+            var (outMtime, _) = BuildFreshness.BuildOutput(projectDir);
+            Assert.False(srcPath!.Replace('\\', '/').Contains("/data/", StringComparison.OrdinalIgnoreCase));
+            Assert.True(srcMtime <= outMtime);
+            Assert.Equal("fresh", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
         }
         finally
         {
@@ -71,27 +99,28 @@ public class BuildFreshnessTests
             File.SetLastWriteTimeUtc(dll, now.AddMinutes(-5));
             File.SetLastWriteTimeUtc(cs, now);
 
-            var info = new ProjectInfo(
-                RelDir: "src/Demo.Api",
-                Name: "Demo.Api",
-                Csproj: "Demo.Api.csproj",
-                Sdk: "Microsoft.NET.Sdk.Web",
-                OutputType: "Exe",
-                IsExecutable: true,
-                IsWeb: true,
-                IsWebApi: true,
-                IsTest: false,
-                Ports: [8080],
-                ApplicationUrls: ["http://localhost:8080"],
-                LaunchUrl: "",
-                Group: "Demo");
-            Assert.Equal("stale", BuildFreshness.ProjectBuildState(root, info).Status);
+            Assert.Equal("stale", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
     }
+
+    static ProjectInfo DemoApiInfo() => new(
+        RelDir: "src/Demo.Api",
+        Name: "Demo.Api",
+        Csproj: "Demo.Api.csproj",
+        Sdk: "Microsoft.NET.Sdk.Web",
+        OutputType: "Exe",
+        IsExecutable: true,
+        IsWeb: true,
+        IsWebApi: true,
+        IsTest: false,
+        Ports: [8080],
+        ApplicationUrls: ["http://localhost:8080"],
+        LaunchUrl: "",
+        Group: "Demo");
 
     static string CreateProject(string name)
     {
