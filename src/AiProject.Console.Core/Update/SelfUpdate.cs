@@ -205,16 +205,12 @@ public static class SelfUpdate
     public static string LaunchApply(string downloadedPath, UpdateApplyMode mode, string? installDir = null)
     {
         var target = Path.GetFullPath(installDir ?? AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : "AI_Project_Console");
         if (mode == UpdateApplyMode.Installer)
         {
-            var args = "/SILENT /CLOSEAPPLICATIONS /NORESTART /SUPPRESSMSGBOXES /DIR=\"" + target + "\"";
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = downloadedPath,
-                Arguments = args,
-                UseShellExecute = true,
-            });
-            return "已啟動安裝程式，控制台即將關閉。";
+            var script = WriteInstallerRestartScript(downloadedPath, target, Environment.ProcessId, exe);
+            StartHelperScript(script);
+            return "已啟動安裝程式，控制台即將關閉並重開。";
         }
 
         if (mode != UpdateApplyMode.PortableZip)
@@ -224,18 +220,27 @@ public static class SelfUpdate
         if (Directory.Exists(extractDir))
             Directory.Delete(extractDir, recursive: true);
         ZipFile.ExtractToDirectory(downloadedPath, extractDir);
-        var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : "AI_Project_Console");
-        var script = WriteSwapScript(extractDir, target, Environment.ProcessId, exe);
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = OperatingSystem.IsWindows() ? "powershell" : "/bin/bash",
-            Arguments = OperatingSystem.IsWindows()
-                ? "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\""
-                : "\"" + script + "\"",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        });
+        StartHelperScript(WriteSwapScript(extractDir, target, Environment.ProcessId, exe));
         return "已準備覆蓋檔案，控制台即將關閉並重開。";
+    }
+
+    public static string BuildInstallerRestartScript(string setupPath, string installDir, int pid, string exePath)
+    {
+        var setup = PsQuote(Path.GetFullPath(setupPath));
+        var target = PsQuote(Path.GetFullPath(installDir));
+        var exe = PsQuote(Path.GetFullPath(exePath));
+        var exeName = PsQuote(Path.GetFileNameWithoutExtension(exePath));
+        return
+            "$ErrorActionPreference = 'Stop'\r\n" +
+            "while (Get-Process -Id " + pid + " -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }\r\n" +
+            "Start-Sleep -Seconds 1\r\n" +
+            "$setup = " + setup + "\r\n" +
+            "$target = " + target + "\r\n" +
+            "Start-Process -FilePath $setup -ArgumentList @('/SILENT','/CLOSEAPPLICATIONS','/NORESTART','/SUPPRESSMSGBOXES',('/DIR=' + $target)) -Wait\r\n" +
+            "Start-Sleep -Seconds 1\r\n" +
+            "if (-not (Get-Process -Name " + exeName + " -ErrorAction SilentlyContinue)) {\r\n" +
+            "  Start-Process -FilePath " + exe + "\r\n" +
+            "}\r\n";
     }
 
     public static void OpenReleases(string? htmlUrl = null) =>
@@ -261,6 +266,27 @@ public static class SelfUpdate
             return null;
         var size = el.TryGetProperty("size", out var s) && s.TryGetInt64(out var n64) ? n64 : 0;
         return new ReleaseAsset(name, url, size);
+    }
+
+    private static void StartHelperScript(string script)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = OperatingSystem.IsWindows() ? "powershell" : "/bin/bash",
+            Arguments = OperatingSystem.IsWindows()
+                ? "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\""
+                : "\"" + script + "\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        });
+    }
+
+    private static string WriteInstallerRestartScript(string setupPath, string installDir, int pid, string exePath)
+    {
+        var script = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", "restart-after-install.ps1");
+        Directory.CreateDirectory(Path.GetDirectoryName(script)!);
+        File.WriteAllText(script, BuildInstallerRestartScript(setupPath, installDir, pid, exePath));
+        return script;
     }
 
     private static string WriteSwapScript(string extractDir, string targetDir, int pid, string exePath)

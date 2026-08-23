@@ -498,7 +498,7 @@ public sealed class ConsoleSession : IDisposable
 
         if (!_native.Confirm(
             "更新控制台",
-            $"將下載並安裝 {update.Tag}（目前 v{AppInfo.Version}）。\n控制台會關閉以便覆蓋檔案。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            $"將下載並安裝 {update.Tag}（目前 v{AppInfo.Version}）。\n控制台會先關閉以便覆蓋檔案，安裝完成後會自動重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
             return;
 
         if (JobBusy)

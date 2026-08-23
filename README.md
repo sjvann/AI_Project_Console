@@ -39,7 +39,7 @@ macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
 
 啟動約 1.5 秒後會查詢本倉庫 [GitHub Releases](https://github.com/sjvann/AI_Project_Console/releases) 的 latest。若有比目前 `AppInfo.Version` 更新的版本，標題列下方會出現橫幅。
 
-- **Inno 安裝版**（資料夾內有 `unins*.exe`）：下載 `*-win-x64-setup.exe`，靜默安裝到目前目錄後關閉控制台。
+- **Inno 安裝版**（資料夾內有 `unins*.exe`）：下載 `*-win-x64-setup.exe`，靜默安裝到目前目錄後關閉控制台，安裝完成後自動重開。
 - **zip 免安裝版**：下載 zip，等程式結束後覆蓋檔案並重開。
 - **從原始碼執行**（`dotnet run` / `bin\Debug`）：無法直接覆蓋開發目錄；請 `git pull` 後重新編譯，或改用 Releases 安裝包。
 

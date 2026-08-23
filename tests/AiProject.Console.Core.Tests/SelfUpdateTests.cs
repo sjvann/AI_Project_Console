@@ -88,6 +88,21 @@ public class SelfUpdateTests
     }
 
     [Fact]
+    public void BuildInstallerRestartScript_WaitsThenRelaunches()
+    {
+        var setup = Path.Combine(Path.GetTempPath(), "AI_Project_Console-0.4.0-win-x64-setup.exe");
+        var dir = Path.Combine(Path.GetTempPath(), "Programs", "AI_Project_Console");
+        var exe = Path.Combine(dir, "AI_Project_Console.exe");
+        var script = SelfUpdate.BuildInstallerRestartScript(setup, dir, 4242, exe);
+        Assert.Contains("Get-Process -Id 4242", script, StringComparison.Ordinal);
+        Assert.Contains("-Wait", script, StringComparison.Ordinal);
+        Assert.Contains("/SILENT", script, StringComparison.Ordinal);
+        Assert.Contains("/DIR=", script, StringComparison.Ordinal);
+        Assert.Contains("Start-Process -FilePath '" + Path.GetFullPath(exe) + "'", script, StringComparison.Ordinal);
+        Assert.Contains("Get-Process -Name 'AI_Project_Console'", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ParseLatest_ThrowsOnGithubApiMessage()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
