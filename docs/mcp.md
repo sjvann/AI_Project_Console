@@ -87,4 +87,27 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --arg confirm=true
 ```
 
-每次呼叫（含被拒）寫入 `{root}/.ai_project/mcp-audit.jsonl`。管理者可在控制台右側「MCP 審計」分頁對帳，或用工具 `list_audit`。
+## MCP 審計（控制台右側分頁）
+
+**用途：** 對帳「Agent 對本機堆疊做了什麼」。每次 MCP 工具呼叫（成功或被拒）寫入 `{root}/.ai_project/mcp-audit.jsonl`。服務 Log 看程式輸出；審計看工具名、參數、耗時、拒絕原因。
+
+**怎麼用**
+
+1. 設定 → Agentic／MCP，把「本控制台」加入專案，並重新載入 Cursor。
+2. 請 Agent 呼叫 `stack_status`、`build`、`get_log` 等（或問「用 `duty_summary` 看現在能不能交班」）。
+3. 打開右側「MCP 審計」，按「重新載入」。摘要列「MCP 拒絕」有數字時點一下也會打開這頁。
+4. 搜尋可過濾工具名／參數／拒絕原因；「開啟檔案」用系統編輯器看完整 jsonl。Agent 也可用 `list_audit`。
+
+**怎麼讀一列**
+
+| 欄 | 意義 |
+|----|------|
+| 時間 | 本地時間；今天只顯示時分秒 |
+| OK／拒 | 成功，或政策禁止／缺 `confirm`／工具失敗 |
+| 工具 | 例如 `stack_status`、`stop_all` |
+| 耗時 | 該次呼叫毫秒 |
+| 參數／拒絕原因 | 成功看參數；拒絕看原因（例如需要 `confirm=true`） |
+
+上方政策列對應設定或 `mcp-policy.json`：**可寫／唯讀**＝能否編譯與啟停；**允許**空白＝全部已知工具；**禁止**一律擋下；**需確認**必須帶 `confirm=true`（預設 `stop_all`）。
+
+尚無紀錄通常表示 Agent 還沒呼叫堆疊工具，或控制台尚未加入 Cursor 的 MCP——不是故障。

@@ -64,11 +64,11 @@
             </div>
             <button class="btn-primary" @onclick="S.OpenUatDialog">UAT 求救</button>
             <span class="sep"></span>
-            <button class="btn-sec" @onclick="S.Doctor">環境體檢</button>
-            <span class="sep"></span>
             <ActionMenu Title="建置" Actions="S.BuildActions" Session="S" @bind-Open="openMenu" Key="build" />
+            <span class="sep"></span>
             <ActionMenu Title="GitHub" Actions="S.GithubActions" Session="S" @bind-Open="openMenu" Key="github" />
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
+            <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
         </div>
     </div>
 
@@ -257,15 +257,42 @@
                 <div class="log-tools">
                     <strong>MCP 審計</strong>
                     <span class="hint">@(S.AuditTotal > 0 ? $"最近 {S.AuditEntries.Count}／共 {S.AuditTotal} 筆" : "尚無紀錄")</span>
-                    <input class="log-search" placeholder="搜尋工具／參數…" value="@S.AuditFilter" @oninput="OnAuditFilter" />
-                    <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.RefreshAudit">重新載入</button>
-                    <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.OpenAuditDir">開啟檔案</button>
+                    <input class="log-search" placeholder="搜尋工具／參數…" title="依工具名稱、參數或拒絕原因過濾" value="@S.AuditFilter" @oninput="OnAuditFilter" />
+                    <button class="btn-sec" disabled="@(!S.HasProject)" title="從 .ai_project/mcp-audit.jsonl 讀取最新紀錄" @onclick="S.RefreshAudit">重新載入</button>
+                    <button class="btn-sec" disabled="@(!S.HasProject)" title="用系統預設程式開啟 mcp-audit.jsonl" @onclick="S.OpenAuditDir">開啟檔案</button>
                 </div>
-                @if (!string.IsNullOrEmpty(S.AuditPolicyText))
-                {
-                    <p class="hint audit-policy">@S.AuditPolicyText</p>
-                }
+                <div class="audit-help">
+                    <p>這裡是 <strong>Agent 操作本機堆疊的對帳單</strong>。每次透過 MCP 呼叫（編譯、啟停、讀 Log）無論成功或被政策拒絕，都會寫進來。服務 Log 看程式輸出；這頁看「Agent 呼叫了哪支工具」。</p>
+                    @if (S.AuditTotal == 0)
+                    {
+                        <ol>
+                            <li>設定 → Agentic／MCP，把「本控制台」加入專案，並重新載入 Cursor。</li>
+                            <li>請 Agent 呼叫 <code>stack_status</code>、<code>build</code>、<code>get_log</code> 等工具（或問「用 duty_summary 看現在能不能交班」）。</li>
+                            <li>回到這頁按「重新載入」。有拒絕時，上方摘要「MCP 拒絕」會變黃，點一下也會打開這裡。</li>
+                        </ol>
+                        <button class="btn-link" type="button" @onclick="S.OpenPreferences">前往 Agentic／MCP 設定</button>
+                    }
+                    else
+                    {
+                        <p class="hint">每一列是一次呼叫：時間、OK／拒、工具、耗時、參數或拒絕原因。搜尋可過濾；「開啟檔案」看完整 <code>.ai_project/mcp-audit.jsonl</code>。</p>
+                    }
+                    @if (!string.IsNullOrEmpty(S.AuditPolicyText))
+                    {
+                        <p class="hint">@S.AuditPolicyText</p>
+                    }
+                    <p class="hint">可寫／唯讀＝Agent 能否編譯與啟停。允許＝白名單（空白＝全部）。禁止＝一律擋下。需確認＝必須帶 <code>confirm=true</code>（預設 <code>stop_all</code>）。改權限請到設定。</p>
+                </div>
                 <div class="audit-list">
+                    @if (S.VisibleAuditEntries.Any())
+                    {
+                        <div class="audit-row audit-head" aria-hidden="true">
+                            <span>時間</span>
+                            <span>結果</span>
+                            <span>工具</span>
+                            <span>耗時</span>
+                            <span>參數／拒絕原因</span>
+                        </div>
+                    }
                     @foreach (var e in S.VisibleAuditEntries)
                     {
                         <div class="audit-row @(e.Ok ? "ok" : "fail")" title="@(e.Error ?? e.ArgsText)">
@@ -287,7 +314,20 @@
                     }
                     @if (!S.VisibleAuditEntries.Any())
                     {
-                        <p class="hint">@(S.HasProject ? "Agent 尚未呼叫堆疊工具，或沒有符合搜尋的紀錄。" : "請先選擇專案目錄。")</p>
+                        <div class="audit-empty">
+                            @if (!S.HasProject)
+                            {
+                                <p class="hint">請先選擇專案目錄。審計檔會寫在該專案的 <code>.ai_project/mcp-audit.jsonl</code>。</p>
+                            }
+                            else if (S.AuditTotal == 0)
+                            {
+                                <p class="hint">目前沒有紀錄。這不是故障：Agent 還沒呼叫堆疊工具，或控制台尚未加入 Cursor 的 MCP。</p>
+                            }
+                            else
+                            {
+                                <p class="hint">沒有符合「@S.AuditFilter」的紀錄。清掉搜尋即可看到最近呼叫。</p>
+                            }
+                        </div>
                     }
                 </div>
             }
