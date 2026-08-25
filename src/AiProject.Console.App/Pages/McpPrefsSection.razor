@@ -1,0 +1,155 @@
+@using AiProject.Console.Core.Stack
+
+<div class="mcp-prefs">
+    <h3 class="prefs-sub">Agentic／MCP</h3>
+    <p class="hint">讓 Cursor／Claude Code 呼叫本控制台看堆疊、編譯、啟停。先加入本控制台，再決定工具權限。</p>
+
+    <section class="mcp-block" aria-labelledby="mcp-refs-title">
+        <div class="mcp-block-head">
+            <strong id="mcp-refs-title">已引用的 MCP</strong>
+            <span class="hint">@(S.HasProject ? $"專案 .cursor/mcp.json · 已加入 {S.LinkedMcpCount}" : "開啟專案後顯示")</span>
+        </div>
+
+        <ul class="mcp-ref-list">
+            @foreach (var mcp in S.ProjectMcpServers)
+            {
+                <li class="@(mcp.Linked ? "is-on" : "is-off") @(mcp.Suggested && !mcp.Linked ? "is-suggested" : null)">
+                    <span class="mcp-dot @(mcp.Linked ? "on" : "off")" aria-hidden="true"></span>
+                    <div class="mcp-ref-main">
+                        <span class="mcp-ref-title">@mcp.Title</span>
+                        <span class="hint">@mcp.Id · @mcp.Hint</span>
+                    </div>
+                    @if (mcp.Linked)
+                    {
+                        <span class="mcp-badge on">已加入</span>
+                    }
+                    else if (mcp.Ours)
+                    {
+                        <span class="mcp-badge">未加入</span>
+                    }
+                    else
+                    {
+                        <span class="mcp-badge muted">建議</span>
+                    }
+                </li>
+            }
+        </ul>
+        <p class="hint">
+            @(S.HasProject
+                ? "此清單只看目前專案的 .cursor/mcp.json；使用者全域的 MCP 不會列在這裡。"
+                : "尚未開啟專案。開啟後會讀取 .cursor/mcp.json；也可先複製設定貼到使用者全域 mcp.json。")
+        </p>
+
+        <div class="field mcp-add">
+            <span>加入 MCP</span>
+            <div class="field-inline">
+                <select aria-label="選擇要加入的 MCP" value="@S.AddMcpId" @onchange="OnAddMcp">
+                    @foreach (var mcp in S.AddableMcpServers)
+                    {
+                        <option value="@mcp.Id">@mcp.Title（@mcp.Id）</option>
+                    }
+                </select>
+                <button class="btn-primary" type="button" disabled="@(S.SelectedMcpIsOurs && !S.CanWriteSelectedMcp)" @onclick="S.WriteMcpConfigToProject">
+                    @S.AddMcpButtonLabel
+                </button>
+            </div>
+        </div>
+        <div class="row">
+            <button class="btn-sec" type="button" @onclick="S.CopyMcpConfigAsync">複製設定</button>
+        </div>
+    </section>
+
+    <section class="mcp-block" aria-labelledby="mcp-tools-title">
+        <div class="mcp-block-head">
+            <strong id="mcp-tools-title">工具權限</strong>
+            <span class="hint">Agent 可呼叫的本控制台工具</span>
+        </div>
+
+        <div class="field">
+            <span>模式</span>
+            <select aria-label="工具權限模式" value="@S.McpToolMode" @onchange="OnMode">
+                <option value="all">全部可用</option>
+                <option value="readonly">唯讀（只能看狀態／Log）</option>
+                <option value="custom">自訂白名單</option>
+            </select>
+        </div>
+
+        @if (S.McpToolMode == "custom")
+        {
+            <div class="field mcp-add">
+                <span>加入工具</span>
+                <div class="field-inline">
+                    <select aria-label="選擇要加入的工具" value="@S.AddToolName" @onchange="OnAddToolName" disabled="@(!S.McpToolsToAdd.Any())">
+                        @if (!S.McpToolsToAdd.Any())
+                        {
+                            <option value="">已全部加入</option>
+                        }
+                        @foreach (var tool in S.McpToolsToAdd)
+                        {
+                            <option value="@tool.Name">@StackToolRouter.DisplayTitle(tool.Name)（@tool.Name）</option>
+                        }
+                    </select>
+                    <button class="btn-sec" type="button" disabled="@(!S.McpToolsToAdd.Any())" @onclick="() => S.AddMcpTool()">加入</button>
+                </div>
+            </div>
+        }
+
+        @if (!S.VisibleMcpTools.Any())
+        {
+            <p class="hint mcp-empty">尚未選擇工具。請用上方下拉加入。</p>
+        }
+        else
+        {
+            <ul class="mcp-tool-list">
+                @foreach (var tool in S.VisibleMcpTools)
+                {
+                    var locked = S.McpToolAccessLocked(tool.Name);
+                    <li class="mcp-tool-row">
+                        <div class="mcp-ref-main">
+                            <span class="mcp-ref-title">@StackToolRouter.DisplayTitle(tool.Name)</span>
+                            <span class="hint"><code>@tool.Name</code></span>
+                        </div>
+                        <div class="mcp-tool-actions">
+                            <select aria-label="@(tool.Name + " 權限")"
+                                    value="@S.GetMcpToolAccess(tool.Name)"
+                                    disabled="@locked"
+                                    @onchange="e => OnToolAccess(tool.Name, e)">
+                                <option value="allow">允許</option>
+                                <option value="confirm">需確認</option>
+                                @if (S.McpToolMode != "custom")
+                                {
+                                    <option value="deny">禁止</option>
+                                }
+                            </select>
+                            @if (S.McpToolMode == "custom")
+                            {
+                                <button class="btn-link" type="button" disabled="@(S.VisibleMcpTools.Count <= 1)" @onclick="() => S.RemoveMcpTool(tool.Name)">移除</button>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (S.ProjectHasMcpPolicy)
+        {
+            <p class="hint">此專案已有 <code>.ai_project/mcp-policy.json</code>，會覆蓋這裡的權限。</p>
+        }
+        <div class="row">
+            <button class="btn-link" type="button" disabled="@(!S.HasProject)" @onclick="S.WriteMcpPolicyToProject">寫入專案政策範本</button>
+        </div>
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ConsoleSession S { get; set; } = default!;
+
+    void OnMode(ChangeEventArgs e) => S.SetMcpToolMode(e.Value?.ToString() ?? "all");
+
+    void OnAddMcp(ChangeEventArgs e) => S.SetAddMcpId(e.Value?.ToString());
+
+    void OnAddToolName(ChangeEventArgs e) => S.AddToolName = e.Value?.ToString() ?? "";
+
+    void OnToolAccess(string name, ChangeEventArgs e) =>
+        S.SetMcpToolAccess(name, e.Value?.ToString() ?? "allow");
+}

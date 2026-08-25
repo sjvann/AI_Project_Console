@@ -29,6 +29,25 @@ public static class StackToolRouter
         new("list_audit", "讀取最近的 MCP 審計紀錄（.ai_project/mcp-audit.jsonl）。", "tail"),
     ];
 
+    public static string DisplayTitle(string name) => name switch
+    {
+        "duty_summary" => "值班摘要",
+        "stack_status" => "堆疊總覽",
+        "list_services" => "服務清單",
+        "list_projects" => "專案編譯狀態",
+        "build_freshness" => "編譯可信度",
+        "build" => "編譯",
+        "start_service" => "啟動服務",
+        "stop_service" => "停止服務",
+        "start_all" => "啟動全部",
+        "stop_all" => "停止全部",
+        "get_log" => "讀取 Log",
+        "doctor" => "環境體檢",
+        "git_status" => "Git 狀態",
+        "list_audit" => "MCP 審計",
+        _ => name,
+    };
+
     public static IEnumerable<StackToolSpec> VisibleTools(McpPolicy policy) =>
         Tools.Where(t => policy.IsAllowed(t.Name));
 

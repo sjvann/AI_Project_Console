@@ -77,11 +77,44 @@ public class StackWorkspaceTests
             var path = McpLaunch.WriteCursorConfig(root);
             Assert.True(File.Exists(path));
             Assert.Contains(McpLaunch.ServerId, File.ReadAllText(path));
+            Assert.True(McpLaunch.IsLinked(root, McpLaunch.ServerId));
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void ListReferenced_ShowsLinkedAndSuggested()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-mcp-ref-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, ".cursor"));
+        try
+        {
+            File.WriteAllText(McpLaunch.CursorConfigPath(root), """
+                { "mcpServers": { "github": { "command": "npx" }, "my-internal": { "command": "node" } } }
+                """);
+            var list = McpLaunch.ListReferenced(root);
+            Assert.Contains(list, s => s.Id == "github" && s.Linked && s.Title == "GitHub");
+            Assert.Contains(list, s => s.Id == "my-internal" && s.Linked && s.Title == "my-internal");
+            Assert.Contains(list, s => s.Id == McpLaunch.ServerId && !s.Linked && s.Ours);
+            Assert.Contains(list, s => s.Id == "context7" && !s.Linked && s.Suggested);
+            Assert.Equal(list.Count, list.Select(s => s.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DisplayTitle_CoversKnownTools()
+    {
+        foreach (var tool in StackToolRouter.Tools)
+            Assert.False(string.IsNullOrWhiteSpace(StackToolRouter.DisplayTitle(tool.Name)));
+        Assert.Equal("值班摘要", StackToolRouter.DisplayTitle("duty_summary"));
+        Assert.Equal("停止全部", StackToolRouter.DisplayTitle("stop_all"));
     }
 
     [Fact]

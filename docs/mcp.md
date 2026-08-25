@@ -26,7 +26,7 @@
 
 ## 接上 Cursor
 
-1. 控制台「設定」→「複製 MCP 設定」，貼到使用者級 `mcp.json`；或「寫入目前專案 `.cursor/mcp.json`」。
+1. 控制台「設定」→ Agentic／MCP：從下拉選「本控制台」再按「加入到專案」；或「複製設定」貼到使用者級 `mcp.json`。已引用清單會顯示專案 `.cursor/mcp.json` 裡的伺服器。
 2. 重新載入視窗後，Agent 應能看到工具：`stack_status`、`build`、`get_log`…
 3. 求救提示已附驗證步驟，要求 Agent 用這些工具，而不是只改檔。
 

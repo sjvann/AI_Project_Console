@@ -4,9 +4,27 @@ using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Stack;
 
+public sealed record ProjectMcpServer(
+    string Id,
+    string Title,
+    string Hint,
+    bool Linked,
+    bool Ours,
+    bool Suggested);
+
 public static class McpLaunch
 {
     public const string ServerId = "ai-project-console";
+
+    public static readonly IReadOnlyList<(string Id, string Title, string Hint)> SuggestedServers =
+    [
+        (ServerId, "本控制台", "堆疊、編譯、啟停、Log"),
+        ("github", "GitHub", "PR／Issue／Actions"),
+        ("context7", "Context7", "套件文件"),
+    ];
+
+    public static string CursorConfigPath(string projectRoot) =>
+        Path.Combine(Path.GetFullPath(projectRoot), ".cursor", "mcp.json");
 
     public static string? FindMcpProject()
     {
@@ -74,12 +92,70 @@ public static class McpLaunch
         return root.ToJsonString(JsonUtil.Options);
     }
 
+    public static IReadOnlyList<ProjectMcpServer> ListReferenced(string? projectRoot)
+    {
+        var linked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(projectRoot))
+        {
+            var obj = JsonUtil.LoadObject(CursorConfigPath(projectRoot));
+            if (obj["mcpServers"] is JsonObject servers)
+            {
+                foreach (var kv in servers)
+                {
+                    if (!string.IsNullOrWhiteSpace(kv.Key))
+                        linked.Add(kv.Key.Trim());
+                }
+            }
+        }
+
+        var result = new List<ProjectMcpServer>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var id in linked.OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+        {
+            var meta = SuggestedServers.FirstOrDefault(s =>
+                string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
+            var hasMeta = !string.IsNullOrEmpty(meta.Id);
+            result.Add(new ProjectMcpServer(
+                id,
+                hasMeta ? meta.Title : id,
+                hasMeta ? meta.Hint : "專案 MCP",
+                Linked: true,
+                Ours: string.Equals(id, ServerId, StringComparison.OrdinalIgnoreCase),
+                Suggested: hasMeta));
+            seen.Add(id);
+        }
+
+        result = result
+            .OrderByDescending(s => s.Ours)
+            .ThenBy(s => s.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var s in SuggestedServers)
+        {
+            if (!seen.Add(s.Id))
+                continue;
+            result.Add(new ProjectMcpServer(
+                s.Id,
+                s.Title,
+                s.Hint,
+                Linked: false,
+                Ours: string.Equals(s.Id, ServerId, StringComparison.OrdinalIgnoreCase),
+                Suggested: true));
+        }
+
+        return result;
+    }
+
+    public static bool IsLinked(string? projectRoot, string serverId) =>
+        ListReferenced(projectRoot).Any(s =>
+            s.Linked && string.Equals(s.Id, serverId, StringComparison.OrdinalIgnoreCase));
+
     public static string WriteCursorConfig(string projectRoot, string? snippet = null)
     {
         projectRoot = Path.GetFullPath(projectRoot);
-        var dir = Path.Combine(projectRoot, ".cursor");
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "mcp.json");
+        var path = CursorConfigPath(projectRoot);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var incoming = JsonNode.Parse(snippet ?? CursorSnippet(projectRoot)) as JsonObject ?? new JsonObject();
         var existing = JsonUtil.LoadObject(path);
         if (existing["mcpServers"] is JsonObject have && incoming["mcpServers"] is JsonObject add)

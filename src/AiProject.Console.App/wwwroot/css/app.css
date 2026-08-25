@@ -129,14 +129,36 @@ button:disabled { opacity: .45; cursor: default; }
 .menu-list button:hover { background: var(--sel); }
 .overlay { position: fixed; inset: 0; background: rgba(28, 36, 48, .35); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .dialog { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 18px; width: min(520px, 92vw); max-height: 88vh; overflow: auto; }
-.dialog-lg { width: min(640px, 94vw); }
+.dialog-lg { width: min(720px, 94vw); }
 .dialog h2 { margin: 0 0 10px; font-size: 16px; }
 .prefs-sub { margin: 16px 0 6px; font-size: 13px; color: var(--text); }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
 .field-inline { display: flex; gap: 8px; align-items: center; }
-.field-inline input { flex: 1; min-width: 0; }
-.field input, .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.field-inline input, .field-inline select { flex: 1; min-width: 0; }
+.field input, .field select, .field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); }
 .field textarea { min-height: 90px; }
+.mcp-block { margin: 12px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--row-alt); }
+.mcp-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.mcp-block-head strong { font-size: 13px; }
+.mcp-empty { margin: 4px 0 8px; }
+.mcp-ref-list, .mcp-tool-list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); overflow: hidden; }
+.mcp-tool-list { max-height: 240px; overflow: auto; }
+.mcp-ref-list li, .mcp-tool-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.mcp-tool-row { grid-template-columns: minmax(0, 1fr) auto; }
+.mcp-ref-list li:last-child, .mcp-tool-row:last-child { border-bottom: none; }
+.mcp-ref-list li:hover, .mcp-tool-row:hover { background: var(--sel); }
+.mcp-ref-list li.is-suggested:not(.is-on) { opacity: .78; }
+.mcp-ref-main { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.mcp-ref-title { font-weight: 700; }
+.mcp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--down); }
+.mcp-dot.on { background: var(--ok); }
+.mcp-badge { font: 600 11px "Segoe UI", "Noto Sans TC", sans-serif; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.mcp-badge.on { color: var(--ok); border-color: var(--ok); }
+.mcp-badge.muted { color: var(--muted); }
+.mcp-add { margin-top: 10px; }
+.mcp-tool-actions { display: flex; align-items: center; gap: 8px; }
+.mcp-tool-actions select { min-width: 108px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); }
+.mcp-tool-row code { font-size: 12px; }
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .prewrap { white-space: pre-wrap; }
 .change-list { max-height: 180px; overflow: auto; margin: 0; padding: 8px 10px; border-radius: 3px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; background: var(--log-bg); color: var(--log-fg); white-space: pre; }

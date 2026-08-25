@@ -57,6 +57,10 @@ public sealed class ConsoleSession : IDisposable
     public string McpAllow { get; set; } = "";
     public string McpDeny { get; set; } = "";
     public string McpConfirm { get; set; } = "stop_all";
+    public IReadOnlyList<ProjectMcpServer> ProjectMcpServers { get; private set; } = [];
+    public bool ProjectHasMcpPolicy { get; private set; }
+    public string AddToolName { get; set; } = "";
+    public string AddMcpId { get; private set; } = McpLaunch.ServerId;
     public string AgentDetectSummary { get; private set; } = "";
     public bool AgentAvailable { get; private set; }
     public string ReadyText { get; private set; } = "就緒 0 / 0";
@@ -264,6 +268,7 @@ public sealed class ConsoleSession : IDisposable
         McpAllow = ConsoleSettingsStore.GetMcpAllow();
         McpDeny = ConsoleSettingsStore.GetMcpDeny();
         McpConfirm = ConsoleSettingsStore.GetMcpConfirm();
+        RefreshMcpPrefsUi();
         RefreshAgentDetect();
         Dialog = "prefs";
         Notify();
@@ -304,6 +309,64 @@ public sealed class ConsoleSession : IDisposable
 
     public string McpSnippet => McpLaunch.CursorSnippet(Catalog?.Root);
 
+    public string McpToolMode =>
+        McpReadOnly ? "readonly" :
+        McpPolicy.SplitNames(McpAllow).Count > 0 ? "custom" : "all";
+
+    public IReadOnlyList<StackToolSpec> McpTools => StackToolRouter.Tools;
+
+    public IReadOnlyList<StackToolSpec> VisibleMcpTools
+    {
+        get
+        {
+            if (McpToolMode != "custom")
+                return StackToolRouter.Tools;
+            var allow = new HashSet<string>(McpPolicy.SplitNames(McpAllow), StringComparer.OrdinalIgnoreCase);
+            return StackToolRouter.Tools.Where(t => allow.Contains(t.Name)).ToList();
+        }
+    }
+
+    public IEnumerable<StackToolSpec> McpToolsToAdd
+    {
+        get
+        {
+            var have = new HashSet<string>(McpPolicy.SplitNames(McpAllow), StringComparer.OrdinalIgnoreCase);
+            return StackToolRouter.Tools.Where(t => !have.Contains(t.Name));
+        }
+    }
+
+    public int LinkedMcpCount => ProjectMcpServers.Count(s => s.Linked);
+
+    public bool ConsoleMcpLinked => ProjectMcpServers.Any(s => s.Ours && s.Linked);
+
+    public bool SelectedMcpIsOurs =>
+        string.Equals(AddMcpId, McpLaunch.ServerId, StringComparison.OrdinalIgnoreCase);
+
+    public bool CanWriteSelectedMcp => HasProject && SelectedMcpIsOurs && !ConsoleMcpLinked;
+
+    public string AddMcpButtonLabel =>
+        !HasProject ? "加入到專案" :
+        SelectedMcpIsOurs
+            ? (ConsoleMcpLinked ? "已加入" : "加入到專案")
+            : "說明";
+
+    public IEnumerable<ProjectMcpServer> AddableMcpServers
+    {
+        get
+        {
+            var list = ProjectMcpServers.Where(s => s.Ours || !s.Linked).ToList();
+            if (list.Count == 0)
+                return McpLaunch.ListReferenced(null);
+            return list;
+        }
+    }
+
+    public void SetAddMcpId(string? id)
+    {
+        AddMcpId = string.IsNullOrWhiteSpace(id) ? McpLaunch.ServerId : id.Trim();
+        Notify();
+    }
+
     public async Task CopyMcpConfigAsync()
     {
         try
@@ -321,12 +384,20 @@ public sealed class ConsoleSession : IDisposable
 
     public void WriteMcpConfigToProject()
     {
+        if (!SelectedMcpIsOurs)
+        {
+            _native.Info(
+                "請在 Cursor 加入",
+                $"{AddMcpId} 是建議並排的 MCP，請到 Cursor 設定加入。本控制台只能寫入 {McpLaunch.ServerId}。");
+            return;
+        }
         if (!RequireCatalog())
             return;
         try
         {
             var path = McpLaunch.WriteCursorConfig(Catalog!.Root);
-            JobText = "已寫入 " + path + "（重新載入 Cursor 後即可呼叫堆疊工具）";
+            RefreshMcpPrefsUi();
+            JobText = "已加入本控制台到 " + path + "（重新載入 Cursor 後即可呼叫）";
         }
         catch (Exception ex)
         {
@@ -342,6 +413,7 @@ public sealed class ConsoleSession : IDisposable
         try
         {
             var path = McpPolicy.WriteTemplate(Catalog!.Root);
+            RefreshMcpPrefsUi();
             JobText = "已寫入 " + path + "（專案政策會覆蓋使用者設定）";
         }
         catch (Exception ex)
@@ -350,6 +422,134 @@ public sealed class ConsoleSession : IDisposable
         }
         Notify();
     }
+
+    public void SetMcpToolMode(string mode)
+    {
+        switch (mode)
+        {
+            case "readonly":
+                McpReadOnly = true;
+                break;
+            case "custom":
+                McpReadOnly = false;
+                if (McpPolicy.SplitNames(McpAllow).Count == 0)
+                {
+                    var deny = new HashSet<string>(McpPolicy.SplitNames(McpDeny), StringComparer.OrdinalIgnoreCase);
+                    McpAllow = JoinMcpNames(StackToolRouter.Tools.Select(t => t.Name).Where(n => !deny.Contains(n)));
+                }
+                if (string.IsNullOrEmpty(AddToolName))
+                    AddToolName = McpToolsToAdd.FirstOrDefault()?.Name ?? "";
+                break;
+            default:
+                McpReadOnly = false;
+                McpAllow = "";
+                break;
+        }
+        Notify();
+    }
+
+    public string GetMcpToolAccess(string name)
+    {
+        var key = (name ?? "").Trim().ToLowerInvariant();
+        if (HasMcpName(McpDeny, key))
+            return "deny";
+        if (McpReadOnly && !McpPolicy.ReadOnlyTools.Contains(key, StringComparer.OrdinalIgnoreCase))
+            return "deny";
+        if (McpToolMode == "custom" && McpPolicy.SplitNames(McpAllow).Count > 0 && !HasMcpName(McpAllow, key))
+            return "deny";
+        if (HasMcpName(McpConfirm, key))
+            return "confirm";
+        return "allow";
+    }
+
+    public bool McpToolAccessLocked(string name)
+    {
+        var key = (name ?? "").Trim().ToLowerInvariant();
+        return McpReadOnly && !McpPolicy.ReadOnlyTools.Contains(key, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public void SetMcpToolAccess(string name, string access)
+    {
+        var key = (name ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(key) || McpToolAccessLocked(key))
+            return;
+
+        var deny = McpPolicy.SplitNames(McpDeny).Where(n => n != key).ToList();
+        var confirm = McpPolicy.SplitNames(McpConfirm).Where(n => n != key).ToList();
+        var allow = McpPolicy.SplitNames(McpAllow).ToList();
+
+        switch (access)
+        {
+            case "deny":
+                deny.Add(key);
+                allow.RemoveAll(n => n == key);
+                break;
+            case "confirm":
+                confirm.Add(key);
+                if (McpToolMode == "custom" && !allow.Contains(key, StringComparer.OrdinalIgnoreCase))
+                    allow.Add(key);
+                break;
+            default:
+                if (McpToolMode == "custom" && !allow.Contains(key, StringComparer.OrdinalIgnoreCase))
+                    allow.Add(key);
+                break;
+        }
+
+        McpDeny = JoinMcpNames(deny);
+        McpConfirm = JoinMcpNames(confirm);
+        if (McpToolMode == "custom")
+            McpAllow = JoinMcpNames(allow);
+        Notify();
+    }
+
+    public void AddMcpTool(string? name = null)
+    {
+        var key = (name ?? AddToolName ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(key) || !StackToolRouter.Tools.Any(t => t.Name == key))
+            return;
+        if (McpToolMode != "custom")
+            SetMcpToolMode("custom");
+        var allow = McpPolicy.SplitNames(McpAllow).ToList();
+        if (!allow.Contains(key, StringComparer.OrdinalIgnoreCase))
+            allow.Add(key);
+        var deny = McpPolicy.SplitNames(McpDeny).Where(n => n != key).ToList();
+        McpAllow = JoinMcpNames(allow);
+        McpDeny = JoinMcpNames(deny);
+        AddToolName = McpToolsToAdd.FirstOrDefault()?.Name ?? "";
+        Notify();
+    }
+
+    public void RemoveMcpTool(string name)
+    {
+        var key = (name ?? "").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(key))
+            return;
+        if (McpToolMode != "custom")
+            SetMcpToolMode("custom");
+        if (McpPolicy.SplitNames(McpAllow).Count <= 1)
+            return;
+        McpAllow = JoinMcpNames(McpPolicy.SplitNames(McpAllow).Where(n => n != key));
+        McpDeny = JoinMcpNames(McpPolicy.SplitNames(McpDeny).Where(n => n != key));
+        McpConfirm = JoinMcpNames(McpPolicy.SplitNames(McpConfirm).Where(n => n != key));
+        if (string.IsNullOrEmpty(AddToolName))
+            AddToolName = key;
+        Notify();
+    }
+
+    void RefreshMcpPrefsUi()
+    {
+        ProjectMcpServers = McpLaunch.ListReferenced(Catalog?.Root);
+        ProjectHasMcpPolicy = Catalog is not null && File.Exists(McpPolicy.FilePath(Catalog.Root));
+        if (string.IsNullOrEmpty(AddToolName))
+            AddToolName = McpToolsToAdd.FirstOrDefault()?.Name ?? "";
+    }
+
+    static bool HasMcpName(string csv, string key) =>
+        McpPolicy.SplitNames(csv).Contains(key, StringComparer.OrdinalIgnoreCase);
+
+    static string JoinMcpNames(IEnumerable<string> names) =>
+        string.Join(", ", names.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase));
+
 
     public void SetRestoreLastProject(bool value)
     {
