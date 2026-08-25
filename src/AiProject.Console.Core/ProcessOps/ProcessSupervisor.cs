@@ -357,6 +357,8 @@ public static class ProcessSupervisor
         lines.AddRange(AgentBackendRegistry.DoctorLines());
         lines.Add(CommitMessageSuggester.DoctorLine());
         lines.Add(McpLaunch.DoctorLine());
+        if (catalog is not null)
+            lines.Add(McpPolicy.Load(catalog.Root).DoctorLine());
         if (catalog is null)
         {
             lines.Add("");

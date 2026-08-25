@@ -17,7 +17,7 @@
 
 | 情境 | 以前 | 現在（Agent + MCP） |
 |------|------|---------------------|
-| 晨會／值班 | 自己開控制台對 port | `stack_status` + `git_status` |
+| 晨會／值班 | 自己開控制台對 port | `duty_summary`（必要時再 `stack_status` + `git_status`） |
 | AI 剛改完碼 | 人去終端機 `dotnet build` | Agent 自己 `build mode=stale` |
 | 服務起不來 | 翻 `.ai_project/logs` | `get_log` → 修碼 → `start_service` |
 | 發版前 | 口頭問「都編過了嗎」 | `list_projects` 需重編必須為 0 |
@@ -55,6 +55,36 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 ## 工具一覽
 
-見 `StackToolRouter.Tools`：`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`。
+見 `StackToolRouter.Tools`：`duty_summary`、`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`、`list_audit`。
 
-破壞性操作（`stop_all`）請在 Agent 規則裡要求先確認。可在專案 `AGENTS.md` 寫：「停全部服務前必須問管理者」。
+晨會／值班先呼叫 `duty_summary`（就緒、離線、需重編、最近 MCP 拒絕）。控制台摘要列也顯示同一組數字，點「需重編」會切到專案頁，點「MCP 拒絕」會打開審計分頁。
+
+## 企業政策（白名單／確認／審計）
+
+控制台設定「Agentic／MCP」或專案檔 `{root}/.ai_project/mcp-policy.json`：
+
+```json
+{
+  "readOnly": false,
+  "allow": [],
+  "deny": [],
+  "confirm": ["stop_all"]
+}
+```
+
+| 欄位 | 意義 |
+|------|------|
+| `allow` | 空白＝全部已知工具；有值則只暴露這些 |
+| `deny` | 一律隱藏且拒絕（即使在 allow 裡） |
+| `readOnly` | 只能看狀態／Log／審計，不能 `build`／啟停 |
+| `confirm` | 預設 `stop_all`；呼叫時必須帶 `confirm=true` |
+
+專案檔覆蓋使用者設定的同名欄位。`tools/list` 只列出政策允許的工具。
+
+`stop_all` 沒有 `confirm=true`（或 `yes`／`1`）會回 `needConfirm`，Agent 必須先問人再重試：
+
+```powershell
+dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --arg confirm=true
+```
+
+每次呼叫（含被拒）寫入 `{root}/.ai_project/mcp-audit.jsonl`。管理者可在控制台右側「MCP 審計」分頁對帳，或用工具 `list_audit`。

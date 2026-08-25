@@ -11,15 +11,25 @@ if (args.Contains("--help") || args.Contains("-h"))
           --root <dir>     專案根（預設：AI_PROJECT_ROOT 或上次開啟的專案）
           --invoke <tool>  單次呼叫工具後結束（除錯／腳本）
           --arg name=value  傳給 --invoke 的參數，可重複
-          --list-tools     列出工具
+          --list-tools     列出目前政策允許的工具
         """);
     return 0;
 }
 
 if (args.Contains("--list-tools"))
 {
-    foreach (var t in StackToolRouter.Tools)
-        Console.WriteLine($"{t.Name}\t{t.Description}");
+    try
+    {
+        var ws = StackWorkspace.Open(McpLaunch.ResolveRoot(root));
+        var policy = McpPolicy.Load(ws.Root);
+        foreach (var t in StackToolRouter.VisibleTools(policy))
+            Console.WriteLine($"{t.Name}\t{t.Description}");
+    }
+    catch
+    {
+        foreach (var t in StackToolRouter.Tools)
+            Console.WriteLine($"{t.Name}\t{t.Description}");
+    }
     return 0;
 }
 

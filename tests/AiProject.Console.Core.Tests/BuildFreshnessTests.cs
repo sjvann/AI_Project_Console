@@ -1,4 +1,5 @@
 using AiProject.Console.Core.Build;
+using AiProject.Console.Core.Runtime;
 
 namespace AiProject.Console.Core.Tests;
 
@@ -104,6 +105,94 @@ public class BuildFreshnessTests
             Assert.Contains("Program.cs", state.Reason);
             Assert.NotNull(state.LastBuildUtc);
             Assert.Equal("需重編", BuildFreshness.BadgeText(state));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ConsoleSuccessReport_OverridesStaleDllMtime()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var cs = Path.Combine(projectDir, "Program.cs");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-20));
+            File.SetLastWriteTimeUtc(cs, now.AddMinutes(-2));
+            Assert.Equal("stale", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
+
+            var runtime = new ProjectRuntime(root);
+            BuildReportStore.Write(runtime, projectDir, 0, BuildFreshness.DefaultConfiguration);
+
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("fresh", state.Status);
+            Assert.Contains("控制台編譯成功", state.Reason);
+            Assert.Equal("最新", BuildFreshness.BadgeText(state));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SourceNewerThanConsoleReport_StaysStale()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var cs = Path.Combine(projectDir, "Program.cs");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-20));
+            File.SetLastWriteTimeUtc(cs, now.AddMinutes(-10));
+            var runtime = new ProjectRuntime(root);
+            var path = BuildReportStore.Write(runtime, projectDir, 0, BuildFreshness.DefaultConfiguration);
+            File.WriteAllText(path, """
+                {
+                  "target": "Demo.Api",
+                  "exitCode": 0,
+                  "configuration": "Debug",
+                  "status": "ok",
+                  "completedUtc": "2020-01-01T00:00:00Z"
+                }
+                """);
+            File.SetLastWriteTimeUtc(cs, DateTime.UtcNow);
+
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("stale", state.Status);
+            Assert.Contains("Program.cs", state.Reason);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FailedConsoleReport_KeepsStaleAndMentionsFailure()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var cs = Path.Combine(projectDir, "Program.cs");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-10));
+            File.SetLastWriteTimeUtc(cs, now);
+            var runtime = new ProjectRuntime(root);
+            BuildReportStore.Write(runtime, projectDir, 1, BuildFreshness.DefaultConfiguration);
+
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("stale", state.Status);
+            Assert.Contains("控制台上次編譯失敗", state.Reason);
         }
         finally
         {

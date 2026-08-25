@@ -74,6 +74,19 @@
 
     <div class="summary">
         <span>@S.ReadyText</span>
+        @if (S.HasProject)
+        {
+            <button type="button" class="duty-chip @(S.StaleProjectCount > 0 ? "is-warn" : "is-ok")" @onclick="S.ShowStaleProjects">
+                需重編 @S.StaleProjectCount
+            </button>
+            <button type="button" class="duty-chip @(S.AuditFailCount > 0 ? "is-warn" : "is-ok")" @onclick="@(() => S.SetRightTab("audit"))">
+                MCP 拒絕 @S.AuditFailCount
+            </button>
+            @if (!string.IsNullOrEmpty(S.DutyAttention))
+            {
+                <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
+            }
+        }
         @if (!string.IsNullOrEmpty(S.GitStatusText))
         {
             <span class="git">@S.GitStatusText</span>
@@ -196,8 +209,19 @@
         <div class="split-gutter" title="拖拉調整寬度，連點還原各半"></div>
         <div class="pane">
             <div class="tabs">
-                <div class="tab @(S.RightTab == "log" ? "active" : null)" @onclick="@(() => S.RightTab = "log")">服務 Log</div>
-                <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.RightTab = "build")">建置輸出</div>
+                <div class="tab @(S.RightTab == "log" ? "active" : null)" @onclick="@(() => S.SetRightTab("log"))">服務 Log</div>
+                <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.SetRightTab("build"))">建置輸出</div>
+                <div class="tab @(S.RightTab == "audit" ? "active" : null)" @onclick="@(() => S.SetRightTab("audit"))">
+                    MCP 審計
+                    @if (S.AuditFailCount > 0)
+                    {
+                        <span class="badge badge-failed">@S.AuditFailCount</span>
+                    }
+                    else if (S.AuditTotal > 0)
+                    {
+                        <span class="badge">@S.AuditTotal</span>
+                    }
+                </div>
             </div>
             @if (S.RightTab == "log")
             {
@@ -212,7 +236,7 @@
                 </div>
                 <pre class="log" id="log-view">@S.VisibleLogText</pre>
             }
-            else
+            else if (S.RightTab == "build")
             {
                 <div class="log-tools">
                     <strong>建置輸出</strong>
@@ -227,6 +251,45 @@
                     <button class="btn-primary" disabled="@(!S.CompileHelpEnabled)" @onclick="S.OpenCompileHelp">編譯求救</button>
                 </div>
                 <pre class="log" id="build-view">@S.BuildText</pre>
+            }
+            else
+            {
+                <div class="log-tools">
+                    <strong>MCP 審計</strong>
+                    <span class="hint">@(S.AuditTotal > 0 ? $"最近 {S.AuditEntries.Count}／共 {S.AuditTotal} 筆" : "尚無紀錄")</span>
+                    <input class="log-search" placeholder="搜尋工具／參數…" value="@S.AuditFilter" @oninput="OnAuditFilter" />
+                    <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.RefreshAudit">重新載入</button>
+                    <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.OpenAuditDir">開啟檔案</button>
+                </div>
+                @if (!string.IsNullOrEmpty(S.AuditPolicyText))
+                {
+                    <p class="hint audit-policy">@S.AuditPolicyText</p>
+                }
+                <div class="audit-list">
+                    @foreach (var e in S.VisibleAuditEntries)
+                    {
+                        <div class="audit-row @(e.Ok ? "ok" : "fail")" title="@(e.Error ?? e.ArgsText)">
+                            <span class="audit-when">@e.WhenText</span>
+                            <span class="@(e.Ok ? "status-on" : "status-off")">@(e.Ok ? "OK" : "拒")</span>
+                            <span class="audit-tool">@e.Tool</span>
+                            <span class="hint">@(e.Ms)ms</span>
+                            <span class="audit-detail">
+                                @if (!string.IsNullOrEmpty(e.Error))
+                                {
+                                    <span class="audit-err">@e.Error</span>
+                                }
+                                else if (!string.IsNullOrEmpty(e.ArgsText))
+                                {
+                                    <span class="audit-args">@e.ArgsText</span>
+                                }
+                            </span>
+                        </div>
+                    }
+                    @if (!S.VisibleAuditEntries.Any())
+                    {
+                        <p class="hint">@(S.HasProject ? "Agent 尚未呼叫堆疊工具，或沒有符合搜尋的紀錄。" : "請先選擇專案目錄。")</p>
+                    }
+                </div>
             }
         </div>
     </div>
@@ -483,9 +546,18 @@
             <h3 class="prefs-sub">Agentic／MCP</h3>
             <p class="hint">讓 Cursor／Claude Code 呼叫控制台：看堆疊、編譯過期、啟停服務、讀 Log。開發管理者可用同一組工具值班。</p>
             <p class="hint">建議並排：GitHub MCP（PR／Issue）、Context7（套件文件）。本伺服器只負責本機堆疊真相。</p>
+            <label class="check">
+                <input type="checkbox" checked="@S.McpReadOnly" @onchange="e => S.McpReadOnly = (bool)(e.Value ?? false)" />
+                MCP 唯讀（只能看狀態／Log，不能編譯或啟停）
+            </label>
+            <div class="field"><span>允許工具</span><input value="@S.McpAllow" @oninput="OnMcpAllow" placeholder="空白＝全部；逗號分隔" /></div>
+            <div class="field"><span>禁止工具</span><input value="@S.McpDeny" @oninput="OnMcpDeny" placeholder="例如 stop_all" /></div>
+            <div class="field"><span>需確認</span><input value="@S.McpConfirm" @oninput="OnMcpConfirm" placeholder="預設 stop_all" /></div>
+            <p class="hint">專案 <code>.ai_project/mcp-policy.json</code> 會覆蓋以上項目。stop_all 必須帶 confirm=true。每次呼叫寫入 mcp-audit.jsonl。</p>
             <div class="row">
                 <button class="btn-sec" @onclick="S.CopyMcpConfigAsync">複製 MCP 設定</button>
                 <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.WriteMcpConfigToProject">寫入目前專案 .cursor/mcp.json</button>
+                <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.WriteMcpPolicyToProject">寫入政策範本</button>
             </div>
             <div class="dialog-actions">
                 <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
@@ -560,6 +632,8 @@
 
     void OnLogFilter(ChangeEventArgs e) => S.SetLogFilter(e.Value?.ToString() ?? "");
 
+    void OnAuditFilter(ChangeEventArgs e) => S.SetAuditFilter(e.Value?.ToString() ?? "");
+
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
 
     void OnAgentCli(ChangeEventArgs e)
@@ -585,6 +659,12 @@
         S.Theme = e.Value?.ToString() is "dark" ? "dark" : "light";
         _ = Js.InvokeVoidAsync("aiConsole.setTheme", S.Theme);
     }
+
+    void OnMcpAllow(ChangeEventArgs e) => S.McpAllow = e.Value?.ToString() ?? "";
+
+    void OnMcpDeny(ChangeEventArgs e) => S.McpDeny = e.Value?.ToString() ?? "";
+
+    void OnMcpConfirm(ChangeEventArgs e) => S.McpConfirm = e.Value?.ToString() ?? "";
 
     public void Dispose() => S.Changed -= OnChanged;
 }

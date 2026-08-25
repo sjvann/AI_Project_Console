@@ -44,7 +44,7 @@ public static class StdioMcpServer
                 {
                     "initialize" => InitializeResult(),
                     "ping" => new JsonObject(),
-                    "tools/list" => ToolsList(),
+                    "tools/list" => ToolsList(workspace),
                     "tools/call" => await ToolsCallAsync(workspace, obj["params"]).ConfigureAwait(false),
                     _ => throw new InvalidOperationException("Method not found: " + method),
                 };
@@ -78,12 +78,13 @@ public static class StdioMcpServer
         protocolVersion = "2024-11-05",
         capabilities = new { tools = new { } },
         serverInfo = new { name = "ai-project-console", version = AiProject.Console.Core.AppInfo.Version },
-        instructions = "本機多服務堆疊操作台。值班先 stack_status；修碼後 build；事故看 get_log。",
+        instructions = "本機多服務堆疊操作台。值班先 duty_summary；修碼後 build；事故看 get_log。stop_all 必須帶 confirm=true。政策拒絕的工具不會出現在清單。",
     };
 
-    static object ToolsList()
+    static object ToolsList(StackWorkspace workspace)
     {
-        var tools = StackToolRouter.Tools.Select(t =>
+        var policy = McpPolicy.Load(workspace.Root);
+        var tools = StackToolRouter.VisibleTools(policy).Select(t =>
         {
             var props = new Dictionary<string, object>();
             var required = new List<string>();

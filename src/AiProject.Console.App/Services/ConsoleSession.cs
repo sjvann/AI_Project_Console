@@ -53,6 +53,10 @@ public sealed class ConsoleSession : IDisposable
     public string AgentCliPath { get; set; } = "";
     public string CustomAgentCommand { get; set; } = "";
     public string CustomAgentArgs { get; set; } = "";
+    public bool McpReadOnly { get; set; }
+    public string McpAllow { get; set; } = "";
+    public string McpDeny { get; set; } = "";
+    public string McpConfirm { get; set; } = "stop_all";
     public string AgentDetectSummary { get; private set; } = "";
     public bool AgentAvailable { get; private set; }
     public string ReadyText { get; private set; } = "就緒 0 / 0";
@@ -83,6 +87,26 @@ public sealed class ConsoleSession : IDisposable
     public string LogText { get; private set; } = "";
     public string VisibleLogText => TextFilter.Apply(LogText, LogFilter);
     public string BuildText { get; private set; } = "";
+    public IReadOnlyList<McpAuditEntry> AuditEntries { get; private set; } = [];
+    public int AuditTotal { get; private set; }
+    public string AuditPolicyText { get; private set; } = "";
+    public string AuditFilter { get; private set; } = "";
+    public int AuditFailCount => AuditEntries.Count(e => !e.Ok);
+    public IEnumerable<McpAuditEntry> VisibleAuditEntries
+    {
+        get
+        {
+            var q = AuditFilter.Trim();
+            var newest = AuditEntries.Reverse();
+            if (string.IsNullOrEmpty(q))
+                return newest;
+            return newest.Where(e =>
+                e.Tool.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (e.Error?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || e.ArgsText.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || e.StatusText.Contains(q, StringComparison.OrdinalIgnoreCase));
+        }
+    }
     public bool CompileHelpEnabled { get; private set; }
     public BuildFailure? LastBuildFailure { get; private set; }
 
@@ -198,7 +222,14 @@ public sealed class ConsoleSession : IDisposable
 
     public int ReadyCount => Catalog is null ? 0 : Catalog.Services.Count(s => Health.GetValueOrDefault(s.Id));
     public int ServiceCount => Catalog?.Services.Count ?? 0;
+    public int OfflineCount => Math.Max(0, ServiceCount - ReadyCount);
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
+    public string? LastAuditFailTool => AuditEntries.LastOrDefault(e => !e.Ok)?.Tool;
+    public string DutyAttention =>
+        Catalog is null
+            ? ""
+            : DutySummary.Attention(OfflineCount, StaleProjectCount, AuditFailCount, LastAuditFailTool);
+    public bool DutyOk => Catalog is not null && DutySummary.IsClear(OfflineCount, StaleProjectCount, AuditFailCount);
 
     public bool RuntimeHelpEnabled
     {
@@ -229,6 +260,10 @@ public sealed class ConsoleSession : IDisposable
         Theme = ConsoleSettingsStore.GetTheme();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
+        McpReadOnly = ConsoleSettingsStore.GetMcpReadOnly();
+        McpAllow = ConsoleSettingsStore.GetMcpAllow();
+        McpDeny = ConsoleSettingsStore.GetMcpDeny();
+        McpConfirm = ConsoleSettingsStore.GetMcpConfirm();
         RefreshAgentDetect();
         Dialog = "prefs";
         Notify();
@@ -256,9 +291,14 @@ public sealed class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetTheme(Theme);
         ConsoleSettingsStore.SetRestoreLastProject(RestoreLastProject);
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
+        ConsoleSettingsStore.SetMcpReadOnly(McpReadOnly);
+        ConsoleSettingsStore.SetMcpAllow(McpAllow);
+        ConsoleSettingsStore.SetMcpDeny(McpDeny);
+        ConsoleSettingsStore.SetMcpConfirm(McpConfirm);
         RefreshAgentDetect();
         CloseDialog();
         JobText = $"已儲存設定（Agent：{AgentDisplayName}）";
+        RefreshAudit();
         Notify();
     }
 
@@ -291,6 +331,22 @@ public sealed class ConsoleSession : IDisposable
         catch (Exception ex)
         {
             _native.Error("寫入 MCP 設定失敗", ex.Message);
+        }
+        Notify();
+    }
+
+    public void WriteMcpPolicyToProject()
+    {
+        if (!RequireCatalog())
+            return;
+        try
+        {
+            var path = McpPolicy.WriteTemplate(Catalog!.Root);
+            JobText = "已寫入 " + path + "（專案政策會覆蓋使用者設定）";
+        }
+        catch (Exception ex)
+        {
+            _native.Error("寫入 MCP 政策失敗", ex.Message);
         }
         Notify();
     }
@@ -407,6 +463,7 @@ public sealed class ConsoleSession : IDisposable
             LogFilter = "";
             GitStatusText = "";
             ReloadLog();
+            LoadAudit(reloadPolicy: true);
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             Notify();
             _ = RefreshBuildStatesAsync();
@@ -485,6 +542,43 @@ public sealed class ConsoleSession : IDisposable
             return;
         Runtime.Ensure();
         CliUtil.OpenPath(Runtime.Logs);
+    }
+
+    public void ShowStaleProjects()
+    {
+        LeftTab = "prj";
+        StaleOnly = StaleProjectCount > 0;
+        Notify();
+    }
+
+    public void SetRightTab(string tab)
+    {
+        RightTab = tab;
+        if (tab == "audit")
+            RefreshAudit();
+        else
+            Notify();
+    }
+
+    public void SetAuditFilter(string value)
+    {
+        AuditFilter = value ?? "";
+        Notify();
+    }
+
+    public void RefreshAudit()
+    {
+        LoadAudit(reloadPolicy: true);
+        Notify();
+    }
+
+    public void OpenAuditDir()
+    {
+        if (Runtime is null)
+            return;
+        Runtime.Ensure();
+        var path = McpAuditLog.FilePath(Runtime);
+        CliUtil.OpenPath(File.Exists(path) ? path : Runtime.Base);
     }
 
     public async Task StartAllAsync()
@@ -1653,6 +1747,36 @@ public sealed class ConsoleSession : IDisposable
             LogText = LogText[^300_000..];
     }
 
+    private void LoadAudit(bool reloadPolicy)
+    {
+        if (Runtime is null || Catalog is null)
+        {
+            AuditEntries = [];
+            AuditTotal = 0;
+            if (reloadPolicy)
+                AuditPolicyText = "";
+            return;
+        }
+
+        try
+        {
+            var (total, entries) = McpAuditLog.ReadRecent(Runtime, 80);
+            AuditTotal = total;
+            AuditEntries = entries;
+        }
+        catch
+        {
+            AuditEntries = [];
+            AuditTotal = 0;
+        }
+
+        if (reloadPolicy)
+        {
+            try { AuditPolicyText = McpPolicy.Load(Catalog.Root).DoctorLine(); }
+            catch { AuditPolicyText = ""; }
+        }
+    }
+
     private bool RequireCatalog()
     {
         if (Catalog is not null && Runtime is not null)
@@ -1722,6 +1846,8 @@ public sealed class ConsoleSession : IDisposable
                 }
                 if (healthEvery % 8 == 0 && Catalog is not null)
                     await RefreshGitStatusAsync().ConfigureAwait(false);
+                if (healthEvery % 5 == 0 && Catalog is not null)
+                    LoadAudit(reloadPolicy: false);
                 Notify();
             }
         }
@@ -1755,6 +1881,10 @@ public sealed class ConsoleSession : IDisposable
         LogTitle = "Log · （未選服務）";
         LogText = "";
         BuildText = "";
+        AuditEntries = [];
+        AuditTotal = 0;
+        AuditPolicyText = "";
+        AuditFilter = "";
         ResetBuildProgress();
         ReadyText = "就緒 0 / 0";
         JobText = "待命";

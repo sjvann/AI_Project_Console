@@ -60,6 +60,34 @@ public sealed class StackWorkspace
         });
     }
 
+    public async Task<string> DutySummaryAsync()
+    {
+        var health = await ProbeHealthAsync().ConfigureAwait(false);
+        var ready = Catalog.Services.Count(s => health.GetValueOrDefault(s.Id));
+        var offline = Catalog.Services.Count - ready;
+        var staleSvc = BuildFreshness.AllServiceBuildStates(Catalog).Count(s => s.Status is "stale" or "unbuilt");
+        var stalePrj = BuildFreshness.AllProjectBuildStates(Catalog).Count(p => p.Status is "stale" or "unbuilt");
+        var (_, audit) = McpAuditLog.ReadRecent(Runtime, 80);
+        var fails = audit.Where(e => !e.Ok).ToList();
+        var last = fails.Count > 0 ? fails[^1] : null;
+        var attention = DutySummary.Attention(offline, stalePrj, fails.Count, last?.Tool);
+        return Json(new
+        {
+            root = Root,
+            name = Catalog.Name,
+            ready = $"{ready}/{Catalog.Services.Count}",
+            offline,
+            staleServices = staleSvc,
+            staleProjects = stalePrj,
+            auditFails = fails.Count,
+            lastAuditFail = last is null
+                ? null
+                : new { tool = last.Tool, error = last.Error, utc = last.Utc.ToString("o") },
+            attention,
+            ok = DutySummary.IsClear(offline, stalePrj, fails.Count),
+        });
+    }
+
     public string ListServices() =>
         Json(Catalog.Services.Select(s => new
         {

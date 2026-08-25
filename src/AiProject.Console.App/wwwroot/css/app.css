@@ -60,6 +60,11 @@ button, .btn { font: 600 12px "Segoe UI", sans-serif; border: 1px solid transpar
 button:disabled { opacity: .45; cursor: default; }
 .summary { display: flex; gap: 12px; align-items: center; font-weight: 700; flex-wrap: wrap; }
 .summary .job, .summary .git { font-weight: 400; color: var(--muted); }
+.duty-chip { font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; background: var(--row-alt); color: var(--text); cursor: pointer; }
+.duty-chip.is-ok { color: var(--ok); }
+.duty-chip.is-warn { color: var(--wait); border-color: var(--wait); background: var(--panel); }
+.duty-chip:hover { border-color: var(--accent); }
+.duty-attn { font-weight: 600; font-size: 13px; }
 .svc-err { color: var(--danger); font-size: 12px; margin-left: 6px; }
 .log-search { min-width: 160px; max-width: 240px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 .split { flex: 1; display: grid; grid-template-columns: minmax(180px, 1fr) 8px minmax(180px, 1fr); min-height: 0; }
@@ -106,6 +111,16 @@ button:disabled { opacity: .45; cursor: default; }
 .build-progress { font-weight: 700; color: var(--accent); }
 .log-tools { display: flex; gap: 8px; align-items: center; padding: 8px 10px; flex-wrap: wrap; }
 .log { background: var(--log-bg); color: var(--log-fg); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; white-space: pre; overflow: auto; flex: 1; margin: 0 8px 8px; padding: 10px; border-radius: 3px; min-height: 0; }
+.audit-policy { margin: 0 10px 6px; }
+.audit-list { flex: 1; overflow: auto; margin: 0 8px 8px; min-height: 0; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); }
+.audit-row { display: grid; grid-template-columns: 72px 28px minmax(88px, 140px) 52px minmax(0, 1fr); gap: 8px; align-items: start; padding: 7px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.audit-row.fail { background: var(--fail-row); }
+.audit-row:last-child { border-bottom: none; }
+.audit-when { color: var(--muted); font-variant-numeric: tabular-nums; }
+.audit-tool { font-weight: 700; font-family: "Cascadia Mono", Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-detail { min-width: 0; }
+.audit-args, .audit-err { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-err { color: var(--danger); }
 .foot { color: var(--muted); font-size: 12px; }
 .menu { position: relative; display: inline-block; }
 .menu-list { display: none; position: absolute; top: 100%; left: 0; z-index: 20; background: var(--panel); border: 1px solid var(--border); min-width: 200px; padding: 4px 0; }

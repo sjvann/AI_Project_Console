@@ -77,7 +77,7 @@ python -m AI_Project_Console
 
 ### MCP（Agent 回呼控制台）
 
-控制台提供 stdio MCP 伺服器 `AiProject.Console.Mcp`：Agent 可 `stack_status`、`build`、`get_log`、啟停服務。設定裡可複製／寫入 `.cursor/mcp.json`。說明見 [`docs/mcp.md`](docs/mcp.md)。
+控制台提供 stdio MCP 伺服器 `AiProject.Console.Mcp`：Agent 可 `stack_status`、`build`、`get_log`、啟停服務。設定裡可複製／寫入 `.cursor/mcp.json`，並可設白名單、唯讀、`stop_all` 確認與審計 log。說明見 [`docs/mcp.md`](docs/mcp.md)。
 
 ```powershell
 dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stack_status

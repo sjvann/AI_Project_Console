@@ -185,6 +185,51 @@ public static class ConsoleSettingsStore
         Save(data);
     }
 
+    public static bool GetMcpReadOnly() =>
+        Load()["mcpReadOnly"]?.GetValue<bool>() ?? false;
+
+    public static void SetMcpReadOnly(bool enabled)
+    {
+        var data = Load();
+        data["mcpReadOnly"] = enabled;
+        Save(data);
+    }
+
+    public static string GetMcpAllow() => JsonUtil.Str(Load()["mcpAllow"]);
+
+    public static void SetMcpAllow(string? value) => SetOptionalString("mcpAllow", value);
+
+    public static string GetMcpDeny() => JsonUtil.Str(Load()["mcpDeny"]);
+
+    public static void SetMcpDeny(string? value) => SetOptionalString("mcpDeny", value);
+
+    /// <summary>未寫入時預設 stop_all；明確存空白＝不要求確認。</summary>
+    public static string GetMcpConfirm()
+    {
+        var data = Load();
+        if (data["mcpConfirm"] is null)
+            return "stop_all";
+        return JsonUtil.Str(data["mcpConfirm"]);
+    }
+
+    public static void SetMcpConfirm(string? value)
+    {
+        var data = Load();
+        data["mcpConfirm"] = (value ?? "").Trim();
+        Save(data);
+    }
+
+    static void SetOptionalString(string key, string? value)
+    {
+        var data = Load();
+        var t = (value ?? "").Trim();
+        if (string.IsNullOrEmpty(t))
+            data.Remove(key);
+        else
+            data[key] = t;
+        Save(data);
+    }
+
     public static string? LastCloneParent()
     {
         var raw = JsonUtil.Str(Load()["lastCloneParent"]);

@@ -163,7 +163,7 @@ public static class BuildFreshness
     {
         var host = ServiceCatalogBuilder.HostService(catalog, svc);
         var projectDir = ProjectDirForService(catalog, host);
-        return FromScan(projectDir, new BuildState(
+        return FromScan(catalog.Root, projectDir, new BuildState(
             Id: svc.Id,
             Name: svc.Label,
             Status: "",
@@ -190,7 +190,7 @@ public static class BuildFreshness
     {
         var projectDir = Path.Combine(root, info.RelDir.Replace('/', Path.DirectorySeparatorChar));
         var kind = info.IsTest ? "測試" : (info.IsExecutable || info.IsWeb ? "核心" : "函式庫");
-        return FromScan(projectDir, new BuildState(
+        return FromScan(root, projectDir, new BuildState(
             Id: info.RelDir,
             Name: info.Name,
             Status: "",
@@ -263,7 +263,7 @@ public static class BuildFreshness
             },
         };
 
-    static BuildState FromScan(string projectDir, BuildState seed)
+    static BuildState FromScan(string root, string projectDir, BuildState seed)
     {
         var (srcMtime, srcPath) = NewestSource(projectDir);
         var (outMtime, outPath) = BuildOutput(projectDir);
@@ -274,6 +274,21 @@ public static class BuildFreshness
         DateTimeOffset? newestSrc = srcMtime > 0
             ? DateTimeOffset.FromUnixTimeSeconds((long)srcMtime)
             : null;
+        var reason = Describe(status, srcPath, srcMtime, outPath, outMtime);
+        var report = BuildReportStore.TryRead(root, projectDir);
+        if (report is not null)
+        {
+            if (lastBuild is null || report.CompletedUtc > lastBuild)
+                lastBuild = report.CompletedUtc;
+            if (report.Ok && newestSrc is { } src && report.CompletedUtc >= src)
+            {
+                status = "fresh";
+                reason = "控制台編譯成功，且之後沒有更新的來源檔";
+            }
+            else if (!report.Ok)
+                reason += "；控制台上次編譯失敗（" + FormatAgo(report.CompletedUtc) + "）";
+        }
+
         return seed with
         {
             Status = status,
@@ -281,7 +296,7 @@ public static class BuildFreshness
             LastBuildUtc = lastBuild,
             NewestSourceUtc = newestSrc,
             NewestSourcePath = srcPath ?? "",
-            Reason = Describe(status, srcPath, srcMtime, outPath, outMtime),
+            Reason = reason,
         };
     }
 

@@ -12,11 +12,11 @@ public class StackWorkspaceTests
         try
         {
             var ws = StackWorkspace.Open(root);
-            var services = await StackToolRouter.InvokeAsync(ws, "list_services");
+            var services = await Invoke(ws, "list_services");
             Assert.Contains("Mini.Api", services);
-            var status = await StackToolRouter.InvokeAsync(ws, "stack_status");
+            var status = await Invoke(ws, "stack_status");
             Assert.Contains("staleProjects", status);
-            var freshness = await StackToolRouter.InvokeAsync(ws, "build_freshness");
+            var freshness = await Invoke(ws, "build_freshness");
             Assert.Contains("Mini.Api", freshness);
         }
         finally
@@ -32,7 +32,7 @@ public class StackWorkspaceTests
         try
         {
             var ws = StackWorkspace.Open(root);
-            var text = await StackToolRouter.InvokeAsync(ws, "nope");
+            var text = await Invoke(ws, "nope");
             Assert.Contains("未知工具", text);
         }
         finally
@@ -50,7 +50,7 @@ public class StackWorkspaceTests
             var ws = StackWorkspace.Open(root);
             Assert.NotEmpty(ws.Catalog.Services);
             var id = ws.Catalog.Services[0].Id;
-            var text = await StackToolRouter.InvokeAsync(ws, "get_log", new Dictionary<string, string?> { ["id"] = id });
+            var text = await Invoke(ws, "get_log", new Dictionary<string, string?> { ["id"] = id });
             Assert.Contains("尚無 Log", text);
         }
         finally
@@ -89,15 +89,19 @@ public class StackWorkspaceTests
     {
         Assert.Contains("stack_status", AgentPlaybook.VerificationHint());
         Assert.Contains("build", AgentPlaybook.VerificationHint());
+        Assert.Contains("duty_summary", AgentPlaybook.ManagerHint());
     }
 
     [Fact]
     public void Tools_CoverManagerLoop()
     {
         var names = StackToolRouter.Tools.Select(t => t.Name).ToHashSet();
-        foreach (var need in new[] { "stack_status", "build", "get_log", "start_all", "git_status", "doctor" })
+        foreach (var need in new[] { "duty_summary", "stack_status", "build", "get_log", "start_all", "git_status", "doctor" })
             Assert.Contains(need, names);
     }
+
+    static Task<string> Invoke(StackWorkspace ws, string name, IReadOnlyDictionary<string, string?>? args = null) =>
+        StackToolRouter.InvokeAsync(ws, name, args, McpPolicy.Defaults());
 
     static string CreateMini()
     {
