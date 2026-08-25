@@ -77,6 +77,7 @@ public sealed class ConsoleSession : IDisposable
     public Func<Task>? ConfirmAction { get; private set; }
     public string AgentPrompt { get; private set; } = "";
     public string AgentIntro { get; private set; } = "";
+    public string AgentTitle { get; private set; } = "編譯求救";
     public string CloneSpec { get; set; } = "";
     public string CloneParent { get; set; } = "";
     public string CloneFolder { get; set; } = "";
@@ -106,6 +107,9 @@ public sealed class ConsoleSession : IDisposable
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
     public IReadOnlyList<ConsoleAction> DeployActions => ActionCatalog.Load("deploy");
 
+    private readonly HashSet<string> _collapsedServiceGroups = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsedProjectGroups = new(StringComparer.Ordinal);
+
     public IEnumerable<IGrouping<string, ServiceEntry>> ServiceGroups =>
         Catalog?.Services.GroupBy(s => string.IsNullOrEmpty(s.Group) ? "其他" : s.Group)
         ?? Enumerable.Empty<IGrouping<string, ServiceEntry>>();
@@ -116,9 +120,68 @@ public sealed class ConsoleSession : IDisposable
     public IEnumerable<IGrouping<string, BuildState>> ProjectGroups =>
         VisibleProjects.GroupBy(p => string.IsNullOrEmpty(p.System) ? "其他" : p.System);
 
+<<<<<<< HEAD
+=======
+    public bool IsServiceGroupCollapsed(string key) => _collapsedServiceGroups.Contains(key);
+
+    public bool IsProjectGroupCollapsed(string key) => _collapsedProjectGroups.Contains(key);
+
+    public void ToggleServiceGroup(string key)
+    {
+        if (!_collapsedServiceGroups.Add(key))
+            _collapsedServiceGroups.Remove(key);
+        Notify();
+    }
+
+    public void ToggleProjectGroup(string key)
+    {
+        if (!_collapsedProjectGroups.Add(key))
+            _collapsedProjectGroups.Remove(key);
+        Notify();
+    }
+
+    public void ToggleAllServiceGroups()
+    {
+        ToggleAllGroups(_collapsedServiceGroups, ServiceGroups.Select(g => g.Key));
+    }
+
+    public void ToggleAllProjectGroups()
+    {
+        ToggleAllGroups(_collapsedProjectGroups, ProjectGroups.Select(g => g.Key));
+    }
+
+    private void ToggleAllGroups(HashSet<string> collapsed, IEnumerable<string> keys)
+    {
+        var list = keys.ToList();
+        if (list.Count == 0)
+            return;
+        var allCollapsed = list.All(collapsed.Contains);
+        collapsed.Clear();
+        if (!allCollapsed)
+        {
+            foreach (var key in list)
+                collapsed.Add(key);
+        }
+        Notify();
+    }
+
+>>>>>>> b00fe98aeefcbf508d7749ac3c3641cf338335c2
     public int ReadyCount => Catalog is null ? 0 : Catalog.Services.Count(s => Health.GetValueOrDefault(s.Id));
     public int ServiceCount => Catalog?.Services.Count ?? 0;
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
+
+    public bool RuntimeHelpEnabled
+    {
+        get
+        {
+            var svc = SelectedService();
+            if (svc is null)
+                return false;
+            if (StartErrorFor(svc) is not null)
+                return true;
+            return CursorLauncher.HasRuntimeErrors(LogText);
+        }
+    }
 
     public void SetOpenWithCursor(bool value)
     {
@@ -233,6 +296,8 @@ public sealed class ConsoleSession : IDisposable
             CompileHelpEnabled = false;
             Health.Clear();
             StartErrors.Clear();
+            _collapsedServiceGroups.Clear();
+            _collapsedProjectGroups.Clear();
             LogFilter = "";
             GitStatusText = "";
             ReloadLog();
@@ -998,7 +1063,31 @@ public sealed class ConsoleSession : IDisposable
         }
         AgentPrompt = CursorLauncher.BuildAgentPrompt(
             Catalog!.Root, LastBuildFailure.Target, LastBuildFailure.ExitCode, LastBuildFailure.Log);
+        AgentTitle = "編譯求救";
         AgentIntro = "確認後會開啟 Cursor 並跳出確認視窗；再按確認即建立 New Agent。錯誤內容會直接帶入提示，不會先寫求助檔。";
+        Dialog = "agent";
+        Notify();
+    }
+
+    public void OpenRuntimeHelp()
+    {
+        if (!RequireCatalog())
+            return;
+        var svc = SelectedService();
+        if (svc is null)
+        {
+            _native.Info("執行求救", "請先在服務列表選取一項服務。");
+            return;
+        }
+        if (!RuntimeHelpEnabled)
+        {
+            _native.Info("執行求救", "目前 Log 沒有偵測到錯誤。");
+            return;
+        }
+        AgentPrompt = CursorLauncher.BuildRuntimeLogPrompt(
+            Catalog!.Root, svc.Label, LogText, StartErrorFor(svc));
+        AgentTitle = "執行求救";
+        AgentIntro = "確認後會開啟 Cursor 並跳出確認視窗；再按確認即建立 New Agent。執行 Log 會直接帶入提示，不會先寫求助檔。";
         Dialog = "agent";
         Notify();
     }
@@ -1006,8 +1095,9 @@ public sealed class ConsoleSession : IDisposable
     public async Task ConfirmAgentAsync()
     {
         var prompt = AgentPrompt;
+        var status = $"{AgentTitle}已送出，請在 Cursor 跳出視窗按確認";
         CloseDialog();
-        await LaunchCursorNewAgentAsync(prompt, "編譯求救已送出，請在 Cursor 跳出視窗按確認").ConfigureAwait(false);
+        await LaunchCursorNewAgentAsync(prompt, status).ConfigureAwait(false);
     }
 
     public async Task SaveGithubAsync()
@@ -1290,6 +1380,18 @@ public sealed class ConsoleSession : IDisposable
         return ServiceCatalogBuilder.ById(Catalog, SelectedServiceId);
     }
 
+    private string? StartErrorFor(ServiceEntry svc)
+    {
+        if (StartErrors.TryGetValue(svc.Id, out var err) && !string.IsNullOrWhiteSpace(err))
+            return err;
+        if (Catalog is null)
+            return null;
+        var host = ServiceCatalogBuilder.HostService(Catalog, svc);
+        if (host.Id != svc.Id && StartErrors.TryGetValue(host.Id, out err) && !string.IsNullOrWhiteSpace(err))
+            return err;
+        return null;
+    }
+
     private void AppendLogTail(bool full = false)
     {
         if (Catalog is null || Runtime is null)
@@ -1406,6 +1508,8 @@ public sealed class ConsoleSession : IDisposable
         CompileHelpEnabled = false;
         Health.Clear();
         StartErrors.Clear();
+        _collapsedServiceGroups.Clear();
+        _collapsedProjectGroups.Clear();
         Projects = [];
         WarnText = "";
         GitStatusText = "";
@@ -1439,6 +1543,7 @@ public sealed class ConsoleSession : IDisposable
         ConfirmAction = null;
         AgentPrompt = "";
         AgentIntro = "";
+        AgentTitle = "編譯求救";
         ReleaseTag = "";
         ReleaseTitle = "";
         ReleaseNotes = "";

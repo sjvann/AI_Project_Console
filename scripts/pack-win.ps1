@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.3.10",
+    [string]$Version = "0.3.12",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64"
 )
@@ -8,11 +8,13 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PublishDir = Join-Path $Root "dist\$Runtime"
 $Iss = Join-Path $Root "installer\windows\setup.iss"
-$Iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
-if (-not (Test-Path $Iscc)) {
-    $Iscc = Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"
-}
-if (-not (Test-Path $Iscc)) {
+$IsccCandidates = @(
+    (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:LocalAppData "Programs\Inno Setup 6\ISCC.exe")
+)
+$Iscc = $IsccCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $Iscc) {
     throw "找不到 Inno Setup 6（ISCC.exe）。請先安裝 https://jrsoftware.org/isinfo.php"
 }
 
