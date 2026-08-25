@@ -7,6 +7,9 @@ namespace AiProject.Console.Core.Cursor;
 public static class CursorLauncher
 {
     private static readonly Regex ErrorLine = new(@"\berror\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex RuntimeErrorLine = new(
+        @"^(?:fail|crit|fatal|error):|\bunhandled exception\b|\bexception:|traceback \(most recent call last\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private const int MaxLogChars = 8_000;
     private const int MaxErrorLines = 80;
     private const string DeeplinkBase = "cursor://anysphere.cursor-deeplink/prompt";
@@ -180,6 +183,53 @@ public static class CursorLauncher
         if (errors.Count > 0)
             return errors;
         return lines.TakeLast(Math.Min(40, lines.Count)).ToList();
+    }
+
+    public static IReadOnlyList<string> ExtractRuntimeErrors(string logText)
+    {
+        var lines = (logText ?? "").Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var errors = new List<string>();
+        for (var i = 0; i < lines.Length && errors.Count < MaxErrorLines; i++)
+        {
+            var raw = lines[i].TrimEnd();
+            if (raw.Length == 0 || !RuntimeErrorLine.IsMatch(raw.TrimStart()))
+                continue;
+            var block = raw;
+            for (var j = i + 1; j < lines.Length && j <= i + 8; j++)
+            {
+                var next = lines[j].TrimEnd();
+                if (next.Length == 0)
+                    break;
+                if (next[0] is not (' ' or '\t'))
+                    break;
+                block += "\n" + next;
+                i = j;
+            }
+            errors.Add(block);
+        }
+        return errors;
+    }
+
+    public static bool HasRuntimeErrors(string logText) => ExtractRuntimeErrors(logText).Count > 0;
+
+    public static string BuildRuntimeLogPrompt(string root, string serviceLabel, string logText, string? startError = null)
+    {
+        var errors = ExtractRuntimeErrors(logText);
+        var logTrim = logText ?? "";
+        if (logTrim.Length > MaxLogChars)
+            logTrim = "…（前略）…\n" + logTrim[^MaxLogChars..];
+        var errorBlock = errors.Count > 0
+            ? string.Join('\n', errors.Select(e => "- " + e.Replace("\n", "\n  ", StringComparison.Ordinal)))
+            : "- （未能解析具體錯誤行，請見下方 Log）";
+        var start = string.IsNullOrWhiteSpace(startError) ? "" : $"啟動錯誤：{startError.Trim()}\n\n";
+        return
+            "服務執行發生錯誤。請找出根因並直接修改程式碼讓服務能正常啟動／執行。優先處理例外與 fail／error，不要只做說明。"
+            + "改完後簡短說明改了什麼、如何驗證。\n\n"
+            + $"專案根目錄：{root}\n"
+            + $"服務：{serviceLabel}\n\n"
+            + start
+            + $"錯誤摘要：\n{errorBlock}\n\n"
+            + $"服務 Log（節錄）：\n```text\n{logTrim.TrimEnd()}\n```\n";
     }
 
     public static string BuildAgentPrompt(string root, string target, int exitCode, string logText)

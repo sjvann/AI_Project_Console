@@ -202,6 +202,7 @@
                     <strong>@S.LogTitle</strong>
                     <input class="log-search" placeholder="搜尋 Log…" value="@S.LogFilter" @oninput="OnLogFilter" />
                     <label class="check"><input type="checkbox" checked="@S.FollowLog" @onchange="e => S.FollowLog = (bool)(e.Value ?? false)" /> 跟隨最新</label>
+                    <button class="btn-primary" disabled="@(!S.RuntimeHelpEnabled)" @onclick="S.OpenRuntimeHelp">執行求救</button>
                     <button class="btn-sec" @onclick="S.ReloadLog">重新載入</button>
                     <button class="btn-sec" @onclick="S.ClearLogView">清空顯示</button>
                     <button class="btn-sec" @onclick="S.OpenLogDir">開啟資料夾</button>
@@ -434,7 +435,7 @@
 {
     <div class="overlay" @onclick="S.CloseDialog">
         <div class="dialog" @onclick:stopPropagation="true">
-            <h2>編譯求救</h2>
+            <h2>@S.AgentTitle</h2>
             <p class="hint">@S.AgentIntro</p>
             <textarea readonly style="width:100%;min-height:180px">@S.AgentPrompt</textarea>
             <div class="dialog-actions">
