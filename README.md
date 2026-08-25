@@ -120,6 +120,19 @@ python -m AI_Project_Console
 Copy-Item schema/ai-project.example.json .\ai-project.json
 ```
 
+薄工作區（目錄本身沒有 `.csproj`）請加 `productLines`，控制台才會去掃隔壁產品線，並在「專案」頁依線分組：
+
+```json
+"productLines": [
+  { "id": "ledger", "label": "Ledger", "root": "../FHIR-ProfileServer" },
+  { "id": "weave", "label": "Weave", "root": "../AI_EZIE" }
+]
+```
+
+未寫 `productLines` 時，若 `services[].project` 指向 `../某倉/...`，會推斷該倉為一條產品線。
+
+服務可選 `preStart`（或 `ensure`）：相對專案根的腳本。按「啟動」或「啟動全部」時，**先跑該服務自己的前置**，成功才 `dotnet run`。失敗則不啟動行程，訊息寫進該服務 Log。各服務前置彼此獨立，禁止用這一欄去起另一條產品線。
+
 ## 執行期
 
 選定專案根下 `.ai_project/{logs,pids,build-reports,uat-reports}`。  

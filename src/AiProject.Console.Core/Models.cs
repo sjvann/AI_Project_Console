@@ -20,6 +20,8 @@ public sealed record ProjectInfo(
 
 public sealed record ScanResult(string Root, IReadOnlyList<ProjectInfo> Projects, string Error = "");
 
+public sealed record ProductLine(string Id, string Label, string Root);
+
 public sealed record ServiceEntry(
     string Id,
     string Label,
@@ -31,6 +33,7 @@ public sealed record ServiceEntry(
     string Group,
     string? HostedBy = null,
     string? AspnetUrls = null,
+    string? PreStart = null,
     string Source = "scan");
 
 public sealed class ProjectCatalog

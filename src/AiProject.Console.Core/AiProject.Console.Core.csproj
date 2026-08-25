@@ -10,5 +10,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Actions\actions.json" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiProject.Console.Core.Tests" />
+  </ItemGroup>
 
 </Project>

@@ -21,13 +21,73 @@ public static class ServiceCatalogBuilder
         return JsonUtil.LoadObject(path);
     }
 
+    public static IReadOnlyList<ProductLine> ReadProductLines(JsonObject manifest, IReadOnlyList<ServiceEntry>? services = null)
+    {
+        var list = new List<ProductLine>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var node = manifest["productLines"] ?? manifest["product_lines"] ?? manifest["scanRoots"] ?? manifest["scan_roots"];
+        if (node is JsonArray arr)
+        {
+            foreach (var item in arr)
+            {
+                if (item is JsonObject obj)
+                {
+                    var lineRoot = JsonUtil.Pick(JsonUtil.Str(obj["root"]), JsonUtil.Str(obj["path"]), JsonUtil.Str(obj["dir"])).Replace('\\', '/').TrimEnd('/');
+                    if (string.IsNullOrEmpty(lineRoot) || !seen.Add(lineRoot))
+                        continue;
+                    var label = JsonUtil.Pick(JsonUtil.Str(obj["label"]), JsonUtil.Str(obj["name"]), JsonUtil.Str(obj["group"]), FolderName(lineRoot));
+                    var id = JsonUtil.Pick(JsonUtil.Str(obj["id"]), Slug(label));
+                    list.Add(new ProductLine(id, string.IsNullOrEmpty(label) ? lineRoot : label, lineRoot));
+                }
+                else
+                {
+                    var lineRoot = JsonUtil.Str(item).Replace('\\', '/').TrimEnd('/');
+                    if (string.IsNullOrEmpty(lineRoot) || !seen.Add(lineRoot))
+                        continue;
+                    var label = FolderName(lineRoot);
+                    list.Add(new ProductLine(Slug(label), string.IsNullOrEmpty(label) ? lineRoot : label, lineRoot));
+                }
+            }
+        }
+
+        if (list.Count == 0 && services is not null)
+        {
+            foreach (var svc in services)
+            {
+                if (!TrySiblingRoot(svc.Project, out var lineRoot) || !seen.Add(lineRoot))
+                    continue;
+                var label = string.IsNullOrEmpty(svc.Group) ? FolderName(lineRoot) : svc.Group;
+                list.Add(new ProductLine(Slug(label), label, lineRoot));
+            }
+        }
+        return list;
+    }
+
+    internal static bool TrySiblingRoot(string project, out string lineRoot)
+    {
+        lineRoot = "";
+        var n = project.Replace('\\', '/').Trim();
+        if (!n.StartsWith("../", StringComparison.Ordinal))
+            return false;
+        var parts = n.Split('/');
+        if (parts.Length < 2 || parts[0] != ".." || string.IsNullOrEmpty(parts[1]) || parts[1] == "..")
+            return false;
+        lineRoot = $"../{parts[1]}";
+        return true;
+    }
+
+    private static string FolderName(string posixPath)
+    {
+        var n = posixPath.Replace('\\', '/').TrimEnd('/');
+        var i = n.LastIndexOf('/');
+        return i < 0 ? n : n[(i + 1)..];
+    }
+
     public static ProjectCatalog Build(string root)
     {
         root = Path.GetFullPath(root);
-        var scan = ProjectScanner.ScanWorkspace(root);
         var manifest = LoadManifest(root);
         var name = JsonUtil.Pick(JsonUtil.Str(manifest["name"]), Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
-        var projects = scan.Projects.ToList();
         List<ServiceEntry> services;
         if (manifest["services"] is JsonArray raw && raw.Count > 0)
         {
@@ -44,9 +104,13 @@ public static class ServiceCatalogBuilder
             services = DedupeIds(services);
         }
         else
-        {
+            services = [];
+
+        var lines = ReadProductLines(manifest, services);
+        var scan = ProjectScanner.ScanWorkspace(root, lines);
+        var projects = scan.Projects.ToList();
+        if (services.Count == 0)
             services = DedupeIds(ProjectScanner.ExternalServiceCandidates(scan).Select(FromScan).ToList());
-        }
 
         var startOrder = new List<string>();
         var orderNode = manifest["startOrder"] ?? manifest["start_order"];
@@ -188,6 +252,7 @@ public static class ServiceCatalogBuilder
         var openUrl = JsonUtil.Pick(JsonUtil.Str(item["openUrl"]), JsonUtil.Str(item["open_url"]));
         var aspnet = JsonUtil.Pick(JsonUtil.Str(item["aspnetUrls"]), JsonUtil.Str(item["aspnet_urls"]), JsonUtil.Str(item["urls"]));
         var hosted = JsonUtil.Pick(JsonUtil.Str(item["hostedBy"]), JsonUtil.Str(item["hosted_by"]));
+        var preStart = JsonUtil.Pick(JsonUtil.Str(item["preStart"]), JsonUtil.Str(item["pre_start"]), JsonUtil.Str(item["ensure"]));
         if (project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             project = project[..^".csproj".Length];
         return new ServiceEntry(
@@ -201,6 +266,7 @@ public static class ServiceCatalogBuilder
             Group: JsonUtil.Pick(JsonUtil.Str(item["group"]), GuessGroupFromProject(project)),
             HostedBy: string.IsNullOrEmpty(hosted) ? null : hosted,
             AspnetUrls: string.IsNullOrEmpty(aspnet) ? null : aspnet,
+            PreStart: string.IsNullOrEmpty(preStart) ? null : preStart.Replace('\\', '/'),
             Source: "manifest");
     }
 

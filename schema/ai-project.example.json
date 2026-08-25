@@ -1,5 +1,10 @@
 {
   "name": "AI_House",
+  "productLines": [
+    { "id": "hub", "label": "Hub", "root": "ModularIoTHub" },
+    { "id": "platform", "label": "Platform", "root": "AiHouse.Platform" },
+    { "id": "eddss", "label": "EDDSS", "root": "EventDrivenDSS" }
+  ],
   "services": [
     {
       "id": "hub-telemetry",

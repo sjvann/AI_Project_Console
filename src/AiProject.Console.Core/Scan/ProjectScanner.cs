@@ -73,13 +73,48 @@ public static class ProjectScanner
         return found;
     }
 
-    public static ScanResult ScanWorkspace(string root)
+    public static ScanResult ScanWorkspace(string root, IReadOnlyList<ProductLine>? extraRoots = null)
     {
         root = Path.GetFullPath(root);
         if (!Directory.Exists(root))
             return new ScanResult(root, [], $"目錄不存在：{root}");
-        var projects = ListCsprojPaths(root).Select(p => ScanProject(p, root)).ToList();
+
+        var projects = new List<ProjectInfo>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddFrom(root, root, groupOverride: null, projects, seen);
+        if (extraRoots is not null)
+        {
+            foreach (var line in extraRoots)
+            {
+                if (string.IsNullOrWhiteSpace(line.Root))
+                    continue;
+                var scanRoot = Path.GetFullPath(Path.Combine(root, line.Root.Replace('/', Path.DirectorySeparatorChar)));
+                if (string.Equals(scanRoot, root, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                AddFrom(scanRoot, root, line.Label, projects, seen);
+            }
+        }
         return new ScanResult(root, projects);
+    }
+
+    private static void AddFrom(
+        string scanRoot,
+        string workspaceRoot,
+        string? groupOverride,
+        List<ProjectInfo> projects,
+        HashSet<string> seen)
+    {
+        if (!Directory.Exists(scanRoot))
+            return;
+        foreach (var csproj in ListCsprojPaths(scanRoot))
+        {
+            if (!seen.Add(csproj))
+                continue;
+            var info = ScanProject(csproj, workspaceRoot);
+            if (!string.IsNullOrWhiteSpace(groupOverride))
+                info = info with { Group = groupOverride };
+            projects.Add(info);
+        }
     }
 
     public static IReadOnlyList<ProjectInfo> ExternalServiceCandidates(ScanResult scan) =>

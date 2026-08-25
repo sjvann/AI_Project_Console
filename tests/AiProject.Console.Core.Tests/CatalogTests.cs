@@ -1,10 +1,12 @@
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Deploy;
 using AiProject.Console.Core.GitHub;
+using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Scan;
 using AiProject.Console.Core.Util;
 using System.Text;
 using System.Text.Json.Nodes;
+using ServiceEntry = AiProject.Console.Core.ServiceEntry;
 
 namespace AiProject.Console.Core.Tests;
 
@@ -170,6 +172,82 @@ public class CatalogTests
     }
 
     [Fact]
+    public void BuildCatalog_ScansProductLineRoots()
+    {
+        var parent = Path.Combine(Path.GetTempPath(), "ai-console-lines-" + Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(parent, "AION");
+        var ledger = Path.Combine(parent, "LedgerRepo", "src", "Ledger.Lib");
+        var weave = Path.Combine(parent, "WeaveRepo", "src", "Weave.Api");
+        try
+        {
+            Directory.CreateDirectory(workspace);
+            Directory.CreateDirectory(ledger);
+            Directory.CreateDirectory(weave);
+            File.WriteAllText(Path.Combine(ledger, "Ledger.Lib.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(weave, "Weave.Api.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(workspace, "ai-project.json"), """
+            {
+              "name": "AION",
+              "productLines": [
+                { "id": "ledger", "label": "Ledger", "root": "../LedgerRepo" },
+                { "id": "weave", "label": "Weave", "root": "../WeaveRepo" }
+              ],
+              "services": [
+                { "id": "api", "label": "Api", "project": "../WeaveRepo/src/Weave.Api", "port": 8088, "group": "Weave" }
+              ]
+            }
+            """);
+            var catalog = ServiceCatalogBuilder.Build(workspace);
+            Assert.Equal(2, catalog.Projects.Count);
+            Assert.Contains(catalog.Projects, p => p.Name == "Ledger.Lib" && p.Group == "Ledger");
+            Assert.Contains(catalog.Projects, p => p.Name == "Weave.Api" && p.Group == "Weave");
+            Assert.Contains(catalog.Projects, p => p.RelDir.Replace('\\', '/') == "../LedgerRepo/src/Ledger.Lib");
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ReadProductLines_InfersFromSiblingServices()
+    {
+        var manifest = JsonNode.Parse("""
+        {
+          "services": [
+            { "id": "fhir-host", "project": "../FHIR-ProfileServer/src/Fhir.Server.Host", "group": "Ledger" },
+            { "id": "ezie-api", "project": "../AI_EZIE/src/Ezie.Api", "group": "Weave" },
+            { "id": "ezie-web", "project": "../AI_EZIE/src/Ezie.Web", "group": "Weave" }
+          ]
+        }
+        """)!.AsObject();
+        var services = new[]
+        {
+            new ServiceEntry("fhir-host", "Ledger", "Fhir.Server.Host", "../FHIR-ProfileServer/src/Fhir.Server.Host", 5080, "", "", "Ledger"),
+            new ServiceEntry("ezie-api", "Api", "Ezie.Api", "../AI_EZIE/src/Ezie.Api", 8088, "", "", "Weave"),
+            new ServiceEntry("ezie-web", "Web", "Ezie.Web", "../AI_EZIE/src/Ezie.Web", 8091, "", "", "Weave"),
+        };
+        var lines = ServiceCatalogBuilder.ReadProductLines(manifest, services);
+        Assert.Equal(2, lines.Count);
+        Assert.Equal("../FHIR-ProfileServer", lines[0].Root);
+        Assert.Equal("Ledger", lines[0].Label);
+        Assert.Equal("../AI_EZIE", lines[1].Root);
+        Assert.Equal("Weave", lines[1].Label);
+    }
+
+    [Fact]
     public void BuildCatalog_FromManifest()
     {
         var root = CreateTempProject();
@@ -182,6 +260,29 @@ public class CatalogTests
             Assert.Equal("web", catalog.Services[1].Id);
             Assert.Equal("api", catalog.Services[1].HostedBy);
             Assert.Equal(new[] { "api" }, catalog.StartOrder);
+            Assert.Equal("scripts/ensure-api.ps1", catalog.Services[0].PreStart);
+            Assert.Null(catalog.Services[1].PreStart);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolvePreStartPath_StaysInsideRoot()
+    {
+        var root = CreateTempProject();
+        try
+        {
+            var script = Path.Combine(root, "scripts", "ensure-api.ps1");
+            Directory.CreateDirectory(Path.GetDirectoryName(script)!);
+            File.WriteAllText(script, "exit 0");
+            Assert.Equal(
+                Path.GetFullPath(script),
+                ProcessSupervisor.ResolvePreStartPath(root, "scripts/ensure-api.ps1"));
+            Assert.Null(ProcessSupervisor.ResolvePreStartPath(root, "../escape.ps1"));
+            Assert.Null(ProcessSupervisor.ResolvePreStartPath(root, "missing.ps1"));
         }
         finally
         {
@@ -342,7 +443,7 @@ public class CatalogTests
         {
           "name": "Demo",
           "services": [
-            { "id": "api", "label": "Api", "project": "src/Demo.Api", "port": 8080, "group": "Demo" },
+            { "id": "api", "label": "Api", "project": "src/Demo.Api", "port": 8080, "group": "Demo", "preStart": "scripts/ensure-api.ps1" },
             { "id": "web", "label": "Web", "project": "src/Demo.Api", "port": 8080, "hostedBy": "api", "openUrl": "http://localhost:8080/" }
           ],
           "startOrder": ["api"],

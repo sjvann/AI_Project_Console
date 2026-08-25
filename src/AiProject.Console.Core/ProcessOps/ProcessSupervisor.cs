@@ -224,6 +224,13 @@ public static class ProcessSupervisor
         var relProj = Path.GetRelativePath(catalog.Root, Path.GetFullPath(proj));
         var writer = OpenLog(logFile);
         writer.WriteLine($"=== {host.Label} start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+        var prep = RunPreStart(catalog, host, writer);
+        if (prep is not null)
+        {
+            writer.WriteLine(prep);
+            CloseLog(logFile, writer);
+            throw new InvalidOperationException(prep);
+        }
 
         var psi = new ProcessStartInfo("dotnet")
         {
@@ -367,10 +374,50 @@ public static class ProcessSupervisor
         foreach (var svc in catalog.Services)
         {
             var port = svc.Port?.ToString() ?? "-";
-            lines.Add($"  - {svc.Label} [{svc.Id}] port={port} ({svc.Source})");
+            var pre = string.IsNullOrEmpty(svc.PreStart) ? "" : $" preStart={svc.PreStart}";
+            lines.Add($"  - {svc.Label} [{svc.Id}] port={port}{pre} ({svc.Source})");
         }
         lines.Add(catalog.Manifest.Count > 0 ? "manifest: ai-project.json 已載入" : "manifest: 無（使用掃描結果）");
         return string.Join('\n', lines);
+    }
+
+    internal static string? ResolvePreStartPath(string root, string? preStart)
+    {
+        if (string.IsNullOrWhiteSpace(preStart))
+            return null;
+        var rootFull = Path.GetFullPath(root);
+        var full = Path.GetFullPath(Path.Combine(rootFull, preStart.Replace('/', Path.DirectorySeparatorChar)));
+        var prefix = rootFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+        if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(full, rootFull, StringComparison.OrdinalIgnoreCase))
+            return null;
+        return File.Exists(full) ? full : null;
+    }
+
+    private static string? RunPreStart(ProjectCatalog catalog, ServiceEntry host, ServiceLogWriter writer)
+    {
+        if (string.IsNullOrWhiteSpace(host.PreStart))
+            return null;
+        var script = ResolvePreStartPath(catalog.Root, host.PreStart);
+        if (script is null)
+            return $"找不到 preStart（必須位於專案目錄內）：{host.PreStart}";
+
+        writer.WriteLine($"=== preStart {host.PreStart} ===");
+        var fileName = OperatingSystem.IsWindows() ? "powershell" : "pwsh";
+        var args = new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script };
+        var (code, output) = CliUtil.RunAsync(fileName, args, catalog.Root, timeoutMs: 300_000)
+            .GetAwaiter()
+            .GetResult();
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            foreach (var line in output.Split('\n'))
+                writer.WriteLine(line.TrimEnd('\r'));
+        }
+        if (code != 0)
+            return $"{host.Label} 前置檢查失敗（exit {code}）。見 Log。";
+        writer.WriteLine("=== preStart ok ===");
+        return null;
     }
 
     private static ServiceLogWriter OpenLog(string logFile)

@@ -152,15 +152,19 @@
                         <button class="btn-sec" @onclick="S.RefreshBuildStatesAsync">刷新</button>
                     </div>
                     <div class="prj-list">
-                    @foreach (var p in S.VisibleProjects)
+                    @foreach (var g in S.ProjectGroups)
                     {
-                        var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
-                        <div class="prj">
-                            <span class="prj-name">@p.Name</span>
-                            <span class="meta">@ProjectMeta(p)</span>
-                            <span class="badge-stale">@badge</span>
-                            <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
-                        </div>
+                        <div class="group-label">@g.Key</div>
+                        @foreach (var p in g)
+                        {
+                            var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
+                            <div class="prj">
+                                <span class="prj-name">@p.Name</span>
+                                <span class="meta">@ProjectMeta(p)</span>
+                                <span class="badge-stale">@badge</span>
+                                <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
+                            </div>
+                        }
                     }
                     </div>
                     @if (!S.VisibleProjects.Any())
