@@ -1,6 +1,7 @@
 using System.Text;
 using AiProject.Console.Core;
 using AiProject.Console.Core.Actions;
+using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Cursor;
@@ -8,6 +9,7 @@ using AiProject.Console.Core.Deploy;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 using Microsoft.JSInterop;
@@ -24,8 +26,14 @@ public sealed class ConsoleSession : IDisposable
     public ConsoleSession(NativeUi native)
     {
         _native = native;
-        OpenWithCursor = ConsoleSettingsStore.GetOpenWithCursor();
+        OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
+        Theme = ConsoleSettingsStore.GetTheme();
+        AgentProvider = ConsoleSettingsStore.GetAgentProvider();
+        AgentCliPath = ConsoleSettingsStore.GetAgentCliPath();
+        CustomAgentCommand = ConsoleSettingsStore.GetCustomAgentCommand();
+        CustomAgentArgs = ConsoleSettingsStore.GetCustomAgentArgs();
+        RefreshAgentDetect();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
         _ = RestoreLastProjectOnStartAsync();
@@ -40,8 +48,25 @@ public sealed class ConsoleSession : IDisposable
     public IReadOnlyList<string> RecentProjects => ConsoleSettingsStore.RecentProjects();
     public bool OpenWithCursor { get; set; }
     public bool RestoreLastProject { get; set; }
+    public string Theme { get; set; } = "light";
+    public string AgentProvider { get; set; } = "cursor";
+    public string AgentCliPath { get; set; } = "";
+    public string CustomAgentCommand { get; set; } = "";
+    public string CustomAgentArgs { get; set; } = "";
+    public string AgentDetectSummary { get; private set; } = "";
+    public bool AgentAvailable { get; private set; }
     public string ReadyText { get; private set; } = "就緒 0 / 0";
     public string JobText { get; private set; } = "待命";
+    public int BuildDone { get; private set; }
+    public int BuildTotal { get; private set; }
+    public int BuildFailedCount { get; private set; }
+    public string BuildCurrentName { get; private set; } = "";
+    public string BuildProgressText =>
+        BuildTotal <= 0
+            ? ""
+            : BuildDone >= BuildTotal
+                ? $"{BuildDone}/{BuildTotal} 完成" + (BuildFailedCount > 0 ? $"（{BuildFailedCount} 失敗）" : "")
+                : $"{BuildDone}/{BuildTotal}";
     public string WarnText { get; private set; } = "";
     public string GitStatusText { get; private set; } = "";
     public string LogFilter { get; private set; } = "";
@@ -114,14 +139,20 @@ public sealed class ConsoleSession : IDisposable
         Catalog?.Services.GroupBy(s => string.IsNullOrEmpty(s.Group) ? "其他" : s.Group)
         ?? Enumerable.Empty<IGrouping<string, ServiceEntry>>();
 
+    public IReadOnlyList<IAgentBackend> AgentBackends => AgentBackendRegistry.All;
+
+    public IAgentBackend CurrentAgent => AgentBackendRegistry.Get(AgentProvider);
+
+    public string AgentDisplayName => CurrentAgent.DisplayName;
+
     public IEnumerable<BuildState> VisibleProjects =>
-        StaleOnly ? Projects.Where(p => p.Status is "stale" or "unbuilt") : Projects;
+        StaleOnly
+            ? Projects.Where(p => p.Status is "stale" or "unbuilt" || p.Activity is "queued" or "building" or "failed")
+            : Projects;
 
     public IEnumerable<IGrouping<string, BuildState>> ProjectGroups =>
         VisibleProjects.GroupBy(p => string.IsNullOrEmpty(p.System) ? "其他" : p.System);
 
-<<<<<<< HEAD
-=======
     public bool IsServiceGroupCollapsed(string key) => _collapsedServiceGroups.Contains(key);
 
     public bool IsProjectGroupCollapsed(string key) => _collapsedProjectGroups.Contains(key);
@@ -165,7 +196,6 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
->>>>>>> b00fe98aeefcbf508d7749ac3c3641cf338335c2
     public int ReadyCount => Catalog is null ? 0 : Catalog.Services.Count(s => Health.GetValueOrDefault(s.Id));
     public int ServiceCount => Catalog?.Services.Count ?? 0;
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
@@ -186,7 +216,82 @@ public sealed class ConsoleSession : IDisposable
     public void SetOpenWithCursor(bool value)
     {
         OpenWithCursor = value;
-        ConsoleSettingsStore.SetOpenWithCursor(value);
+        ConsoleSettingsStore.SetOpenIdeOnLoad(value);
+        Notify();
+    }
+
+    public void OpenPreferences()
+    {
+        AgentProvider = ConsoleSettingsStore.GetAgentProvider();
+        AgentCliPath = ConsoleSettingsStore.GetAgentCliPath();
+        CustomAgentCommand = ConsoleSettingsStore.GetCustomAgentCommand();
+        CustomAgentArgs = ConsoleSettingsStore.GetCustomAgentArgs();
+        Theme = ConsoleSettingsStore.GetTheme();
+        RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
+        OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
+        RefreshAgentDetect();
+        Dialog = "prefs";
+        Notify();
+    }
+
+    public void OnAgentProviderChanged(string id)
+    {
+        AgentProvider = id;
+        RefreshAgentDetect();
+        Notify();
+    }
+
+    public void RefreshAgentDetectUi()
+    {
+        RefreshAgentDetect();
+        Notify();
+    }
+
+    public void SavePreferences()
+    {
+        ConsoleSettingsStore.SetAgentProvider(AgentProvider);
+        ConsoleSettingsStore.SetAgentCliPath(AgentCliPath);
+        ConsoleSettingsStore.SetCustomAgentCommand(CustomAgentCommand);
+        ConsoleSettingsStore.SetCustomAgentArgs(CustomAgentArgs);
+        ConsoleSettingsStore.SetTheme(Theme);
+        ConsoleSettingsStore.SetRestoreLastProject(RestoreLastProject);
+        ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
+        RefreshAgentDetect();
+        CloseDialog();
+        JobText = $"已儲存設定（Agent：{AgentDisplayName}）";
+        Notify();
+    }
+
+    public string McpSnippet => McpLaunch.CursorSnippet(Catalog?.Root);
+
+    public async Task CopyMcpConfigAsync()
+    {
+        try
+        {
+            if (Js is not null)
+                await Js.InvokeVoidAsync("aiConsole.copyText", McpSnippet).ConfigureAwait(false);
+            JobText = "已複製 Cursor／Claude Code 的 MCP 設定";
+        }
+        catch (Exception ex)
+        {
+            _native.Warn("複製失敗", ex.Message);
+        }
+        Notify();
+    }
+
+    public void WriteMcpConfigToProject()
+    {
+        if (!RequireCatalog())
+            return;
+        try
+        {
+            var path = McpLaunch.WriteCursorConfig(Catalog!.Root);
+            JobText = "已寫入 " + path + "（重新載入 Cursor 後即可呼叫堆疊工具）";
+        }
+        catch (Exception ex)
+        {
+            _native.Error("寫入 MCP 設定失敗", ex.Message);
+        }
         Notify();
     }
 
@@ -235,7 +340,8 @@ public sealed class ConsoleSession : IDisposable
         if (!_native.Confirm("關閉專案", body))
             return Task.CompletedTask;
 
-        var closeIde = _native.Confirm("關閉 Cursor", "要一併關閉 Cursor 嗎？");
+        var closeIde = CurrentAgent.CanCloseIde
+            && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
         if (Catalog is not null && Runtime is not null)
         {
             try
@@ -251,9 +357,9 @@ public sealed class ConsoleSession : IDisposable
 
         if (closeIde)
         {
-            var err = CursorLauncher.CloseCursor();
+            var err = CurrentAgent.CloseIde();
             if (err is not null)
-                _native.Warn("關閉 Cursor", err);
+                _native.Warn($"關閉 {AgentDisplayName}", err);
         }
 
         ResetToStartup();
@@ -265,7 +371,7 @@ public sealed class ConsoleSession : IDisposable
         {
             // 歷史仍保留，還原標記失敗不阻擋關閉
         }
-        JobText = closeIde ? "已關閉專案，並關閉 Cursor" : "已關閉專案";
+        JobText = closeIde ? $"已關閉專案，並關閉 {AgentDisplayName}" : "已關閉專案";
         Notify();
         return Task.CompletedTask;
     }
@@ -307,10 +413,11 @@ public sealed class ConsoleSession : IDisposable
             _ = RefreshGitStatusAsync();
             if (openCursor)
             {
-                var err = CursorLauncher.OpenInCursor(catalog.Root);
+                var backend = CurrentAgent;
+                var err = backend.OpenWorkspace(catalog.Root, AgentBackendRegistry.CliOverrideFor(backend));
                 JobText = err is null
-                    ? (rememberErr is null ? "已載入專案，並在 Cursor 開啟" : JobText)
-                    : $"已載入專案（Cursor 未開啟：{err}）";
+                    ? (rememberErr is null ? $"已載入專案，並在 {backend.DisplayName} 開啟" : JobText)
+                    : $"已載入專案（{backend.DisplayName} 未開啟：{err}）";
                 Notify();
             }
         }
@@ -729,26 +836,31 @@ public sealed class ConsoleSession : IDisposable
         }
     }
 
-    public Task BuildOneAsync(string relPath)
+    public async Task BuildOneAsync(string relPath)
     {
         if (!RequireCatalog())
-            return Task.CompletedTask;
+            return;
         var catalog = Catalog!;
         var target = Path.Combine(catalog.Root, relPath.Replace('/', Path.DirectorySeparatorChar));
         RightTab = "build";
         LastBuildFailure = null;
         CompileHelpEnabled = false;
         Notify();
-        return RunJobAsync($"編譯 {Path.GetFileName(relPath)}…", async () =>
+        await RunJobAsync($"編譯 {Path.GetFileName(relPath)}…", async () =>
         {
+            await BeginBuildBatchAsync([target]).ConfigureAwait(false);
+            MarkBuildActivity(target, "building");
             AppendBuild($"=== build {relPath} ===");
             var progress = new Progress<string>(AppendBuild);
             var (code, log) = await BuildRunner.BuildAsync(catalog.Root, target, progress).ConfigureAwait(false);
             AppendBuild($"exit {code}");
+            FinishOneBuild(target, code);
             if (code != 0)
                 RememberBuildFailure(relPath, code, $"=== build {relPath} ===\n{log}\nexit {code}");
+            JobText = BuildProgressText;
             return (string?)null;
-        });
+        }, refreshBuilds: false).ConfigureAwait(false);
+        await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
     }
 
     public void OpenCloneDialog()
@@ -1051,7 +1163,7 @@ public sealed class ConsoleSession : IDisposable
         }
         var prompt = CursorLauncher.BuildUatAgentPrompt(Catalog!.Root, UatTitle, UatDescription, images);
         CloseDialog();
-        await LaunchCursorNewAgentAsync(prompt, "UAT 求救已送出，請在 Cursor 跳出視窗按確認").ConfigureAwait(false);
+        await LaunchAgentAsync(prompt, AgentLaunchStatus("UAT 求救")).ConfigureAwait(false);
     }
 
     public void OpenCompileHelp()
@@ -1064,7 +1176,7 @@ public sealed class ConsoleSession : IDisposable
         AgentPrompt = CursorLauncher.BuildAgentPrompt(
             Catalog!.Root, LastBuildFailure.Target, LastBuildFailure.ExitCode, LastBuildFailure.Log);
         AgentTitle = "編譯求救";
-        AgentIntro = "確認後會開啟 Cursor 並跳出確認視窗；再按確認即建立 New Agent。錯誤內容會直接帶入提示，不會先寫求助檔。";
+        AgentIntro = AgentLaunchIntro();
         Dialog = "agent";
         Notify();
     }
@@ -1087,7 +1199,7 @@ public sealed class ConsoleSession : IDisposable
         AgentPrompt = CursorLauncher.BuildRuntimeLogPrompt(
             Catalog!.Root, svc.Label, LogText, StartErrorFor(svc));
         AgentTitle = "執行求救";
-        AgentIntro = "確認後會開啟 Cursor 並跳出確認視窗；再按確認即建立 New Agent。執行 Log 會直接帶入提示，不會先寫求助檔。";
+        AgentIntro = AgentLaunchIntro();
         Dialog = "agent";
         Notify();
     }
@@ -1095,9 +1207,9 @@ public sealed class ConsoleSession : IDisposable
     public async Task ConfirmAgentAsync()
     {
         var prompt = AgentPrompt;
-        var status = $"{AgentTitle}已送出，請在 Cursor 跳出視窗按確認";
+        var status = AgentLaunchStatus(AgentTitle);
         CloseDialog();
-        await LaunchCursorNewAgentAsync(prompt, status).ConfigureAwait(false);
+        await LaunchAgentAsync(prompt, status).ConfigureAwait(false);
     }
 
     public async Task SaveGithubAsync()
@@ -1165,7 +1277,8 @@ public sealed class ConsoleSession : IDisposable
         else if (!_native.Confirm("離開", "確定離開控制台？"))
             return;
 
-        var closeIde = _native.Confirm("關閉 Cursor", "要一併關閉 Cursor 嗎？");
+        var closeIde = CurrentAgent.CanCloseIde
+            && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
         if (stopServices && Catalog is not null && Runtime is not null)
         {
             try
@@ -1180,22 +1293,34 @@ public sealed class ConsoleSession : IDisposable
         }
         if (closeIde)
         {
-            var err = CursorLauncher.CloseCursor();
-            if (err is not null && !_native.Confirm("關閉 Cursor", $"關閉 Cursor 時發生問題：\n{err}\n\n仍要離開控制台嗎？"))
+            var err = CurrentAgent.CloseIde();
+            if (err is not null && !_native.Confirm($"關閉 {AgentDisplayName}", $"關閉 {AgentDisplayName} 時發生問題：\n{err}\n\n仍要離開控制台嗎？"))
                 return;
         }
         _native.Close();
         await Task.CompletedTask;
     }
 
-    public Task RefreshBuildStatesAsync()
+    public Task RefreshBuildStatesAsync() => RefreshBuildStatesAsync(clearActivity: true);
+
+    public Task RefreshBuildStatesAsync(bool clearActivity)
     {
         var catalog = Catalog;
         if (catalog is null)
             return Task.CompletedTask;
         return Task.Run(() =>
         {
+            var previous = clearActivity
+                ? []
+                : Projects.Where(p => !string.IsNullOrEmpty(p.Activity))
+                    .ToDictionary(p => p.Path, p => p.Activity, StringComparer.OrdinalIgnoreCase);
             var proj = BuildFreshness.AllProjectBuildStates(catalog);
+            if (previous.Count > 0)
+            {
+                proj = proj.Select(p => previous.TryGetValue(p.Path, out var act)
+                    ? p with { Activity = act }
+                    : p).ToList();
+            }
             var svcStates = BuildFreshness.AllServiceBuildStates(catalog);
             var staleSvc = svcStates.Count(s => s.Status is "stale" or "unbuilt");
             var stalePrj = proj.Count(p => p.Status is "stale" or "unbuilt");
@@ -1297,14 +1422,20 @@ public sealed class ConsoleSession : IDisposable
             var targets = BuildRunner.TargetsFor(catalog, handler);
             if (targets.Count == 0)
             {
+                ResetBuildProgress();
                 AppendBuild("沒有需要編譯的項目。");
                 return (string?)null;
             }
+            await BeginBuildBatchAsync(targets).ConfigureAwait(false);
             var allLines = new List<string>();
             string? failedTarget = null;
             var failedCode = 0;
             foreach (var target in targets)
             {
+                MarkBuildActivity(target, "building");
+                BuildCurrentName = Path.GetFileName(BuildFreshness.ToProjectDir(catalog.Root, target));
+                JobText = $"建置中 {BuildProgressText} · {BuildCurrentName}";
+                Notify();
                 var header = $"=== build {target} ===";
                 allLines.Add(header);
                 AppendBuild(header);
@@ -1317,6 +1448,7 @@ public sealed class ConsoleSession : IDisposable
                 var footer = $"exit {code}  ({target})";
                 allLines.Add(footer);
                 AppendBuild(footer);
+                FinishOneBuild(target, code);
                 if (code != 0 && failedTarget is null)
                 {
                     failedTarget = target;
@@ -1325,11 +1457,13 @@ public sealed class ConsoleSession : IDisposable
             }
             if (failedTarget is not null)
                 RememberBuildFailure(failedTarget, failedCode, string.Join('\n', allLines));
+            JobText = BuildProgressText;
             return (string?)null;
-        }).ConfigureAwait(false);
+        }, refreshBuilds: false).ConfigureAwait(false);
+        await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
     }
 
-    private async Task LaunchCursorNewAgentAsync(string prompt, string status)
+    private async Task LaunchAgentAsync(string prompt, string status)
     {
         if (Catalog is null)
             return;
@@ -1342,28 +1476,120 @@ public sealed class ConsoleSession : IDisposable
         {
             // clipboard optional
         }
-        var err = CursorLauncher.OpenProjectForNewAgent(Catalog.Root);
+        var backend = CurrentAgent;
+        var err = await backend.LaunchAgent(Catalog.Root, prompt, AgentBackendRegistry.CliOverrideFor(backend)).ConfigureAwait(false);
         if (err is not null)
         {
-            _native.Warn("Cursor", err);
-            return;
-        }
-        await Task.Delay(CursorLauncher.NewAgentLaunchDelayMs()).ConfigureAwait(false);
-        var err2 = CursorLauncher.OpenPromptDeeplink(prompt);
-        if (err2 is not null)
-        {
-            _native.Warn("Cursor", err2);
+            _native.Warn(backend.DisplayName, err);
             return;
         }
         JobText = status;
         Notify();
     }
 
+    private string AgentLaunchIntro() =>
+        CurrentAgent.Id switch
+        {
+            "cursor" => "確認後會開啟 Cursor 並跳出確認視窗；再按確認即建立 New Agent。錯誤內容會直接帶入提示，不會先寫求助檔。",
+            "claude" => "確認後會以 Claude Code deeplink 開啟工作區並帶入提示。完整內容已複製到剪貼簿。",
+            "aider" or "codex" => $"確認後會開啟終端機執行 {AgentDisplayName}。完整提示已複製到剪貼簿。",
+            "custom" => "確認後會執行你在設定裡填的自訂命令。提示會寫入 .ai_project/agent-prompts/。",
+            _ => $"確認後會開啟 {AgentDisplayName}，並把提示複製到剪貼簿（此後端沒有穩定的 Agent deeplink，請在 IDE 內貼上）。",
+        };
+
+    private string AgentLaunchStatus(string title) =>
+        CurrentAgent.Id switch
+        {
+            "cursor" => $"{title}已送出，請在 Cursor 跳出視窗按確認",
+            "claude" => $"{title}已送出，請在 Claude Code 檢視提示後送出",
+            _ => $"{title}已送出（提示已複製，後端：{AgentDisplayName}）",
+        };
+
+    private void RefreshAgentDetect()
+    {
+        var backend = CurrentAgent;
+        var detect = backend.Detect(DraftCliOverride(backend));
+        AgentAvailable = detect.Available;
+        AgentDetectSummary = detect.Summary;
+    }
+
+    private string? DraftCliOverride(IAgentBackend backend)
+    {
+        if (backend.Id == "custom")
+        {
+            if (string.IsNullOrWhiteSpace(CustomAgentCommand))
+                return "";
+            return string.IsNullOrWhiteSpace(CustomAgentArgs)
+                ? CustomAgentCommand.Trim()
+                : CustomAgentCommand.Trim() + " " + CustomAgentArgs.Trim();
+        }
+        return string.IsNullOrWhiteSpace(AgentCliPath) ? null : AgentCliPath.Trim();
+    }
+
+    private async Task BeginBuildBatchAsync(IReadOnlyList<string> targets)
+    {
+        BuildDone = 0;
+        BuildFailedCount = 0;
+        BuildTotal = targets.Count;
+        BuildCurrentName = "";
+        await RefreshBuildStatesAsync(clearActivity: true).ConfigureAwait(false);
+        foreach (var target in targets)
+            MarkBuildActivity(target, "queued");
+        Notify();
+    }
+
+    private void FinishOneBuild(string target, int exitCode)
+    {
+        BuildDone++;
+        if (exitCode != 0)
+            BuildFailedCount++;
+        MarkBuildActivity(target, exitCode == 0 ? "ok" : "failed");
+        RefreshOneProject(target, exitCode == 0 ? "ok" : "failed");
+        if (Runtime is not null)
+        {
+            try { BuildReportStore.Write(Runtime, target, exitCode, BuildFreshness.DefaultConfiguration); }
+            catch { /* report is optional */ }
+        }
+        Notify();
+    }
+
+    private void ResetBuildProgress()
+    {
+        BuildDone = 0;
+        BuildTotal = 0;
+        BuildFailedCount = 0;
+        BuildCurrentName = "";
+    }
+
+    private void MarkBuildActivity(string target, string activity)
+    {
+        if (Catalog is null)
+            return;
+        Projects = Projects
+            .Select(p => BuildFreshness.SameProject(Catalog.Root, p.Path, target)
+                ? p with { Activity = activity }
+                : p)
+            .ToList();
+    }
+
+    private void RefreshOneProject(string target, string activity)
+    {
+        if (Catalog is null)
+            return;
+        var info = Catalog.Projects.FirstOrDefault(p => BuildFreshness.SameProject(Catalog.Root, p.RelDir, target));
+        if (info is null)
+            return;
+        var fresh = BuildFreshness.ProjectBuildState(Catalog.Root, info) with { Activity = activity };
+        Projects = Projects
+            .Select(p => BuildFreshness.SameProject(Catalog.Root, p.Path, target) ? fresh : p)
+            .ToList();
+    }
+
     private void RememberBuildFailure(string target, int exitCode, string log)
     {
         LastBuildFailure = new BuildFailure(target, exitCode, log);
         CompileHelpEnabled = true;
-        AppendBuild("建置失敗 — 可點「編譯求救」開啟 New Agent");
+        AppendBuild("建置失敗 — 可點「編譯求救」交給目前 Agent 後端");
         Notify();
     }
 
@@ -1435,7 +1661,7 @@ public sealed class ConsoleSession : IDisposable
         return false;
     }
 
-    private async Task RunJobAsync(string title, Func<Task<string?>> fn)
+    private async Task RunJobAsync(string title, Func<Task<string?>> fn, bool refreshBuilds = true)
     {
         if (JobBusy)
         {
@@ -1456,14 +1682,20 @@ public sealed class ConsoleSession : IDisposable
             err = ex.Message;
         }
         JobBusy = false;
-        JobText = err is null ? "完成" : "錯誤";
+        if (err is not null)
+            JobText = "錯誤";
+        else if (!refreshBuilds && BuildTotal > 0 && !string.IsNullOrEmpty(BuildProgressText))
+            JobText = BuildProgressText;
+        else
+            JobText = "完成";
         Notify();
         if (err is not null)
             _native.Error(title, err);
         else if (!string.IsNullOrWhiteSpace(msg))
             _native.Info(title, msg);
         UpdateReady();
-        await RefreshBuildStatesAsync().ConfigureAwait(false);
+        if (refreshBuilds)
+            await RefreshBuildStatesAsync().ConfigureAwait(false);
     }
 
     private async Task PollLoopAsync()
@@ -1523,6 +1755,7 @@ public sealed class ConsoleSession : IDisposable
         LogTitle = "Log · （未選服務）";
         LogText = "";
         BuildText = "";
+        ResetBuildProgress();
         ReadyText = "就緒 0 / 0";
         JobText = "待命";
         JobBusy = false;

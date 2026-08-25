@@ -1,4 +1,15 @@
+(function () {
+    const saved = localStorage.getItem("aiConsole.theme");
+    if (saved === "dark" || saved === "light")
+        document.documentElement.setAttribute("data-theme", saved);
+})();
+
 window.aiConsole = {
+    setTheme: function (theme) {
+        const t = theme === "dark" ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+        localStorage.setItem("aiConsole.theme", t);
+    },
     copyText: async function (text) {
         try {
             await navigator.clipboard.writeText(text);

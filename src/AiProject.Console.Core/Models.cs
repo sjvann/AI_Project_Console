@@ -58,7 +58,12 @@ public sealed record BuildState(
     string Kind = "",
     string Output = "",
     string Label = "",
-    string Language = "");
+    string Language = "",
+    string Activity = "",
+    DateTimeOffset? LastBuildUtc = null,
+    DateTimeOffset? NewestSourceUtc = null,
+    string NewestSourcePath = "",
+    string Reason = "");
 
 public sealed record ConsoleAction(
     string Id,

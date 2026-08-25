@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Cursor;
@@ -229,7 +230,8 @@ public static class CursorLauncher
             + $"服務：{serviceLabel}\n\n"
             + start
             + $"錯誤摘要：\n{errorBlock}\n\n"
-            + $"服務 Log（節錄）：\n```text\n{logTrim.TrimEnd()}\n```\n";
+            + $"服務 Log（節錄）：\n```text\n{logTrim.TrimEnd()}\n```\n"
+            + AgentPlaybook.VerificationHint();
     }
 
     public static string BuildAgentPrompt(string root, string target, int exitCode, string logText)
@@ -248,7 +250,8 @@ public static class CursorLauncher
             + $"建置目標：{target}\n"
             + $"結束碼：{exitCode}\n\n"
             + $"錯誤摘要：\n{errorBlock}\n\n"
-            + $"完整建置輸出：\n```text\n{logTrim.TrimEnd()}\n```\n";
+            + $"完整建置輸出：\n```text\n{logTrim.TrimEnd()}\n```\n"
+            + AgentPlaybook.VerificationHint();
     }
 
     public static (string ReportDir, List<string> Copied) StageUatScreenshots(string reportsDir, string title, IEnumerable<string> sourceImages)
@@ -301,7 +304,7 @@ public static class CursorLauncher
             foreach (var path in images)
                 lines.Add("- " + Path.GetFullPath(path).Replace('\\', '/'));
         }
-        return string.Join('\n', lines) + "\n";
+        return string.Join('\n', lines) + "\n" + AgentPlaybook.VerificationHint();
     }
 
     public static string PromptDeeplinkUrl(string promptText) =>

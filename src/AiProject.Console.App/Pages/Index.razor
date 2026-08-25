@@ -9,6 +9,7 @@
         <h1>AI_Project 控制台</h1>
         <span class="hint">通用本機堆疊 · GitHub／部署 · v@(AppInfo.Version)</span>
         <span class="grow"></span>
+        <button class="btn-sec" @onclick="S.OpenPreferences">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
@@ -44,7 +45,7 @@
             </label>
             <label class="check">
                 <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
-                同時開啟 Cursor
+                同時開啟 @S.AgentDisplayName
             </label>
         </div>
     </div>
@@ -162,9 +163,6 @@
                     <div class="prj-list">
                     @foreach (var g in S.ProjectGroups)
                     {
-<<<<<<< HEAD
-                        <div class="group-label">@g.Key</div>
-=======
                         var prjCollapsed = S.IsProjectGroupCollapsed(g.Key);
                         <button type="button" class="group-label @(prjCollapsed ? "collapsed" : null)" title="展開／收合" aria-expanded="@(!prjCollapsed)" @onclick="@(() => S.ToggleProjectGroup(g.Key))">
                             <span class="group-chevron" aria-hidden="true"></span>
@@ -173,21 +171,19 @@
                         </button>
                         @if (!prjCollapsed)
                         {
->>>>>>> b00fe98aeefcbf508d7749ac3c3641cf338335c2
                         @foreach (var p in g)
                         {
-                            var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
-                            <div class="prj">
+                            var kind = BuildFreshness.RowKind(p);
+                            var badge = BuildFreshness.BadgeText(p);
+                            var ago = BuildFreshness.FormatAgo(p.LastBuildUtc);
+                            <div class="prj prj-@kind" title="@p.Reason">
                                 <span class="prj-name">@p.Name</span>
-                                <span class="meta">@ProjectMeta(p)</span>
-                                <span class="badge-stale">@badge</span>
+                                <span class="meta">@ProjectMeta(p, ago)</span>
+                                <span class="badge-stale badge-@kind">@badge</span>
                                 <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
                             </div>
                         }
-<<<<<<< HEAD
-=======
                         }
->>>>>>> b00fe98aeefcbf508d7749ac3c3641cf338335c2
                     }
                     </div>
                     @if (!S.VisibleProjects.Any())
@@ -220,6 +216,14 @@
             {
                 <div class="log-tools">
                     <strong>建置輸出</strong>
+                    @if (!string.IsNullOrEmpty(S.BuildProgressText))
+                    {
+                        <span class="build-progress">@S.BuildProgressText</span>
+                    }
+                    @if (S.JobBusy && !string.IsNullOrEmpty(S.BuildCurrentName))
+                    {
+                        <span class="hint">@S.BuildCurrentName</span>
+                    }
                     <button class="btn-primary" disabled="@(!S.CompileHelpEnabled)" @onclick="S.OpenCompileHelp">編譯求救</button>
                 </div>
                 <pre class="log" id="build-view">@S.BuildText</pre>
@@ -438,6 +442,59 @@
     </div>
 }
 
+@if (S.Dialog == "prefs")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog dialog-lg" @onclick:stopPropagation="true">
+            <h2>偏好設定</h2>
+            <p class="hint">控制台擁有何時求救與帶什麼上下文；後端只負責在哪裡跑 Agent。</p>
+            <div class="field">
+                <span>Agent 後端</span>
+                <select value="@S.AgentProvider" @onchange="OnAgentProvider">
+                    @foreach (var b in S.AgentBackends)
+                    {
+                        <option value="@b.Id">@b.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <p class="hint @(S.AgentAvailable ? "status-on" : "status-off")">@S.AgentDetectSummary</p>
+            <div class="field"><span>CLI 路徑覆寫</span><input value="@S.AgentCliPath" @oninput="OnAgentCli" placeholder="空白＝自動偵測" /></div>
+            @if (S.AgentProvider == "custom")
+            {
+                <div class="field"><span>自訂命令</span><input value="@S.CustomAgentCommand" @oninput="OnCustomCmd" placeholder="例如 aider 或 my-agent" /></div>
+                <div class="field"><span>參數範本</span><input value="@S.CustomAgentArgs" @oninput="OnCustomArgs" placeholder="{root} {promptFile}" /></div>
+                <p class="hint">可用變數：{root}、{promptFile}、{prompt}</p>
+            }
+            <label class="check">
+                <input type="checkbox" checked="@S.RestoreLastProject" @onchange="e => S.SetRestoreLastProject((bool)(e.Value ?? false))" />
+                啟動時還原上次專案
+            </label>
+            <label class="check">
+                <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
+                載入專案時開啟 @S.AgentDisplayName
+            </label>
+            <div class="field">
+                <span>外觀</span>
+                <select value="@S.Theme" @onchange="OnTheme">
+                    <option value="light">淺色</option>
+                    <option value="dark">深色</option>
+                </select>
+            </div>
+            <h3 class="prefs-sub">Agentic／MCP</h3>
+            <p class="hint">讓 Cursor／Claude Code 呼叫控制台：看堆疊、編譯過期、啟停服務、讀 Log。開發管理者可用同一組工具值班。</p>
+            <p class="hint">建議並排：GitHub MCP（PR／Issue）、Context7（套件文件）。本伺服器只負責本機堆疊真相。</p>
+            <div class="row">
+                <button class="btn-sec" @onclick="S.CopyMcpConfigAsync">複製 MCP 設定</button>
+                <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.WriteMcpConfigToProject">寫入目前專案 .cursor/mcp.json</button>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.SavePreferences">儲存</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (S.Dialog == "agent")
 {
     <div class="overlay" @onclick="S.CloseDialog">
@@ -461,11 +518,16 @@
             ? S.RecentProjects.FirstOrDefault(p => string.Equals(p, root, StringComparison.OrdinalIgnoreCase)) ?? ""
             : "";
 
-    static string ProjectMeta(BuildState p)
+    static string ProjectMeta(BuildState p, string ago)
     {
-        if (string.IsNullOrEmpty(p.Language))
-            return p.Kind;
-        return $"{p.Kind} · {p.Language}";
+        var bits = new List<string>();
+        if (!string.IsNullOrEmpty(p.Kind))
+            bits.Add(p.Kind);
+        if (!string.IsNullOrEmpty(p.Language))
+            bits.Add(p.Language);
+        if (!string.IsNullOrEmpty(ago))
+            bits.Add(ago);
+        return string.Join(" · ", bits);
     }
 
     protected override void OnInitialized()
@@ -476,6 +538,7 @@
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
+        await Js.InvokeVoidAsync("aiConsole.setTheme", S.Theme);
         if (first)
             await Js.InvokeVoidAsync("aiConsole.initSplitter", "split-view");
         if (S.FollowLog && S.RightTab == "log")
@@ -496,6 +559,32 @@
     }
 
     void OnLogFilter(ChangeEventArgs e) => S.SetLogFilter(e.Value?.ToString() ?? "");
+
+    void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
+
+    void OnAgentCli(ChangeEventArgs e)
+    {
+        S.AgentCliPath = e.Value?.ToString() ?? "";
+        S.RefreshAgentDetectUi();
+    }
+
+    void OnCustomCmd(ChangeEventArgs e)
+    {
+        S.CustomAgentCommand = e.Value?.ToString() ?? "";
+        S.RefreshAgentDetectUi();
+    }
+
+    void OnCustomArgs(ChangeEventArgs e)
+    {
+        S.CustomAgentArgs = e.Value?.ToString() ?? "";
+        S.RefreshAgentDetectUi();
+    }
+
+    void OnTheme(ChangeEventArgs e)
+    {
+        S.Theme = e.Value?.ToString() is "dark" ? "dark" : "light";
+        _ = Js.InvokeVoidAsync("aiConsole.setTheme", S.Theme);
+    }
 
     public void Dispose() => S.Changed -= OnChanged;
 }

@@ -98,18 +98,90 @@ public static class ConsoleSettingsStore
         Save(data);
     }
 
-    public static bool GetOpenWithCursor()
+    public static bool GetOpenWithCursor() => GetOpenIdeOnLoad();
+
+    public static void SetOpenWithCursor(bool enabled) => SetOpenIdeOnLoad(enabled);
+
+    public static bool GetOpenIdeOnLoad()
     {
         var data = Load();
+        if (data["openIdeOnLoad"] is not null)
+            return data["openIdeOnLoad"]?.GetValue<bool>() ?? true;
         if (data["openWithCursor"] is null)
             return true;
         return data["openWithCursor"]?.GetValue<bool>() ?? true;
     }
 
-    public static void SetOpenWithCursor(bool enabled)
+    public static void SetOpenIdeOnLoad(bool enabled)
     {
         var data = Load();
+        data["openIdeOnLoad"] = enabled;
         data["openWithCursor"] = enabled;
+        Save(data);
+    }
+
+    public static string GetAgentProvider()
+    {
+        var raw = JsonUtil.Str(Load()["agentProvider"]);
+        return string.IsNullOrWhiteSpace(raw) ? "cursor" : raw.Trim();
+    }
+
+    public static void SetAgentProvider(string id)
+    {
+        var data = Load();
+        data["agentProvider"] = string.IsNullOrWhiteSpace(id) ? "cursor" : id.Trim();
+        Save(data);
+    }
+
+    public static string GetAgentCliPath() => JsonUtil.Str(Load()["agentCliPath"]);
+
+    public static void SetAgentCliPath(string? path)
+    {
+        var data = Load();
+        var t = (path ?? "").Trim();
+        if (string.IsNullOrEmpty(t))
+            data.Remove("agentCliPath");
+        else
+            data["agentCliPath"] = t;
+        Save(data);
+    }
+
+    public static string GetCustomAgentCommand() => JsonUtil.Str(Load()["customAgentCommand"]);
+
+    public static void SetCustomAgentCommand(string? command)
+    {
+        var data = Load();
+        var t = (command ?? "").Trim();
+        if (string.IsNullOrEmpty(t))
+            data.Remove("customAgentCommand");
+        else
+            data["customAgentCommand"] = t;
+        Save(data);
+    }
+
+    public static string GetCustomAgentArgs() => JsonUtil.Str(Load()["customAgentArgs"]);
+
+    public static void SetCustomAgentArgs(string? args)
+    {
+        var data = Load();
+        var t = (args ?? "").Trim();
+        if (string.IsNullOrEmpty(t))
+            data.Remove("customAgentArgs");
+        else
+            data["customAgentArgs"] = t;
+        Save(data);
+    }
+
+    public static string GetTheme()
+    {
+        var raw = JsonUtil.Str(Load()["theme"]);
+        return raw is "dark" or "light" ? raw : "light";
+    }
+
+    public static void SetTheme(string theme)
+    {
+        var data = Load();
+        data["theme"] = theme is "dark" ? "dark" : "light";
         Save(data);
     }
 

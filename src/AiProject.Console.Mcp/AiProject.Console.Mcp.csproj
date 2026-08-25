@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AiProject.Console.Mcp</RootNamespace>
+    <AssemblyName>AiProject.Console.Mcp</AssemblyName>
+    <Version>0.4.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AiProject.Console.Core\AiProject.Console.Core.csproj" />
+  </ItemGroup>
+
+</Project>

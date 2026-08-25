@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Catalog;
-using AiProject.Console.Core.Cursor;
+using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Update;
@@ -352,11 +353,10 @@ public static class ProcessSupervisor
             $"git: {(CliUtil.CommandExists("git") ? "OK" : "缺少")}",
             $"gh: {(CliUtil.CommandExists("gh") ? "OK" : "缺少（GitHub CLI，選用）")}",
         };
-        var cursor = CursorLauncher.ResolveCli();
-        lines.Add(cursor is null
-            ? "Cursor CLI: 缺少（選用；安裝 Cursor 後可自動開專案／求救）"
-            : "Cursor CLI: OK — " + cursor);
+        lines.Add("");
+        lines.AddRange(AgentBackendRegistry.DoctorLines());
         lines.Add(CommitMessageSuggester.DoctorLine());
+        lines.Add(McpLaunch.DoctorLine());
         if (catalog is null)
         {
             lines.Add("");

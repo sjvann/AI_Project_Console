@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/AiProject.Console.Core/AiProject.Console.Core.csproj" />
     <Project Path="src/AiProject.Console.App/AiProject.Console.App.csproj" />
+    <Project Path="src/AiProject.Console.Mcp/AiProject.Console.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AiProject.Console.Core.Tests/AiProject.Console.Core.Tests.csproj" />

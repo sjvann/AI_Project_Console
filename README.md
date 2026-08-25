@@ -53,17 +53,35 @@ macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
 python -m AI_Project_Console
 ```
 
-## Cursor
+## Agent 後端
 
-需本機已安裝 [Cursor](https://cursor.com/)，且 `cursor` 在 PATH（安裝程式通常會帶 CLI）。目前走本機 Cursor（開 IDE + New Agent deeplink），不使用雲端 Agent API Key。
+標題列「設定」可自訂求救後端。控制台負責組提示；後端只負責開啟工作區／Agent。預設仍是本機 [Cursor](https://cursor.com/)（CLI + New Agent deeplink），不使用雲端 API Key。
+
+| 後端 | 類型 | 求救方式 |
+|------|------|----------|
+| Cursor | 本機 IDE | 開專案 + `cursor://` deeplink |
+| Claude Code | 本機 CLI | `claude-cli://open?cwd=&q=` |
+| Aider | 本機 CLI | 新終端機 `aider --message`／`--message-file` |
+| OpenAI Codex CLI | 本機 CLI | 新終端機 `codex`／`codex exec` |
+| VS Code / GitHub Copilot | 本機 IDE | 開資料夾 + 複製提示（請在 Copilot Chat 貼上） |
+| Windsurf / Devin Desktop | 本機 IDE | 開資料夾 + 複製提示 |
+| 自訂命令 | 本機 | 範本變數 `{root}`、`{promptFile}`、`{prompt}` |
 
 | 時機 | 行為 |
 |------|------|
-| 選擇專案目錄 | 啟動時不帶預設專案；可從「歷史專案」下拉選取，或按「選擇專案目錄…」。若勾選「同時開啟 Cursor」，載入後以 `--reuse-window` 開啟 |
-| UAT 求救 | 按鈕 → 填說明／貼截圖 → 確認後開啟 Cursor 跳出視窗，再確認即建立 New Agent（說明直接帶入提示） |
-| 建置失敗 | 「建置輸出」啟用「編譯求救」→ 預覽錯誤 → 確認後同樣以 New Agent 帶入錯誤內容（不寫求助檔） |
+| 選擇專案目錄 | 啟動時不帶預設專案；可從「歷史專案」下拉選取，或按「選擇專案目錄…」。若勾選「同時開啟 {後端}」，載入後開啟該後端的工作區 |
+| UAT 求救 | 按鈕 → 填說明／貼截圖 → 確認後交給目前後端（說明直接帶入提示） |
+| 建置失敗 | 「建置輸出」啟用「編譯求救」→ 預覽錯誤 → 確認後帶入錯誤內容（不寫求助檔） |
 
-環境體檢會檢查 Cursor CLI。
+環境體檢會列出目前後端是否可用，以及其他已安裝後端。90 分鐘導入劇本見 [`docs/trial-90min.md`](docs/trial-90min.md)。
+
+### MCP（Agent 回呼控制台）
+
+控制台提供 stdio MCP 伺服器 `AiProject.Console.Mcp`：Agent 可 `stack_status`、`build`、`get_log`、啟停服務。設定裡可複製／寫入 `.cursor/mcp.json`。說明見 [`docs/mcp.md`](docs/mcp.md)。
+
+```powershell
+dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stack_status
+```
 
 ## GitHub
 

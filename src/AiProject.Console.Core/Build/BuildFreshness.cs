@@ -5,10 +5,12 @@ namespace AiProject.Console.Core.Build;
 
 public static class BuildFreshness
 {
+    public const string DefaultConfiguration = "Debug";
+
     private static readonly HashSet<string> SourceSuffixes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets", ".json", ".js", ".css",
-        ".html", ".proto", ".resx",
+        ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets",
+        ".js", ".css", ".html", ".proto", ".resx",
     };
 
     /// <summary>
@@ -66,16 +68,27 @@ public static class BuildFreshness
         return Path.GetFileNameWithoutExtension(csproj);
     }
 
-    public static (double Mtime, string? Path) BuildOutput(string projectDir)
+    public static (double Mtime, string? Path) BuildOutput(string projectDir, string configuration = DefaultConfiguration)
     {
         var name = AssemblyName(projectDir);
         var binDir = Path.Combine(projectDir, "bin");
         if (!Directory.Exists(binDir))
             return (0, null);
+
+        var preferred = NewestDll(binDir, name, configuration);
+        if (preferred.Path is not null)
+            return preferred;
+        return NewestDll(binDir, name, configuration: null);
+    }
+
+    static (double Mtime, string? Path) NewestDll(string binDir, string assemblyName, string? configuration)
+    {
         double best = 0;
         string? bestPath = null;
-        foreach (var dll in Directory.EnumerateFiles(binDir, name + ".dll", SearchOption.AllDirectories))
+        foreach (var dll in Directory.EnumerateFiles(binDir, assemblyName + ".dll", SearchOption.AllDirectories))
         {
+            if (configuration is not null && !PathContainsConfig(dll, configuration))
+                continue;
             var mtime = File.GetLastWriteTimeUtc(dll).Subtract(DateTime.UnixEpoch).TotalSeconds;
             if (mtime > best)
             {
@@ -84,6 +97,14 @@ public static class BuildFreshness
             }
         }
         return (best, bestPath);
+    }
+
+    static bool PathContainsConfig(string dllPath, string configuration)
+    {
+        var parts = dllPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var i = Array.FindIndex(parts, p => p.Equals("bin", StringComparison.OrdinalIgnoreCase));
+        return i >= 0 && i + 1 < parts.Length
+            && parts[i + 1].Equals(configuration, StringComparison.OrdinalIgnoreCase);
     }
 
     public static (double Mtime, string? Path) NewestSource(string projectDir)
@@ -118,20 +139,37 @@ public static class BuildFreshness
         return File.Exists(path) ? Path.GetDirectoryName(path)! : path;
     }
 
+    public static bool SameProject(string root, string relOrPath, string target)
+    {
+        var a = ToProjectDir(root, relOrPath);
+        var b = ToProjectDir(root, target);
+        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string ToProjectDir(string root, string relOrPath)
+    {
+        var raw = (relOrPath ?? "").Trim();
+        if (string.IsNullOrEmpty(raw))
+            return "";
+        var full = Path.IsPathRooted(raw)
+            ? Path.GetFullPath(raw)
+            : Path.GetFullPath(Path.Combine(root, raw.Replace('/', Path.DirectorySeparatorChar)));
+        if (File.Exists(full) || Path.GetExtension(full).Equals(".csproj", StringComparison.OrdinalIgnoreCase))
+            return Path.GetDirectoryName(full) ?? full;
+        return full;
+    }
+
     public static BuildState ServiceBuildState(ProjectCatalog catalog, ServiceEntry svc)
     {
         var host = ServiceCatalogBuilder.HostService(catalog, svc);
         var projectDir = ProjectDirForService(catalog, host);
-        var (srcMtime, _) = NewestSource(projectDir);
-        var (outMtime, outPath) = BuildOutput(projectDir);
-        var status = outMtime <= 0 ? "unbuilt" : srcMtime > outMtime ? "stale" : "fresh";
-        return new BuildState(
+        return FromScan(projectDir, new BuildState(
             Id: svc.Id,
             Name: svc.Label,
-            Status: status,
+            Status: "",
             Path: host.Project,
-            Output: outPath ?? "",
-            Label: svc.Label);
+            Output: "",
+            Label: svc.Label));
     }
 
     public static IReadOnlyList<BuildState> AllServiceBuildStates(ProjectCatalog catalog)
@@ -151,19 +189,16 @@ public static class BuildFreshness
     public static BuildState ProjectBuildState(string root, ProjectInfo info)
     {
         var projectDir = Path.Combine(root, info.RelDir.Replace('/', Path.DirectorySeparatorChar));
-        var (srcMtime, _) = NewestSource(projectDir);
-        var (outMtime, outPath) = BuildOutput(projectDir);
-        var status = outMtime <= 0 ? "unbuilt" : srcMtime > outMtime ? "stale" : "fresh";
         var kind = info.IsTest ? "測試" : (info.IsExecutable || info.IsWeb ? "核心" : "函式庫");
-        return new BuildState(
+        return FromScan(projectDir, new BuildState(
             Id: info.RelDir,
             Name: info.Name,
-            Status: status,
+            Status: "",
             Path: info.RelDir,
             System: info.Group,
             Kind: kind,
-            Output: outPath ?? "",
-            Language: info.Language);
+            Output: "",
+            Language: info.Language));
     }
 
     public static IReadOnlyList<BuildState> AllProjectBuildStates(ProjectCatalog catalog)
@@ -175,5 +210,103 @@ public static class BuildFreshness
             .ThenBy(s => kindOrder.GetValueOrDefault(s.Kind, 9))
             .ThenBy(s => s.Name)
             .ToList();
+    }
+
+    public static string FormatAgo(DateTimeOffset? utc, DateTimeOffset? now = null)
+    {
+        if (utc is null)
+            return "";
+        var n = now ?? DateTimeOffset.UtcNow;
+        var delta = n - utc.Value;
+        if (delta < TimeSpan.Zero)
+            delta = TimeSpan.Zero;
+        if (delta.TotalSeconds < 45)
+            return "剛剛";
+        if (delta.TotalMinutes < 60)
+            return $"{Math.Max(1, (int)delta.TotalMinutes)} 分鐘前";
+        if (delta.TotalHours < 24)
+            return $"{Math.Max(1, (int)delta.TotalHours)} 小時前";
+        if (delta.TotalDays < 14)
+            return $"{Math.Max(1, (int)delta.TotalDays)} 天前";
+        return utc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+    }
+
+    public static string BadgeText(BuildState state) =>
+        state.Activity switch
+        {
+            "queued" => "等待",
+            "building" => "編譯中",
+            "ok" => "完成",
+            "failed" => "失敗",
+            _ => state.Status switch
+            {
+                "stale" => "需重編",
+                "unbuilt" => "未建置",
+                "fresh" => "最新",
+                _ => "",
+            },
+        };
+
+    public static string RowKind(BuildState state) =>
+        state.Activity switch
+        {
+            "queued" => "queued",
+            "building" => "building",
+            "ok" => "ok",
+            "failed" => "failed",
+            _ => state.Status switch
+            {
+                "stale" => "stale",
+                "unbuilt" => "unbuilt",
+                "fresh" => "fresh",
+                _ => "",
+            },
+        };
+
+    static BuildState FromScan(string projectDir, BuildState seed)
+    {
+        var (srcMtime, srcPath) = NewestSource(projectDir);
+        var (outMtime, outPath) = BuildOutput(projectDir);
+        var status = outMtime <= 0 ? "unbuilt" : srcMtime > outMtime ? "stale" : "fresh";
+        DateTimeOffset? lastBuild = outMtime > 0
+            ? DateTimeOffset.FromUnixTimeSeconds((long)outMtime)
+            : null;
+        DateTimeOffset? newestSrc = srcMtime > 0
+            ? DateTimeOffset.FromUnixTimeSeconds((long)srcMtime)
+            : null;
+        return seed with
+        {
+            Status = status,
+            Output = outPath ?? "",
+            LastBuildUtc = lastBuild,
+            NewestSourceUtc = newestSrc,
+            NewestSourcePath = srcPath ?? "",
+            Reason = Describe(status, srcPath, srcMtime, outPath, outMtime),
+        };
+    }
+
+    static string Describe(string status, string? srcPath, double srcMtime, string? outPath, double outMtime)
+    {
+        if (status == "unbuilt")
+            return "尚未找到編譯輸出（bin/" + DefaultConfiguration + "）";
+        var srcName = string.IsNullOrEmpty(srcPath) ? "來源" : Path.GetFileName(srcPath);
+        var dllName = string.IsNullOrEmpty(outPath) ? "輸出 DLL" : Path.GetFileName(outPath);
+        if (status == "stale")
+        {
+            var delta = TimeSpan.FromSeconds(Math.Max(0, srcMtime - outMtime));
+            return $"{srcName} 比 {dllName} 新 {FormatDuration(delta)}";
+        }
+        return $"來源不新於 {dllName}";
+    }
+
+    static string FormatDuration(TimeSpan delta)
+    {
+        if (delta.TotalSeconds < 45)
+            return "不到 1 分鐘";
+        if (delta.TotalMinutes < 60)
+            return $"{Math.Max(1, (int)delta.TotalMinutes)} 分鐘";
+        if (delta.TotalHours < 24)
+            return $"{Math.Max(1, (int)delta.TotalHours)} 小時";
+        return $"{Math.Max(1, (int)delta.TotalDays)} 天";
     }
 }

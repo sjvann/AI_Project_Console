@@ -1,0 +1,228 @@
+using System.Text.Json;
+using AiProject.Console.Core.Build;
+using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.GitHub;
+using AiProject.Console.Core.ProcessOps;
+using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Util;
+
+namespace AiProject.Console.Core.Stack;
+
+/// <summary>
+/// 堆疊操作面：桌面控制台與 MCP 共用。Agent 透過這些方法代替開發管理者點按鈕。
+/// </summary>
+public sealed class StackWorkspace
+{
+    public ProjectCatalog Catalog { get; }
+    public ProjectRuntime Runtime { get; }
+    public string Root => Catalog.Root;
+
+    public StackWorkspace(ProjectCatalog catalog, ProjectRuntime runtime)
+    {
+        Catalog = catalog;
+        Runtime = runtime;
+        Runtime.Ensure();
+    }
+
+    public static StackWorkspace Open(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            throw new DirectoryNotFoundException("專案目錄不存在：" + root);
+        var catalog = ServiceCatalogBuilder.Build(Path.GetFullPath(root));
+        return new StackWorkspace(catalog, new ProjectRuntime(catalog.Root));
+    }
+
+    public async Task<string> StackStatusAsync()
+    {
+        var health = await ProbeHealthAsync().ConfigureAwait(false);
+        var svcStates = BuildFreshness.AllServiceBuildStates(Catalog);
+        var prj = BuildFreshness.AllProjectBuildStates(Catalog);
+        var ready = Catalog.Services.Count(s => health.GetValueOrDefault(s.Id));
+        var staleSvc = svcStates.Count(s => s.Status is "stale" or "unbuilt");
+        var stalePrj = prj.Count(p => p.Status is "stale" or "unbuilt");
+        var rows = Catalog.Services.Select(s => new
+        {
+            s.Id,
+            s.Label,
+            s.Port,
+            online = health.GetValueOrDefault(s.Id),
+            hostedBy = s.HostedBy,
+            build = svcStates.FirstOrDefault(b => b.Id == s.Id)?.Status,
+        });
+        return Json(new
+        {
+            root = Root,
+            name = Catalog.Name,
+            ready = $"{ready}/{Catalog.Services.Count}",
+            staleServices = staleSvc,
+            staleProjects = stalePrj,
+            services = rows,
+        });
+    }
+
+    public string ListServices() =>
+        Json(Catalog.Services.Select(s => new
+        {
+            s.Id,
+            s.Label,
+            s.Port,
+            s.Health,
+            s.OpenUrl,
+            s.Group,
+            s.HostedBy,
+            s.Project,
+        }));
+
+    public string ListProjects()
+    {
+        var states = BuildFreshness.AllProjectBuildStates(Catalog);
+        return Json(states.Select(p => new
+        {
+            p.Name,
+            p.Path,
+            p.Kind,
+            p.Status,
+            p.Reason,
+            lastBuild = BuildFreshness.FormatAgo(p.LastBuildUtc),
+            newestSource = string.IsNullOrEmpty(p.NewestSourcePath) ? "" : Path.GetFileName(p.NewestSourcePath),
+        }));
+    }
+
+    public string BuildFreshnessReport() => ListProjects();
+
+    public async Task<string> BuildAsync(string mode, string? path = null)
+    {
+        mode = (mode ?? "stale").Trim().ToLowerInvariant();
+        IReadOnlyList<string> targets;
+        if (mode is "one" or "project")
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return Error("build one 需要 path（相對專案根或絕對路徑）");
+            targets = [Path.IsPathRooted(path)
+                ? Path.GetFullPath(path)
+                : Path.GetFullPath(Path.Combine(Root, path.Replace('/', Path.DirectorySeparatorChar)))];
+        }
+        else
+        {
+            var handler = mode switch
+            {
+                "services" => "build_services",
+                "projects" or "all" => "build_projects",
+                _ => "build_stale",
+            };
+            targets = BuildRunner.TargetsFor(Catalog, handler);
+        }
+
+        if (targets.Count == 0)
+            return Json(new { ok = true, message = "沒有需要編譯的項目", done = 0, failed = 0 });
+
+        var failed = new List<object>();
+        var done = 0;
+        foreach (var target in targets)
+        {
+            var (code, log) = await BuildRunner.BuildAsync(Root, target, progress: null).ConfigureAwait(false);
+            done++;
+            try { BuildReportStore.Write(Runtime, target, code, BuildFreshness.DefaultConfiguration); }
+            catch { /* optional */ }
+            if (code != 0)
+            {
+                var tail = log.Length > 2000 ? log[^2000..] : log;
+                failed.Add(new { target, exitCode = code, logTail = tail });
+            }
+        }
+        return Json(new
+        {
+            ok = failed.Count == 0,
+            done,
+            total = targets.Count,
+            failed = failed.Count,
+            failures = failed,
+        });
+    }
+
+    public string StartService(string id)
+    {
+        var svc = RequireService(id);
+        if (!string.IsNullOrEmpty(svc.HostedBy))
+            return Error($"「{svc.Label}」隨 {svc.HostedBy} 啟動，請啟動宿主。");
+        var err = ProcessSupervisor.TryStartService(Catalog, Runtime, svc);
+        return err is null
+            ? Json(new { ok = true, id = svc.Id, label = svc.Label })
+            : Error(err);
+    }
+
+    public string StopService(string id)
+    {
+        var svc = RequireService(id);
+        ProcessSupervisor.StopService(Catalog, Runtime, svc);
+        return Json(new { ok = true, id = svc.Id, label = svc.Label, stopped = true });
+    }
+
+    public async Task<string> StartAllAsync()
+    {
+        var health = await ProbeHealthAsync().ConfigureAwait(false);
+        var results = ProcessSupervisor.StartOffline(Catalog, Runtime, health);
+        return Json(new
+        {
+            ok = results.All(r => r.Error is null),
+            started = results.Where(r => r.Error is null).Select(r => r.Id),
+            failed = results.Where(r => r.Error is not null).Select(r => new { r.Id, r.Label, error = r.Error }),
+        });
+    }
+
+    public string StopAll()
+    {
+        ProcessSupervisor.StopAll(Catalog, Runtime);
+        return Json(new { ok = true, stopped = true });
+    }
+
+    public string GetLog(string id, int tail = 80)
+    {
+        var svc = RequireService(id);
+        var host = ServiceCatalogBuilder.HostService(Catalog, svc);
+        var path = Runtime.LogPath(host.Stem);
+        if (!File.Exists(path))
+            return Json(new { id = svc.Id, path, lines = Array.Empty<string>(), message = "尚無 Log" });
+        var lines = File.ReadAllLines(path);
+        if (tail < 1)
+            tail = 80;
+        var slice = lines.Length > tail ? lines[^tail..] : lines;
+        return Json(new { id = svc.Id, path, lineCount = lines.Length, lines = slice });
+    }
+
+    public string Doctor() => ProcessSupervisor.DoctorReport(Catalog);
+
+    public async Task<string> GitStatusAsync()
+    {
+        var brief = await GitHubService.TryBriefStatusAsync(Root).ConfigureAwait(false);
+        return Json(new
+        {
+            root = Root,
+            status = brief?.Format() ?? "不是 git 倉或無法讀取",
+            branch = brief?.Branch,
+            dirty = brief?.DirtyCount,
+            ahead = brief?.Ahead,
+            behind = brief?.Behind,
+        });
+    }
+
+    public async Task<Dictionary<string, bool>> ProbeHealthAsync()
+    {
+        var health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var svc in Catalog.Services)
+            health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(svc).ConfigureAwait(false);
+        return health;
+    }
+
+    ServiceEntry RequireService(string id)
+    {
+        var svc = ServiceCatalogBuilder.ById(Catalog, (id ?? "").Trim());
+        if (svc is null)
+            throw new ArgumentException("找不到服務：" + id + "。可用 list_services 查看 id。");
+        return svc;
+    }
+
+    static string Json(object value) => JsonSerializer.Serialize(value, JsonUtil.Options);
+
+    static string Error(string message) => Json(new { ok = false, error = message });
+}

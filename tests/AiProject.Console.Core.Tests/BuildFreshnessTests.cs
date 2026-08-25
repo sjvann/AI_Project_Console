@@ -101,11 +101,95 @@ public class BuildFreshnessTests
             var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
             Assert.Equal("stale", state.Status);
             Assert.Equal("C#", state.Language);
+            Assert.Contains("Program.cs", state.Reason);
+            Assert.NotNull(state.LastBuildUtc);
+            Assert.Equal("需重編", BuildFreshness.BadgeText(state));
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void ProjectStaysFresh_WhenOnlyConfigJsonIsNewerThanDll()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var cfgDir = Path.Combine(projectDir, "config");
+            Directory.CreateDirectory(cfgDir);
+            var hub = Path.Combine(cfgDir, "hub.json");
+            File.WriteAllText(hub, "{ }");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var now = DateTime.UtcNow;
+            StampSources(projectDir, now.AddMinutes(-10));
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-5));
+            File.SetLastWriteTimeUtc(hub, now);
+
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("fresh", state.Status);
+            Assert.DoesNotContain("hub.json", state.NewestSourcePath, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PrefersDebugDll_OverNewerRelease()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var rel = Path.Combine(projectDir, "bin", "Release", "net8.0");
+            Directory.CreateDirectory(rel);
+            var debugDll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var releaseDll = Path.Combine(rel, "Demo.Api.dll");
+            File.WriteAllBytes(releaseDll, [1]);
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(debugDll, now.AddMinutes(-10));
+            File.SetLastWriteTimeUtc(releaseDll, now);
+
+            var (_, path) = BuildFreshness.BuildOutput(projectDir);
+            Assert.Contains($"{Path.DirectorySeparatorChar}Debug{Path.DirectorySeparatorChar}", path);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SameProject_MatchesCsprojAndDirectory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "x");
+        var dir = Path.Combine(root, "src", "Demo.Api");
+        var csproj = Path.Combine(dir, "Demo.Api.csproj");
+        Assert.True(BuildFreshness.SameProject(root, "src/Demo.Api", dir));
+        Assert.True(BuildFreshness.SameProject(root, "src/Demo.Api", csproj));
+    }
+
+    [Theory]
+    [InlineData("queued", "等待", "queued")]
+    [InlineData("building", "編譯中", "building")]
+    [InlineData("failed", "失敗", "failed")]
+    public void ActivityOverridesFreshnessBadge(string activity, string badge, string row)
+    {
+        var state = new BuildState("id", "n", "stale", "p", Activity: activity);
+        Assert.Equal(badge, BuildFreshness.BadgeText(state));
+        Assert.Equal(row, BuildFreshness.RowKind(state));
+    }
+
+    [Fact]
+    public void FormatAgo_UsesRelativeChinese()
+    {
+        var now = DateTimeOffset.Parse("2026-08-25T12:00:00Z");
+        Assert.Equal("剛剛", BuildFreshness.FormatAgo(now.AddSeconds(-10), now));
+        Assert.Equal("5 分鐘前", BuildFreshness.FormatAgo(now.AddMinutes(-5), now));
     }
 
     static ProjectInfo DemoApiInfo() => new(
