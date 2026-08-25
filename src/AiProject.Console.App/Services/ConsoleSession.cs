@@ -113,6 +113,9 @@ public sealed class ConsoleSession : IDisposable
     public IEnumerable<BuildState> VisibleProjects =>
         StaleOnly ? Projects.Where(p => p.Status is "stale" or "unbuilt") : Projects;
 
+    public IEnumerable<IGrouping<string, BuildState>> ProjectGroups =>
+        VisibleProjects.GroupBy(p => string.IsNullOrEmpty(p.System) ? "其他" : p.System);
+
     public int ReadyCount => Catalog is null ? 0 : Catalog.Services.Count(s => Health.GetValueOrDefault(s.Id));
     public int ServiceCount => Catalog?.Services.Count ?? 0;
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");

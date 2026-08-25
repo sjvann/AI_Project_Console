@@ -54,6 +54,7 @@ button:disabled { opacity: .45; cursor: default; }
 .tab .badge { font-size: 11px; margin-left: 6px; }
 .pane-body { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
 .group-label { color: var(--muted); font-weight: 700; font-size: 13px; padding: 10px 4px 4px; }
+.prj-list > .group-label { grid-column: 1 / -1; }
 .svc { display: grid; grid-template-columns: 52px 1fr 56px auto; gap: 6px; align-items: center; padding: 6px 8px; cursor: pointer; border-radius: 3px; }
 .svc.sel { background: var(--sel); }
 .status-on { color: var(--ok); }
