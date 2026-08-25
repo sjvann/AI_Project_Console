@@ -91,10 +91,10 @@
     <div class="split" id="split-view">
         <div class="pane">
             <div class="tabs">
-                <div class="tab @(S.LeftTab == "svc" ? "active" : null)" @onclick="@(() => S.LeftTab = "svc")">
+                <div class="tab @(S.LeftTab == "svc" ? "active" : null)" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "svc")" @ondblclick="S.ToggleAllServiceGroups">
                     服務 <span class="badge">@S.ReadyCount/@S.ServiceCount</span>
                 </div>
-                <div class="tab @(S.LeftTab == "prj" ? "active" : null)" @onclick="@(() => S.LeftTab = "prj")">
+                <div class="tab @(S.LeftTab == "prj" ? "active" : null)" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "prj")" @ondblclick="S.ToggleAllProjectGroups">
                     專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
                 </div>
             </div>
@@ -109,7 +109,14 @@
                     {
                         @foreach (var g in S.ServiceGroups)
                         {
-                            <div class="group-label">@g.Key</div>
+                            var svcCollapsed = S.IsServiceGroupCollapsed(g.Key);
+                            <button type="button" class="group-label @(svcCollapsed ? "collapsed" : null)" title="展開／收合" aria-expanded="@(!svcCollapsed)" @onclick="@(() => S.ToggleServiceGroup(g.Key))">
+                                <span class="group-chevron" aria-hidden="true"></span>
+                                <span>@g.Key</span>
+                                <span class="group-count">@g.Count()</span>
+                            </button>
+                            @if (!svcCollapsed)
+                            {
                             @foreach (var svc in g)
                             {
                                 var on = S.Health.GetValueOrDefault(svc.Id);
@@ -142,6 +149,7 @@
                                     </span>
                                 </div>
                             }
+                            }
                         }
                     }
                 }
@@ -154,7 +162,14 @@
                     <div class="prj-list">
                     @foreach (var g in S.ProjectGroups)
                     {
-                        <div class="group-label">@g.Key</div>
+                        var prjCollapsed = S.IsProjectGroupCollapsed(g.Key);
+                        <button type="button" class="group-label @(prjCollapsed ? "collapsed" : null)" title="展開／收合" aria-expanded="@(!prjCollapsed)" @onclick="@(() => S.ToggleProjectGroup(g.Key))">
+                            <span class="group-chevron" aria-hidden="true"></span>
+                            <span>@g.Key</span>
+                            <span class="group-count">@g.Count()</span>
+                        </button>
+                        @if (!prjCollapsed)
+                        {
                         @foreach (var p in g)
                         {
                             var badge = p.Status == "stale" ? "需重編" : p.Status == "unbuilt" ? "未建置" : "";
@@ -164,6 +179,7 @@
                                 <span class="badge-stale">@badge</span>
                                 <button class="btn-link" @onclick="@(() => S.BuildOneAsync(p.Path))">編譯</button>
                             </div>
+                        }
                         }
                     }
                     </div>

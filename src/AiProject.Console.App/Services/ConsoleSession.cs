@@ -106,6 +106,9 @@ public sealed class ConsoleSession : IDisposable
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
     public IReadOnlyList<ConsoleAction> DeployActions => ActionCatalog.Load("deploy");
 
+    private readonly HashSet<string> _collapsedServiceGroups = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsedProjectGroups = new(StringComparer.Ordinal);
+
     public IEnumerable<IGrouping<string, ServiceEntry>> ServiceGroups =>
         Catalog?.Services.GroupBy(s => string.IsNullOrEmpty(s.Group) ? "其他" : s.Group)
         ?? Enumerable.Empty<IGrouping<string, ServiceEntry>>();
@@ -115,6 +118,49 @@ public sealed class ConsoleSession : IDisposable
 
     public IEnumerable<IGrouping<string, BuildState>> ProjectGroups =>
         VisibleProjects.GroupBy(p => string.IsNullOrEmpty(p.System) ? "其他" : p.System);
+
+    public bool IsServiceGroupCollapsed(string key) => _collapsedServiceGroups.Contains(key);
+
+    public bool IsProjectGroupCollapsed(string key) => _collapsedProjectGroups.Contains(key);
+
+    public void ToggleServiceGroup(string key)
+    {
+        if (!_collapsedServiceGroups.Add(key))
+            _collapsedServiceGroups.Remove(key);
+        Notify();
+    }
+
+    public void ToggleProjectGroup(string key)
+    {
+        if (!_collapsedProjectGroups.Add(key))
+            _collapsedProjectGroups.Remove(key);
+        Notify();
+    }
+
+    public void ToggleAllServiceGroups()
+    {
+        ToggleAllGroups(_collapsedServiceGroups, ServiceGroups.Select(g => g.Key));
+    }
+
+    public void ToggleAllProjectGroups()
+    {
+        ToggleAllGroups(_collapsedProjectGroups, ProjectGroups.Select(g => g.Key));
+    }
+
+    private void ToggleAllGroups(HashSet<string> collapsed, IEnumerable<string> keys)
+    {
+        var list = keys.ToList();
+        if (list.Count == 0)
+            return;
+        var allCollapsed = list.All(collapsed.Contains);
+        collapsed.Clear();
+        if (!allCollapsed)
+        {
+            foreach (var key in list)
+                collapsed.Add(key);
+        }
+        Notify();
+    }
 
     public int ReadyCount => Catalog is null ? 0 : Catalog.Services.Count(s => Health.GetValueOrDefault(s.Id));
     public int ServiceCount => Catalog?.Services.Count ?? 0;
@@ -233,6 +279,8 @@ public sealed class ConsoleSession : IDisposable
             CompileHelpEnabled = false;
             Health.Clear();
             StartErrors.Clear();
+            _collapsedServiceGroups.Clear();
+            _collapsedProjectGroups.Clear();
             LogFilter = "";
             GitStatusText = "";
             ReloadLog();
@@ -1406,6 +1454,8 @@ public sealed class ConsoleSession : IDisposable
         CompileHelpEnabled = false;
         Health.Clear();
         StartErrors.Clear();
+        _collapsedServiceGroups.Clear();
+        _collapsedProjectGroups.Clear();
         Projects = [];
         WarnText = "";
         GitStatusText = "";

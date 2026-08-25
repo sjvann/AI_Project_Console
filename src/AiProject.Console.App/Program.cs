@@ -33,6 +33,7 @@ internal static class Program
         builder.RootComponents.Add<App>("app");
 
         var app = builder.Build();
+        app.MainWindow.LogVerbosity = 0;
         var native = app.Services.GetRequiredService<NativeUi>();
         native.Window = app.MainWindow;
 
