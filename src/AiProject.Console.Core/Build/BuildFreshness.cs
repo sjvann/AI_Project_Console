@@ -26,6 +26,23 @@ public static class BuildFreshness
             && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Live process state that is rewritten while the service runs (e.g. EDDSS
+    /// <c>data/twins.json</c>). Counting these as sources leaves「需重編」stuck
+    /// after a successful compile, because the files keep getting newer than the DLL.
+    /// </summary>
+    public static bool IsRuntimeState(string path)
+    {
+        if (IsRuntimeConfig(path))
+            return true;
+        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (parts.Any(p => p.Equals("logs", StringComparison.OrdinalIgnoreCase)
+            || p.Equals("App_Data", StringComparison.OrdinalIgnoreCase)))
+            return true;
+        return parts.Any(p => p.Equals("data", StringComparison.OrdinalIgnoreCase))
+            && Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string AssemblyName(string projectDir)
     {
         var csproj = Directory.Exists(projectDir)
@@ -82,7 +99,7 @@ public static class BuildFreshness
                 continue;
             if (!SourceSuffixes.Contains(Path.GetExtension(path)))
                 continue;
-            if (IsRuntimeConfig(path))
+            if (IsRuntimeState(path))
                 continue;
             var mtime = File.GetLastWriteTimeUtc(path).Subtract(DateTime.UnixEpoch).TotalSeconds;
             if (mtime > best)
