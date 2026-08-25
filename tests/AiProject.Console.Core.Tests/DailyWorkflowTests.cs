@@ -128,6 +128,44 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public void PickAgentMessage_KeepsStdoutAndDropsStderrDiagnostics()
+    {
+        var message = CommitMessageSuggester.PickAgentMessage(
+            "修正搜尋條件驗證\n\n- 補上必填檢查",
+            "⚠ Workspace Trust Required\n\n  Pass --trust, --yolo, or -f if you trust this directory");
+        Assert.Equal("修正搜尋條件驗證\n\n- 補上必填檢查", message);
+        Assert.DoesNotContain("Workspace Trust", message);
+        Assert.DoesNotContain("Pass --trust", message);
+    }
+
+    [Fact]
+    public void PickAgentMessage_StripsDiagnosticLinesMixedIntoStdout()
+    {
+        var message = CommitMessageSuggester.PickAgentMessage(
+            "更新提交建議\n⚠ Workspace Trust Required\nError: Authentication required. Please run 'agent login' first",
+            "");
+        Assert.Equal("更新提交建議", message);
+    }
+
+    [Fact]
+    public void PickAgentMessage_RejectsReconnectAndCertificateLog()
+    {
+        var log = """
+            Connection lost, reconnecting to https://agentn.global.api5.cursor.sh (attempt 1)...
+            Retry attempt 1...
+            Connection lost, reconnecting to https://agentn.global.api5.cursor.sh (attempt 2)...
+            Retry attempt 2...
+            Connection lost, reconnecting to https://agentn.global.api5.cursor.sh (attempt 3)...
+            Retry attempt 3...
+            RetriableError: [internal] self-signed certificate in certificate chain
+            """;
+        Assert.Null(CommitMessageSuggester.PickAgentMessage(log, ""));
+        var hint = CommitMessageSuggester.LocalDraftHint(log);
+        Assert.Contains("連線失敗", hint);
+        Assert.DoesNotContain("已用 Cursor Agent 產生", hint);
+    }
+
+    [Fact]
     public void LocalDraftHint_MissingCliVsAuthFailure()
     {
         Assert.Contains("未偵測到 Cursor Agent CLI", CommitMessageSuggester.LocalDraftHint(null));

@@ -56,6 +56,8 @@ public static class CommitMessageSuggester
             return "Cursor Agent 尚未登入，請在終端機執行 agent login";
         if (LooksLikeTrustError(error))
             return "Cursor Agent 需要工作區信任；請在該專案目錄執行 agent 並選擇 Trust，或再試一次";
+        if (LooksLikeTransportError(error))
+            return "Cursor Agent 連線失敗（網路或憑證），已改依變更產生草稿";
         if (error.Contains("逾時", StringComparison.Ordinal))
             return "Cursor Agent 回應逾時";
         var first = error.Replace("\r\n", "\n").Split('\n')
@@ -73,6 +75,13 @@ public static class CommitMessageSuggester
     public static bool LooksLikeTrustError(string error) =>
         error.Contains("Workspace Trust Required", StringComparison.OrdinalIgnoreCase)
         || error.Contains("Failed to trust workspace", StringComparison.OrdinalIgnoreCase);
+
+    public static bool LooksLikeTransportError(string error) =>
+        error.Contains("self-signed certificate", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("certificate in certificate chain", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("Connection lost", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("RetriableError", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("agentn.global.api", StringComparison.OrdinalIgnoreCase);
 
     private static string? ProbeAgentLogin(string cli)
     {
@@ -215,6 +224,75 @@ public static class CommitMessageSuggester
         return text;
     }
 
+    /// <summary>
+    /// Agent CLI 常把說明寫到 stdout、診斷寫到 stderr。合併後會變成「建議說明下面跟著錯誤」。
+    /// 優先用 stdout；沒有可用說明才看 stderr。
+    /// </summary>
+    public static string? PickAgentMessage(string stdout, string stderr)
+    {
+        foreach (var raw in new[] { stdout, stderr })
+        {
+            var cleaned = CleanMessage(StripAgentDiagnostics(raw));
+            if (string.IsNullOrWhiteSpace(cleaned) || LooksLikeAgentFailureOutput(cleaned))
+                continue;
+            return cleaned;
+        }
+        return null;
+    }
+
+    public static string StripAgentDiagnostics(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+        var kept = new List<string>();
+        foreach (var line in text.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (IsAgentNoiseLine(line))
+                continue;
+            kept.Add(line.TrimEnd());
+        }
+        return string.Join('\n', kept).Trim();
+    }
+
+    internal static bool IsAgentNoiseLine(string line)
+    {
+        var t = (line ?? "").Trim();
+        if (t.Length == 0)
+            return false;
+        if (t.StartsWith("⚠", StringComparison.Ordinal) || t.StartsWith("⚠️", StringComparison.Ordinal))
+            return true;
+        if (t.StartsWith('{') && t.Contains("\"type\"", StringComparison.Ordinal))
+            return true;
+        if (t.StartsWith("Error:", StringComparison.OrdinalIgnoreCase)
+            || t.StartsWith("Warning:", StringComparison.OrdinalIgnoreCase)
+            || t.StartsWith("error:", StringComparison.OrdinalIgnoreCase)
+            || t.StartsWith("warn:", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (t.Contains("Workspace Trust Required", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Failed to trust workspace", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Authentication required", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Not logged in", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Not authenticated", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (t.StartsWith("Pass --trust", StringComparison.OrdinalIgnoreCase)
+            || t.StartsWith("Pass --yolo", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (t.Contains("Connection lost", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("reconnecting to", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("Retry attempt", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("RetriableError", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("self-signed certificate", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("certificate in certificate chain", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("agentn.global.api", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    public static bool LooksLikeAgentFailureOutput(string text) =>
+        LooksLikeTransportError(text)
+        || LooksLikeAuthError(text)
+        || LooksLikeTrustError(text);
+
     public static string UnescapeGitPath(string path)
     {
         var text = (path ?? "").Trim();
@@ -336,10 +414,12 @@ public static class CommitMessageSuggester
             args = [.. flags, prompt];
             stdin = null;
         }
-        var (code, output) = await CliUtil.RunAsync(fileName, args, root, 90_000, stdin: stdin).ConfigureAwait(false);
-        if (code != 0 || string.IsNullOrWhiteSpace(output))
-            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "Cursor Agent 沒有回傳說明。" : output);
-        return output;
+        var (_, stdout, stderr) = await CliUtil.RunCaptureAsync(fileName, args, root, 90_000, stdin: stdin).ConfigureAwait(false);
+        var message = PickAgentMessage(stdout, stderr);
+        if (!string.IsNullOrWhiteSpace(message))
+            return message;
+        var err = string.Join('\n', new[] { stderr, stdout }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+        throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? "Cursor Agent 沒有回傳說明。" : err);
     }
 
     private static string Classify(string path)
