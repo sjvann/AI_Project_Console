@@ -13,6 +13,17 @@ public class WorkHoursTests
         new(id, start, end, seen ?? end ?? start);
 
     [Fact]
+    public void Format_BandWindows()
+    {
+        Assert.Equal(WorkHoursBand.Night, WorkHoursFormat.BandOfHour(0));
+        Assert.Equal(WorkHoursBand.Morning, WorkHoursFormat.BandOfHour(9));
+        Assert.Equal(WorkHoursBand.Afternoon, WorkHoursFormat.BandOfHour(12));
+        Assert.Equal(WorkHoursBand.Evening, WorkHoursFormat.BandOfHour(20));
+        Assert.Equal("晚上", WorkHoursFormat.BandLabel(WorkHoursBand.Evening));
+        Assert.Equal("18–24 時", WorkHoursFormat.BandWindow(WorkHoursBand.Evening));
+    }
+
+    [Fact]
     public void Format_DurationAndTone()
     {
         Assert.Equal("0 分", WorkHoursFormat.Duration(TimeSpan.Zero));
@@ -103,6 +114,46 @@ public class WorkHoursTests
         Assert.True(report.Chart.Single(b => b.IsCurrent).Start == new DateOnly(2026, 8, 26));
         Assert.False(report.CanGoNext(new DateOnly(2026, 8, 26)));
         Assert.True(report.CanGoNext(new DateOnly(2026, 8, 31)));
+    }
+
+    [Fact]
+    public void SplitDays_FillsHourlyBucketsAcrossHourBoundary()
+    {
+        var sessions = new[]
+        {
+            Session("a", At(8, 26, 10, 45), At(8, 26, 11, 15)),
+        };
+        var days = WorkHoursAggregator.SplitDays(sessions, At(8, 26, 18, 0));
+        var day = Assert.Single(days);
+        Assert.Equal(24, day.Hourly.Count);
+        Assert.Equal(TimeSpan.FromMinutes(15), day.Hourly[10]);
+        Assert.Equal(TimeSpan.FromMinutes(15), day.Hourly[11]);
+        Assert.Equal(TimeSpan.Zero, day.Hourly[9]);
+    }
+
+    [Fact]
+    public void Build_Clock_PrefersEveningAndSummarizesShare()
+    {
+        var sessions = new[]
+        {
+            Session("a", At(8, 26, 20, 0), At(8, 26, 23, 0)),
+        };
+        var report = WorkHoursAggregator.Build(sessions, WorkHoursView.Week, new DateOnly(2026, 8, 26), At(8, 26, 23, 30));
+        Assert.Equal(WorkHoursBand.Evening, report.Clock.Dominant);
+        Assert.Contains("晚上", report.Clock.Summary);
+        Assert.Equal(100, report.Clock.Bands.Single(b => b.Band == WorkHoursBand.Evening).Percent);
+        Assert.Equal(TimeSpan.FromHours(1), report.Clock.Hourly[20]);
+        Assert.Equal(TimeSpan.FromHours(1), report.Clock.Hourly[21]);
+        Assert.Equal(TimeSpan.FromHours(1), report.Clock.Hourly[22]);
+    }
+
+    [Fact]
+    public void Build_Clock_EmptyRangeHasNoDominantBand()
+    {
+        var report = WorkHoursAggregator.Build([], WorkHoursView.Week, new DateOnly(2026, 8, 26), At(8, 26, 12, 0));
+        Assert.Null(report.Clock.Dominant);
+        Assert.Contains("看不出作息偏好", report.Clock.Summary);
+        Assert.All(report.Clock.Bands, band => Assert.Equal(0, band.Percent));
     }
 
     [Fact]

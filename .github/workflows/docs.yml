@@ -3,14 +3,26 @@ name: Deploy docs
 on:
   push:
     branches: [main]
+    paths:
+      - "docs/**"
+      - "api/**"
+      - "docfx.json"
+      - "toc.yml"
+      - "index.md"
+      - ".github/workflows/docs.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "docs/**"
+      - "api/**"
+      - "docfx.json"
+      - "toc.yml"
+      - "index.md"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -19,6 +31,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,6 +60,9 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -25,6 +25,13 @@
       "confirm": "將編譯專案目錄內全部 csproj（含測試），可能需要數分鐘，確定執行？"
     },
     {
+      "id": "build_test",
+      "label": "跑測試",
+      "group": "build",
+      "kind": "internal",
+      "handler": "build_test"
+    },
+    {
       "id": "github_clone",
       "label": "從遠端開啟…",
       "group": "github",
@@ -119,7 +126,7 @@
     },
     {
       "id": "github_actions",
-      "label": "Actions 最近執行",
+      "label": "Actions 狀態…",
       "group": "github",
       "kind": "internal",
       "handler": "github_actions",

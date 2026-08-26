@@ -57,7 +57,7 @@
 | **狀態** | 分支、髒工作區、領先／落後、`gh` 是否登入 |
 | **提交…** | 列出未提交檔、填說明後 `git add -A` + `git commit`。可勾選提交後 push。說明可按「AI 建議」（有 [Cursor Agent CLI](https://cursor.com/docs/cli/overview) 時用 Agent，否則依 diff 起草） |
 | **同步（pull）** | `git fetch` + `pull --rebase`。會先確認 |
-| **發布（push）** | `git push -u` 目前分支。會先確認 |
+| **發布（push）** | `git push -u` 目前分支。會先確認。推送後摘要列監看 CI；若開啟「發布前先跑本機測試」則測試沒過就不推 |
 
 摘要列有「未提交」時也可直接按「提交…」。
 
@@ -78,7 +78,9 @@
 | **開啟 Releases** | 瀏覽器開 GitHub Releases |
 | **開啟倉庫** | 瀏覽器開倉庫首頁 |
 | **建立／開啟 PR** | 已有 PR 則開啟，否則走建立流程 |
-| **Actions 最近執行** | `gh run list` |
+| **Actions 狀態…** | 最近幾次遠端執行的通過／失敗／進行中。點一列或「開啟最新」到 GitHub 看 log。控制台不取代 Actions 畫面 |
 | **檢查控制台更新** | 查**這個控制台**有沒有新版，不需先設定專案 GitHub |
+
+推送（含「提交後再 push」）之後，摘要列會監看這次 CI，不必再開選單。設定裡可勾「發布前先跑本機測試」。
 
 發行此控制台自己的安裝包，是維護者流程，見 [scripts/README.md](../../scripts/README.md)。

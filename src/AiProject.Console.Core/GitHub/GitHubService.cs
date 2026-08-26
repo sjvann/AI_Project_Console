@@ -736,16 +736,38 @@ public static class GitHubService
 
     public static async Task<string> WatchActionsAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
     {
+        var snap = await GetActionsSnapshotAsync(catalog, cfg).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(snap.Error))
+            throw new InvalidOperationException(snap.Error);
+        return snap.FormatReport();
+    }
+
+    public static async Task<ActionsSnapshot> GetActionsSnapshotAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    {
+        var hasLocal = CiWorkflow.HasAny(catalog.Root);
         if (!GhAvailable())
-            throw new InvalidOperationException("需要 gh CLI。");
+            return ActionsSnapshot.Unavailable("需要 GitHub CLI（gh）才能讀 Actions。");
         cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
-        var args = new List<string> { "run", "list", "--limit", "5" };
+        var args = new List<string>
+        {
+            "run", "list", "--limit", "8",
+            "--json", "databaseId,name,displayTitle,status,conclusion,headBranch,event,url,updatedAt,createdAt",
+        };
         if (!string.IsNullOrEmpty(cfg.Slug()))
             args.AddRange(["--repo", cfg.Slug()]);
         var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 60_000).ConfigureAwait(false);
         if (code != 0)
-            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "無法列出 Actions。" : output);
-        return string.IsNullOrEmpty(output) ? "（沒有最近的 workflow runs）" : output;
+            return ActionsSnapshot.Unavailable(string.IsNullOrEmpty(output) ? "無法列出 Actions。" : FirstLine(output));
+        var runs = ActionsStatus.ParseRuns(output);
+        return new ActionsSnapshot(runs, hasLocal || runs.Count > 0);
+    }
+
+    public static bool OpenWorkflowRun(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+        CliUtil.OpenUrl(url.Trim());
+        return true;
     }
 
     public static async Task<ReleaseInspect> InspectReleaseAsync(ProjectCatalog catalog, GithubConfig? cfg = null)

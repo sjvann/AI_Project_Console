@@ -28,6 +28,8 @@ public sealed class ConsoleSession : IDisposable
     private bool _pendingOpenCursor;
     private bool _unassignedCollapseUserSet;
     private long _logOffset;
+    private DateTimeOffset? _ciWatchUntil;
+    private int _ciWatchGen;
     private DocsServeHandle? _docsServe;
     private readonly WorkHoursStore _workHours = new();
 
@@ -36,6 +38,7 @@ public sealed class ConsoleSession : IDisposable
         _native = native;
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
+        TestBeforePush = ConsoleSettingsStore.GetTestBeforePush();
         Theme = ConsoleSettingsStore.GetTheme();
         AgentProvider = ConsoleSettingsStore.GetAgentProvider();
         AgentCliPath = ConsoleSettingsStore.GetAgentCliPath();
@@ -61,6 +64,7 @@ public sealed class ConsoleSession : IDisposable
     public IReadOnlyList<string> RecentProjects => ConsoleSettingsStore.RecentProjects();
     public bool OpenWithCursor { get; set; }
     public bool RestoreLastProject { get; set; }
+    public bool TestBeforePush { get; set; }
     public string Theme { get; set; } = "light";
     public string AgentProvider { get; set; } = "cursor";
     public string AgentCliPath { get; set; } = "";
@@ -199,6 +203,10 @@ public sealed class ConsoleSession : IDisposable
     public GithubAccount GithubAccount { get; private set; } = GithubAccount.None;
     public bool GithubLoggedIn => GithubAccount.LoggedIn;
     public bool GithubManaged { get; private set; }
+    public ActionsSnapshot? Actions { get; private set; }
+    public bool ShowCiChip => HasProject && GithubManaged && GithubLoggedIn;
+    public string CiChipText => Actions?.ChipText() ?? "CI …";
+    public string CiChipTone => Actions?.ChipTone() ?? "wait";
     public bool GithubAuthBusy { get; private set; }
     public string GithubAuthHint { get; private set; } = "";
     public IReadOnlyList<GithubIssue> AssignedIssues { get; private set; } = [];
@@ -377,6 +385,7 @@ public sealed class ConsoleSession : IDisposable
         AskModel = ConsoleSettingsStore.GetAskModel();
         Theme = ConsoleSettingsStore.GetTheme();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
+        TestBeforePush = ConsoleSettingsStore.GetTestBeforePush();
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
         McpReadOnly = ConsoleSettingsStore.GetMcpReadOnly();
         McpAllow = ConsoleSettingsStore.GetMcpAllow();
@@ -454,6 +463,7 @@ public sealed class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetAskModel(AskModel);
         ConsoleSettingsStore.SetTheme(Theme);
         ConsoleSettingsStore.SetRestoreLastProject(RestoreLastProject);
+        ConsoleSettingsStore.SetTestBeforePush(TestBeforePush);
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
         ConsoleSettingsStore.SetMcpReadOnly(McpReadOnly);
         ConsoleSettingsStore.SetMcpAllow(McpAllow);
@@ -833,6 +843,13 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
+    public void SetTestBeforePush(bool value)
+    {
+        TestBeforePush = value;
+        ConsoleSettingsStore.SetTestBeforePush(value);
+        Notify();
+    }
+
     public void SetLogFilter(string value)
     {
         LogFilter = value ?? "";
@@ -1015,7 +1032,10 @@ public sealed class ConsoleSession : IDisposable
             }
             await FinishProjectOpenAsync(openCursor, rememberErr).ConfigureAwait(false);
             if (GithubLoggedIn && GithubManaged)
+            {
                 await RefreshIssuesAsync().ConfigureAwait(false);
+                await RefreshActionsAsync().ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -1150,7 +1170,10 @@ public sealed class ConsoleSession : IDisposable
                 if (Catalog is not null)
                     await FinishProjectOpenAsync(openCursor, rememberErr: null).ConfigureAwait(false);
                 if (GithubManaged && Catalog is not null)
+                {
                     await RefreshIssuesAsync().ConfigureAwait(false);
+                    await RefreshActionsAsync().ConfigureAwait(false);
+                }
                 Notify();
                 return;
             }
@@ -1897,14 +1920,13 @@ public sealed class ConsoleSession : IDisposable
                 return;
             }
             case "github_publish":
-                await RunJobAsync("發布中…", async () => await GitHubService.PublishBranchAsync(Catalog!)).ConfigureAwait(false);
-                await RefreshGitStatusAsync().ConfigureAwait(false);
+                await PublishCurrentBranchAsync().ConfigureAwait(false);
                 return;
             case "github_pr":
                 await RunJobAsync("PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!)).ConfigureAwait(false);
                 return;
             case "github_actions":
-                await RunJobAsync("Actions…", async () => await GitHubService.WatchActionsAsync(Catalog!)).ConfigureAwait(false);
+                await OpenCiDialogAsync().ConfigureAwait(false);
                 return;
             case "github_release":
                 await OpenReleaseDialogAsync().ConfigureAwait(false);
@@ -1923,6 +1945,9 @@ public sealed class ConsoleSession : IDisposable
             case "build_services":
             case "build_projects":
                 await RunBuildActionAsync(handler).ConfigureAwait(false);
+                return;
+            case "build_test":
+                await RunTestsAsync(asGate: false).ConfigureAwait(false);
                 return;
             case "docs_scaffold":
                 await ScaffoldDocsAsync().ConfigureAwait(false);
@@ -2333,15 +2358,8 @@ public sealed class ConsoleSession : IDisposable
         await RunJobAsync("發布中…", async () =>
         {
             var push = await GitHubService.PublishBranchAsync(Catalog!).ConfigureAwait(false);
-            try
-            {
-                var runs = await GitHubService.WatchActionsAsync(Catalog!).ConfigureAwait(false);
-                return push + "\n\n最近 Actions：\n" + runs;
-            }
-            catch (Exception ex)
-            {
-                return push + "\n\n已推送，但讀不到 Actions：\n" + FirstLine(ex.Message);
-            }
+            BeginWatchCiAfterPush();
+            return push + "\n\n已開始監看 Actions。摘要列會更新 CI 狀態。";
         }).ConfigureAwait(false);
         await RefreshGitStatusAsync().ConfigureAwait(false);
         RefreshDocs(keepSelection: true);
@@ -2611,20 +2629,10 @@ public sealed class ConsoleSession : IDisposable
             return;
         CloseDialog();
         await RunJobAsync("提交中…", async () =>
-        {
-            var result = await GitHubService.CommitAsync(Catalog!.Root, message).ConfigureAwait(false);
-            if (!push)
-                return result;
-            try
-            {
-                return result + "\n\n" + await GitHubService.PublishBranchAsync(Catalog!).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                return result + "\n\n提交成功，但發布失敗：\n" + ex.Message;
-            }
-        }).ConfigureAwait(false);
+            await GitHubService.CommitAsync(Catalog!.Root, message).ConfigureAwait(false)).ConfigureAwait(false);
         await RefreshGitStatusAsync().ConfigureAwait(false);
+        if (push && JobText != "錯誤")
+            await PublishCurrentBranchAsync().ConfigureAwait(false);
     }
 
     public void OpenGithubDialog()
@@ -2966,6 +2974,195 @@ public sealed class ConsoleSession : IDisposable
         ReleaseLatestTag = inspect.LatestGithubTag;
         Dialog = "release";
         Notify();
+    }
+
+    private async Task PublishCurrentBranchAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (TestBeforePush)
+        {
+            var passed = await RunTestsAsync(asGate: true).ConfigureAwait(false);
+            if (!passed)
+                return;
+        }
+        await RunJobAsync("發布中…", async () => await GitHubService.PublishBranchAsync(Catalog!)).ConfigureAwait(false);
+        await RefreshGitStatusAsync().ConfigureAwait(false);
+        BeginWatchCiAfterPush();
+    }
+
+    public async Task OpenCiDialogAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (!GithubLoggedIn)
+        {
+            _native.Info("需要登入", "讀 Actions 狀態需要已登入的 GitHub CLI。");
+            return;
+        }
+        await RefreshActionsAsync().ConfigureAwait(false);
+        Dialog = "ci";
+        Notify();
+    }
+
+    public void OpenLatestCiRun()
+    {
+        var url = Actions?.Latest?.Url;
+        if (!GitHubService.OpenWorkflowRun(url))
+            _native.Info("無法開啟", "沒有可開的 Actions 執行。請到 GitHub 選單看倉庫。");
+    }
+
+    public void OpenCiRun(string? url)
+    {
+        if (!GitHubService.OpenWorkflowRun(url))
+            _native.Info("無法開啟", "這個執行沒有網址。");
+    }
+
+    private async Task RefreshActionsAsync()
+    {
+        if (Catalog is null || !GithubLoggedIn || !GithubManaged)
+        {
+            Actions = null;
+            return;
+        }
+        try
+        {
+            Actions = await GitHubService.GetActionsSnapshotAsync(Catalog).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Actions = ActionsSnapshot.Unavailable(FirstLine(ex.Message));
+        }
+    }
+
+    private void BeginWatchCiAfterPush()
+    {
+        if (Catalog is null || !GithubLoggedIn || !GithubManaged)
+            return;
+        _ciWatchUntil = DateTimeOffset.UtcNow.AddMinutes(15);
+        var gen = ++_ciWatchGen;
+        var started = DateTimeOffset.UtcNow;
+        var branch = GitBrief?.Branch;
+        JobText = "已推送，正在等 CI…";
+        Notify();
+        _ = WatchCiAfterPushAsync(gen, started, branch);
+    }
+
+    private async Task WatchCiAfterPushAsync(int gen, DateTimeOffset started, string? branch)
+    {
+        try
+        {
+            for (var i = 0; i < 40 && gen == _ciWatchGen && !_cts.IsCancellationRequested; i++)
+            {
+                await Task.Delay(i < 8 ? 2500 : 8000, _cts.Token).ConfigureAwait(false);
+                if (gen != _ciWatchGen || Catalog is null)
+                    return;
+                await RefreshActionsAsync().ConfigureAwait(false);
+                var watched = Actions is null ? null : ActionsStatus.PreferWatched(Actions, branch, started);
+                if (watched is null)
+                {
+                    JobText = "已推送，尚未看到新的 CI";
+                    Notify();
+                    continue;
+                }
+                if (watched.IsInProgress)
+                {
+                    JobText = $"CI 進行中 · {watched.Name}";
+                    Notify();
+                    continue;
+                }
+                if (watched.IsFailure)
+                {
+                    WarnText = "遠端 CI 失敗。摘要列可開 GitHub 看 log。";
+                    JobText = "CI 失敗";
+                    Notify();
+                    return;
+                }
+                if (watched.IsSuccess)
+                {
+                    if (WarnText.Contains("CI", StringComparison.Ordinal))
+                        WarnText = "";
+                    JobText = "CI 通過";
+                    Notify();
+                    return;
+                }
+                JobText = watched.ChipText();
+                Notify();
+                return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // shutdown
+        }
+        catch
+        {
+            // 背景監看失敗不打擾
+        }
+    }
+
+    private async Task<bool> RunTestsAsync(bool asGate)
+    {
+        if (!RequireCatalog())
+            return false;
+        var catalog = Catalog!;
+        var targets = TestRunner.TargetsFor(catalog);
+        if (targets.Count == 0)
+        {
+            if (!asGate)
+                _native.Info("沒有測試", "這個工作區沒有方案或測試專案可跑。控制台只做一次完整測試，不是 IDE 測試總管。");
+            return true;
+        }
+
+        RightTab = "build";
+        BuildText = "";
+        LastBuildFailure = null;
+        CompileHelpEnabled = false;
+        var passed = true;
+        Notify();
+        await RunJobAsync(asGate ? "發布前測試…" : "測試中…", async () =>
+        {
+            await BeginBuildBatchAsync(targets).ConfigureAwait(false);
+            var allLines = new List<string>();
+            string? failedTarget = null;
+            var failedCode = 0;
+            foreach (var target in targets)
+            {
+                MarkBuildActivity(target, "building");
+                BuildCurrentName = Path.GetFileName(target);
+                JobText = $"測試中 {BuildProgressText} · {BuildCurrentName}";
+                Notify();
+                var header = $"=== test {target} ===";
+                allLines.Add(header);
+                AppendBuild(header);
+                var progress = new Progress<string>(line =>
+                {
+                    allLines.Add(line);
+                    AppendBuild(line);
+                });
+                var (code, _) = await TestRunner.TestAsync(catalog.Root, target, progress).ConfigureAwait(false);
+                var footer = $"exit {code}  ({target})";
+                allLines.Add(footer);
+                AppendBuild(footer);
+                FinishOneBuild(target, code);
+                if (code != 0 && failedTarget is null)
+                {
+                    failedTarget = target;
+                    failedCode = code;
+                    passed = false;
+                }
+            }
+            if (failedTarget is not null)
+                RememberBuildFailure(failedTarget, failedCode, string.Join('\n', allLines));
+            JobText = passed ? "測試通過" : "測試失敗";
+            return (string?)null;
+        }, refreshBuilds: false).ConfigureAwait(false);
+        await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
+        if (JobText == "錯誤")
+            passed = false;
+        if (!passed && asGate)
+            _native.Warn("發布前檢查未過", "本機測試失敗。請看右側「建置／測試」輸出，修正後再發布。");
+        return passed;
     }
 
     private async Task RunBuildActionAsync(string handler)
@@ -3317,6 +3514,11 @@ public sealed class ConsoleSession : IDisposable
                     LoadAudit(reloadPolicy: false);
                 if (healthEvery % 40 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
                     await RefreshIssuesAsync().ConfigureAwait(false);
+                var watchingCi = _ciWatchUntil is { } until && DateTimeOffset.UtcNow < until;
+                if (watchingCi && healthEvery % 6 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
+                    await RefreshActionsAsync().ConfigureAwait(false);
+                else if (healthEvery % 45 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
+                    await RefreshActionsAsync().ConfigureAwait(false);
                 if (healthEvery % 37 == 0)
                     _workHours.Touch();
                 Notify();
@@ -3343,6 +3545,9 @@ public sealed class ConsoleSession : IDisposable
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
+        Actions = null;
+        _ciWatchUntil = null;
+        _ciWatchGen++;
         BranchList = [];
         NewBranchName = "";
         BranchDialogHint = "";

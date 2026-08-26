@@ -236,6 +236,15 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
                 "manifest",
                 catalog.Manifest.Count > 0 ? "ai-project.json 已載入" : "無（使用掃描結果）",
                 DoctorLevel.Info));
+            var ci = CiWorkflow.Describe(catalog.Root);
+            project.Add(new(
+                "CI workflow",
+                ci.Label,
+                ci.BuildTest ? DoctorLevel.Ok : DoctorLevel.Info,
+                HowTo: ci.BuildTest
+                    ? null
+                    : "遠端建置／測試請放 .github/workflows/ci.yml。控制台只顯示狀態，不代跑 Actions。",
+                Badge: ci.Badge));
 
             sections.Add(new(
                 "docs",
@@ -351,6 +360,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             lines.Add($"  - {svc.Label} [{svc.Id}] port={port}{pre} ({svc.Source})");
         }
         lines.Add(catalog.Manifest.Count > 0 ? "manifest: ai-project.json 已載入" : "manifest: 無（使用掃描結果）");
+        lines.Add(CiWorkflow.DoctorLine(catalog.Root));
         return string.Join('\n', lines);
     }
 }

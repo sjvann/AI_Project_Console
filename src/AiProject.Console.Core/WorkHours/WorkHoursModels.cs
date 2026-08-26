@@ -40,12 +40,40 @@ public sealed record WorkTimeRange(DateTimeOffset Start, DateTimeOffset End)
     public string ClockLabel => $"{WorkHoursFormat.Clock(Start)}–{WorkHoursFormat.Clock(End)}";
 }
 
+public enum WorkHoursBand
+{
+    Night,
+    Morning,
+    Afternoon,
+    Evening,
+}
+
 public sealed record WorkDaySlice(
     DateOnly Date,
     TimeSpan Duration,
-    IReadOnlyList<WorkTimeRange> Periods)
+    IReadOnlyList<WorkTimeRange> Periods,
+    IReadOnlyList<TimeSpan> Hourly)
 {
     public bool HasWork => Duration > TimeSpan.Zero && Periods.Count > 0;
+
+    public static WorkDaySlice Empty(DateOnly date) =>
+        new(date, TimeSpan.Zero, [], new TimeSpan[24]);
+}
+
+public sealed record WorkHoursBandShare(
+    WorkHoursBand Band,
+    string Label,
+    string Window,
+    TimeSpan Duration,
+    int Percent);
+
+public sealed record WorkHoursClock(
+    IReadOnlyList<TimeSpan> Hourly,
+    IReadOnlyList<WorkHoursBandShare> Bands,
+    WorkHoursBand? Dominant,
+    string Summary)
+{
+    public TimeSpan HourlyMax => Hourly.Count == 0 ? TimeSpan.Zero : Hourly.Max();
 }
 
 public sealed record WorkHoursBucket(
@@ -65,7 +93,8 @@ public sealed record WorkHoursReport(
     TimeSpan LongestDay,
     TimeSpan ChartMax,
     IReadOnlyList<WorkHoursBucket> Chart,
-    IReadOnlyList<WorkDaySlice> Days)
+    IReadOnlyList<WorkDaySlice> Days,
+    WorkHoursClock Clock)
 {
     public bool CanGoNext(DateOnly today) => RangeEnd < today;
 }
@@ -126,4 +155,28 @@ public static class WorkHoursFormat
 
     public static string DayTitle(DateOnly date) =>
         $"{Weekday(date)} {date.Month}/{date.Day}";
+
+    public static WorkHoursBand BandOfHour(int hour) => hour switch
+    {
+        < 6 => WorkHoursBand.Night,
+        < 12 => WorkHoursBand.Morning,
+        < 18 => WorkHoursBand.Afternoon,
+        _ => WorkHoursBand.Evening,
+    };
+
+    public static string BandLabel(WorkHoursBand band) => band switch
+    {
+        WorkHoursBand.Night => "深夜",
+        WorkHoursBand.Morning => "上午",
+        WorkHoursBand.Afternoon => "下午",
+        _ => "晚上",
+    };
+
+    public static string BandWindow(WorkHoursBand band) => band switch
+    {
+        WorkHoursBand.Night => "0–6 時",
+        WorkHoursBand.Morning => "6–12 時",
+        WorkHoursBand.Afternoon => "12–18 時",
+        _ => "18–24 時",
+    };
 }

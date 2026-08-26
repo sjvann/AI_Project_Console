@@ -278,6 +278,56 @@ public sealed class StackWorkspace
         return Json(new { ok = true, path = path.Replace('\\', '/'), text });
     }
 
+    public async Task<string> CiStatusAsync()
+    {
+        var local = CiWorkflow.Describe(Root);
+        try
+        {
+            var snap = await GitHubService.GetActionsSnapshotAsync(Catalog).ConfigureAwait(false);
+            return Json(new
+            {
+                ok = string.IsNullOrEmpty(snap.Error),
+                chip = snap.ChipText(),
+                tone = snap.ChipTone(),
+                hasWorkflows = snap.HasWorkflows,
+                localWorkflows = CiWorkflow.ListFiles(Root),
+                localKind = local.Badge,
+                error = snap.Error,
+                latest = snap.Latest is null
+                    ? null
+                    : new
+                    {
+                        snap.Latest.Name,
+                        title = snap.Latest.DisplayTitle,
+                        snap.Latest.Status,
+                        snap.Latest.Conclusion,
+                        branch = snap.Latest.HeadBranch,
+                        snap.Latest.Url,
+                    },
+                runs = snap.Runs.Select(r => new
+                {
+                    r.Name,
+                    title = r.DisplayTitle,
+                    r.Status,
+                    r.Conclusion,
+                    branch = r.HeadBranch,
+                    r.Url,
+                }),
+            });
+        }
+        catch (Exception ex)
+        {
+            return Json(new
+            {
+                ok = false,
+                chip = "CI 無法讀取",
+                hasWorkflows = CiWorkflow.HasAny(Root),
+                localWorkflows = CiWorkflow.ListFiles(Root),
+                error = ex.Message,
+            });
+        }
+    }
+
     public async Task<string> GitStatusAsync()
     {
         var brief = await GitHubService.TryBriefStatusAsync(Root).ConfigureAwait(false);

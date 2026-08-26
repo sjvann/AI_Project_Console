@@ -119,6 +119,12 @@
             <button type="button" class="duty-chip @(S.DocsChipWarn ? "is-warn" : "is-ok")" title="專案文件（docs/）" @onclick="S.ShowDocs">
                 @(S.Docs?.ChipText() ?? "文件 無文件")
             </button>
+            @if (S.ShowCiChip)
+            {
+                <button type="button" class="duty-chip is-@S.CiChipTone" title="遠端 GitHub Actions 最近狀態，點一下看清單" @onclick="S.OpenCiDialogAsync">
+                    @S.CiChipText
+                </button>
+            }
             @if (!string.IsNullOrEmpty(S.DutyAttention))
             {
                 <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
@@ -424,7 +430,7 @@
         <div class="pane">
             <div class="tabs">
                 <div class="tab @(S.RightTab == "log" ? "active" : null)" @onclick="@(() => S.SetRightTab("log"))">服務 Log</div>
-                <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.SetRightTab("build"))">建置輸出</div>
+                <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.SetRightTab("build"))">建置／測試</div>
                 <div class="tab @(S.RightTab == "audit" ? "active" : null)" @onclick="@(() => S.SetRightTab("audit"))">
                     MCP 審計
                     @if (S.AuditFailCount > 0)
@@ -752,6 +758,40 @@
     </div>
 }
 
+@if (S.Dialog == "ci")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="ci-title" aria-modal="true">
+            <h2 id="ci-title">Actions 狀態</h2>
+            <p class="hint">遠端 GitHub Actions 最近執行。控制台只告訴你過了沒有；詳細 log 請在 GitHub 開，不要把這裡當成第二個 CI 畫面。</p>
+            @if (!string.IsNullOrEmpty(S.Actions?.Error))
+            {
+                <p class="hint warn">@S.Actions!.Error</p>
+            }
+            else if (S.Actions is null || S.Actions.Runs.Count == 0)
+            {
+                <p class="hint">@(S.Actions?.FormatReport() ?? "尚未讀到 Actions。")</p>
+            }
+            else
+            {
+                <div class="ci-list" role="list">
+                    @foreach (var run in S.Actions.Runs)
+                    {
+                        <button type="button" class="ci-row" role="listitem" title="在瀏覽器開啟" @onclick="@(() => S.OpenCiRun(run.Url))">
+                            <span class="ci-row-name">@run.Line()</span>
+                            <span class="ci-row-meta">@(string.IsNullOrEmpty(run.Event) ? "GitHub" : run.Event)</span>
+                        </button>
+                    }
+                </div>
+            }
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">關閉</button>
+                <button class="btn-primary" disabled="@(S.Actions?.Latest is null)" @onclick="S.OpenLatestCiRun">開啟最新</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (S.Dialog == "clone")
 {
     <div class="overlay" @onclick="S.CloseDialog">
@@ -991,7 +1031,7 @@
                 @if (S.PrefsTab == "general")
                 {
                     <div id="prefs-panel-general" role="tabpanel" aria-labelledby="prefs-tab-general">
-                        <p class="hint">控制台外觀與啟動時要不要還原專案。</p>
+                        <p class="hint">控制台外觀、啟動時要不要還原專案，以及發布前要不要先跑本機測試。</p>
                         <div class="field">
                             <span>外觀</span>
                             <select value="@S.Theme" @onchange="OnTheme">
@@ -1007,6 +1047,11 @@
                             <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
                             載入專案時開啟 @S.AgentDisplayName
                         </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@S.TestBeforePush" @onchange="e => S.SetTestBeforePush((bool)(e.Value ?? false))" />
+                            發布前先跑本機測試
+                        </label>
+                        <p class="hint">只擋「發布（push）」與提交後再推。詳細測試請在 IDE 跑；控制台只做一次完整檢查。</p>
                     </div>
                 }
                 else if (S.PrefsTab == "agent")

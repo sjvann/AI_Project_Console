@@ -54,6 +54,8 @@ dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stack_status
 dotnet test AiProject.Console.slnx
 ```
 
+推到 `main` 或開 PR 時，[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) 會 restore、Release 建置並跑同一組測試。文件站仍由 [`.github/workflows/docs.yml`](../../.github/workflows/docs.yml) 處理（只在文件相關路徑變更時）。
+
 ## 文件網站
 
 使用文件與 API 參考用 DocFX 建置，發佈於 <https://sjvann.github.io/AI_Project_Console/>。本機預覽與設定見 [文件網站（DocFX）](docfx.md)。

@@ -60,66 +60,111 @@
                 </div>
             </div>
 
-            <div class="hours-chart" role="img" aria-label="@report.Title 工時圖">
-                <div class="hours-chart-plot">
-                    @if (S.WorkHoursView is WorkHoursView.Week or WorkHoursView.Month && report.ChartMax >= TimeSpan.FromHours(WorkHoursFormat.SoftHours))
-                    {
-                        <div class="hours-chart-line" style="bottom: @SoftLineBottom(report)" aria-hidden="true" title="8 小時"></div>
-                    }
-                    @foreach (var bar in report.Chart)
-                    {
-                        var height = BarHeight(bar.Duration, report.ChartMax);
-                        var barTone = DailyTone(S.WorkHoursView, bar.Duration);
-                        <button type="button" class="hours-bar-col @(bar.IsCurrent ? "is-today" : null)"
-                                title="@BarTitle(S.WorkHoursView, bar)"
-                                @onclick="@(() => S.OpenWorkHoursBucket(bar.Start))">
-                            <span class="hours-bar-val">@(bar.Duration > TimeSpan.Zero ? WorkHoursFormat.Hours(bar.Duration) : "")</span>
-                            <span class="hours-bar-track">
-                                <span class="hours-bar hours-bar-@barTone" style="height: @height%"></span>
+            <div class="hours-viz">
+                <section class="hours-chart" aria-label="@report.Title 工時圖">
+                    <h3 class="hours-panel-title">@(S.WorkHoursView is WorkHoursView.Week or WorkHoursView.Month ? "每日工時" : "每月工時")</h3>
+                    <div class="hours-chart-plot">
+                        @if (S.WorkHoursView is WorkHoursView.Week or WorkHoursView.Month && report.ChartMax >= TimeSpan.FromHours(WorkHoursFormat.SoftHours))
+                        {
+                            <div class="hours-chart-line" style="bottom: @SoftLineBottom(report)" aria-hidden="true" title="8 小時"></div>
+                        }
+                        @foreach (var bar in report.Chart)
+                        {
+                            var height = BarHeight(bar.Duration, report.ChartMax);
+                            var barTone = DailyTone(S.WorkHoursView, bar.Duration);
+                            <button type="button" class="hours-bar-col @(bar.IsCurrent ? "is-today" : null)"
+                                    title="@BarTitle(S.WorkHoursView, bar)"
+                                    @onclick="@(() => S.OpenWorkHoursBucket(bar.Start))">
+                                <span class="hours-bar-val">@(bar.Duration > TimeSpan.Zero ? WorkHoursFormat.Hours(bar.Duration) : "")</span>
+                                <span class="hours-bar-track">
+                                    <span class="hours-bar hours-bar-@barTone" style="height: @height%"></span>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                    <div class="hours-chart-labels">
+                        @foreach (var bar in report.Chart)
+                        {
+                            <span class="hours-bar-label @(bar.IsCurrent ? "is-today" : null)">@bar.Label</span>
+                        }
+                    </div>
+                </section>
+                <section class="hours-clock" aria-label="生理時鐘">
+                    <h3 class="hours-panel-title">生理時鐘</h3>
+                    <p class="hours-clock-summary">@report.Clock.Summary</p>
+                    <div class="hours-bands">
+                        @foreach (var band in report.Clock.Bands)
+                        {
+                            <div class="hours-band @(band.Band == report.Clock.Dominant ? "is-top" : null)">
+                                <span>@band.Label</span>
+                                <strong>@band.Percent%</strong>
+                                <em>@band.Window</em>
+                            </div>
+                        }
+                    </div>
+                    <div class="hours-hourly" role="img" aria-label="24 小時工時分布">
+                        @for (var hour = 0; hour < 24; hour++)
+                        {
+                            var dur = hour < report.Clock.Hourly.Count ? report.Clock.Hourly[hour] : TimeSpan.Zero;
+                            var height = BarHeight(dur, report.Clock.HourlyMax);
+                            <span class="hours-hourly-col" title="@($"{hour:00} 時 · {WorkHoursFormat.Duration(dur)}")">
+                                <span class="hours-hourly-bar" style="height: @(dur > TimeSpan.Zero ? height : 2)%"></span>
                             </span>
-                        </button>
-                    }
-                </div>
-                <div class="hours-chart-labels">
-                    @foreach (var bar in report.Chart)
-                    {
-                        <span class="hours-bar-label @(bar.IsCurrent ? "is-today" : null)">@bar.Label</span>
-                    }
-                </div>
+                        }
+                    </div>
+                    <div class="hours-hourly-axis" aria-hidden="true">
+                        <span>0</span><span>6</span><span>12</span><span>18</span><span>24</span>
+                    </div>
+                </section>
             </div>
 
-            <h3 class="hours-list-title">每日時段</h3>
-            @if (report.Days.All(d => !d.HasWork))
-            {
-                <p class="hint">這個期間還沒有工時紀錄。開啟控制台的時間會自動累計。</p>
-            }
-            else
-            {
-                <ul class="hours-days">
-                    @foreach (var day in report.Days)
+            <div class="hours-list-wrap">
+                <div class="hours-list-head">
+                    <h3 class="hours-list-title">每日時段</h3>
+                    @if (report.Days.Any(d => d.HasWork) && report.Days.Count > 3)
                     {
-                        <li class="hours-day @(day.Date == today ? "is-today" : null) @(!day.HasWork ? "is-empty" : null)">
-                            <div class="hours-day-head">
-                                <strong>@WorkHoursFormat.DayTitle(day.Date)</strong>
-                                <span class="hours-tone-@WorkHoursFormat.Tone(day.Duration)">@WorkHoursFormat.Duration(day.Duration)</span>
-                            </div>
-                            @if (day.HasWork)
-                            {
-                                <div class="hours-periods">
-                                    @foreach (var period in day.Periods)
+                        <span class="hint">清單可捲動，看完整期間</span>
+                    }
+                </div>
+                @if (report.Days.All(d => !d.HasWork))
+                {
+                    <p class="hint hours-list-empty">這個期間還沒有工時紀錄。開啟控制台的時間會自動累計。</p>
+                }
+                else
+                {
+                    <ul class="hours-days">
+                        @foreach (var day in report.Days)
+                        {
+                            <li class="hours-day @(day.Date == today ? "is-today" : null) @(!day.HasWork ? "is-empty" : null)">
+                                <div class="hours-day-head">
+                                    <strong>@WorkHoursFormat.DayTitle(day.Date)</strong>
+                                    <span class="hours-tone-@WorkHoursFormat.Tone(day.Duration)">@WorkHoursFormat.Duration(day.Duration)</span>
+                                </div>
+                                <div class="hours-day-track" role="img" aria-label="@DayTrackLabel(day)">
+                                    @for (var hour = 0; hour < 24; hour++)
                                     {
-                                        <span>@period.ClockLabel</span>
+                                        var dur = hour < day.Hourly.Count ? day.Hourly[hour] : TimeSpan.Zero;
+                                        <span class="hours-tick hours-tick-@HourLevel(dur)" title="@($"{hour:00} 時 · {WorkHoursFormat.Duration(dur)}")"></span>
                                     }
                                 </div>
-                            }
-                            else
-                            {
-                                <span class="hint">休息</span>
-                            }
-                        </li>
-                    }
-                </ul>
-            }
+                                @if (day.HasWork)
+                                {
+                                    <div class="hours-periods">
+                                        @foreach (var period in day.Periods)
+                                        {
+                                            <span>@period.ClockLabel</span>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="hint">休息</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
         </div>
         <div class="dialog-actions hours-actions">
             <span class="hint grow">同一人用 GitHub 帳號歸檔，寫在本機 work-hours.json。</span>
@@ -171,6 +216,25 @@
         var pct = 100 * WorkHoursFormat.SoftHours / report.ChartMax.TotalHours;
         return Math.Clamp(pct, 0, 100).ToString("0.##") + "%";
     }
+
+    static int HourLevel(TimeSpan value)
+    {
+        var minutes = value.TotalMinutes;
+        if (minutes <= 0)
+            return 0;
+        if (minutes >= 45)
+            return 4;
+        if (minutes >= 25)
+            return 3;
+        if (minutes >= 10)
+            return 2;
+        return 1;
+    }
+
+    static string DayTrackLabel(WorkDaySlice day) =>
+        day.HasWork
+            ? $"{WorkHoursFormat.DayTitle(day.Date)} 工作時段 {string.Join("、", day.Periods.Select(p => p.ClockLabel))}"
+            : $"{WorkHoursFormat.DayTitle(day.Date)} 休息";
 
     void OnViewKey(KeyboardEventArgs e)
     {

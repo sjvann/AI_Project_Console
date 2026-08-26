@@ -121,6 +121,16 @@ public static class ConsoleSettingsStore
         Save(data);
     }
 
+    public static bool GetTestBeforePush() =>
+        Load()["testBeforePush"]?.GetValue<bool>() ?? false;
+
+    public static void SetTestBeforePush(bool enabled)
+    {
+        var data = Load();
+        data["testBeforePush"] = enabled;
+        Save(data);
+    }
+
     public static string GetAgentProvider()
     {
         var raw = JsonUtil.Str(Load()["agentProvider"]);

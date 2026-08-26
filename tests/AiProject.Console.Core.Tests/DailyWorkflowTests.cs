@@ -38,6 +38,12 @@ public class DailyWorkflowTests
         var switchBranch = ActionCatalog.Load("github").Single(a => a.Id == "github_switch_branch");
         Assert.Equal("切換分支…", switchBranch.Label);
         Assert.False(switchBranch.RequiresGithub);
+        var actions = ActionCatalog.Load("github").Single(a => a.Id == "github_actions");
+        Assert.Equal("Actions 狀態…", actions.Label);
+        Assert.True(actions.RequiresGithub);
+        var test = ActionCatalog.Load("build").Single(a => a.Id == "build_test");
+        Assert.Equal("跑測試", test.Label);
+        Assert.Equal("build_test", test.Handler);
     }
 
     [Fact]

@@ -37,7 +37,8 @@ public static class WorkHoursAggregator
             longest,
             chartMax,
             chart,
-            listed);
+            listed,
+            BuildClock(listed));
     }
 
     public static (DateOnly Start, DateOnly End) Range(WorkHoursView view, DateOnly anchor) =>
@@ -96,7 +97,7 @@ public static class WorkHoursAggregator
             .Select(kv =>
             {
                 var merged = Merge(kv.Value);
-                return new WorkDaySlice(kv.Key, Sum(merged.Select(p => p.Duration)), merged);
+                return new WorkDaySlice(kv.Key, Sum(merged.Select(p => p.Duration)), merged, HoursFrom(merged));
             })
             .ToList();
     }
@@ -123,7 +124,7 @@ public static class WorkHoursAggregator
 
         var list = new List<WorkDaySlice>();
         for (var d = start; d <= end; d = d.AddDays(1))
-            list.Add(map.TryGetValue(d, out var slice) ? slice : new WorkDaySlice(d, TimeSpan.Zero, []));
+            list.Add(map.TryGetValue(d, out var slice) ? slice : WorkDaySlice.Empty(d));
         return list;
     }
 
@@ -218,6 +219,68 @@ public static class WorkHoursAggregator
         }
         merged.Add(current);
         return merged;
+    }
+
+    static WorkHoursClock BuildClock(IReadOnlyList<WorkDaySlice> days)
+    {
+        var hourly = new TimeSpan[24];
+        foreach (var day in days)
+        {
+            var count = Math.Min(24, day.Hourly.Count);
+            for (var i = 0; i < count; i++)
+                hourly[i] += day.Hourly[i];
+        }
+
+        var total = Sum(hourly);
+        var bands = Enum.GetValues<WorkHoursBand>().Select(band =>
+        {
+            var duration = TimeSpan.Zero;
+            for (var hour = 0; hour < 24; hour++)
+            {
+                if (WorkHoursFormat.BandOfHour(hour) == band)
+                    duration += hourly[hour];
+            }
+
+            var percent = total <= TimeSpan.Zero
+                ? 0
+                : (int)Math.Round(100 * duration.TotalMinutes / total.TotalMinutes);
+            return new WorkHoursBandShare(
+                band,
+                WorkHoursFormat.BandLabel(band),
+                WorkHoursFormat.BandWindow(band),
+                duration,
+                percent);
+        }).ToList();
+
+        WorkHoursBand? dominant = total <= TimeSpan.Zero
+            ? null
+            : bands.MaxBy(band => band.Duration)!.Band;
+        var summary = dominant is null
+            ? "這個期間還沒有工時，還看不出作息偏好。"
+            : $"偏好{WorkHoursFormat.BandLabel(dominant.Value)}工作（{WorkHoursFormat.BandWindow(dominant.Value)}，佔 {bands.First(band => band.Band == dominant).Percent}%）。";
+        return new WorkHoursClock(hourly, bands, dominant, summary);
+    }
+
+    static TimeSpan[] HoursFrom(IReadOnlyList<WorkTimeRange> periods)
+    {
+        var hours = new TimeSpan[24];
+        foreach (var period in periods)
+            AddToHours(hours, period.Start, period.End);
+        return hours;
+    }
+
+    static void AddToHours(TimeSpan[] hours, DateTimeOffset start, DateTimeOffset end)
+    {
+        var cursor = start;
+        while (cursor < end)
+        {
+            var nextHour = new DateTimeOffset(cursor.Year, cursor.Month, cursor.Day, cursor.Hour, 0, 0, cursor.Offset)
+                .AddHours(1);
+            var sliceEnd = nextHour < end ? nextHour : end;
+            if (sliceEnd > cursor)
+                hours[cursor.Hour] += sliceEnd - cursor;
+            cursor = sliceEnd;
+        }
     }
 
     static TimeSpan Sum(IEnumerable<TimeSpan> values)

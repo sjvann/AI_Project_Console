@@ -21,7 +21,7 @@ public sealed record McpPolicy
     public static readonly IReadOnlyList<string> ReadOnlyTools =
     [
         "stack_status", "list_services", "list_projects", "build_freshness",
-        "get_log", "doctor", "git_status", "list_audit", "duty_summary",
+        "get_log", "doctor", "git_status", "ci_status", "list_audit", "duty_summary",
         "docs_status", "list_docs", "read_doc",
     ];
 
