@@ -241,6 +241,112 @@ public class DocsServiceTests
     }
 
     [Fact]
+    public void BuildTree_GroupsByFolder()
+    {
+        var files = new[]
+        {
+            new DocsFile("README.md", "地圖", false, false),
+            new DocsFile("toc.yml", "toc", false, true),
+            new DocsFile("agent/backends.md", "後端", false, false),
+            new DocsFile("agent/mcp.md", "MCP", true, false),
+            new DocsFile("user/docs.md", "文件", false, false),
+        };
+        var tree = DocsService.BuildTree(files);
+        Assert.Contains(tree, n => n.IsFolder && n.Name == "agent" && n.Children.Count == 2);
+        Assert.Contains(tree, n => n.IsFolder && n.Name == "user");
+        Assert.Contains(tree, n => !n.IsFolder && n.RelPath == "README.md");
+        var rows = DocsService.FlattenTree(tree, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "agent" });
+        Assert.DoesNotContain(rows, r => r.RelPath == "agent/backends.md");
+        Assert.Contains(rows, r => r.IsFolder && r.RelPath == "agent");
+        Assert.Contains(rows, r => r.RelPath == "user/docs.md");
+    }
+
+    [Fact]
+    public void PreviewUrl_UsesDocsDestForRootDocfx()
+    {
+        var root = NewTemp();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "docs"));
+            File.WriteAllText(Path.Combine(root, "docfx.json"), """
+                {
+                  "build": {
+                    "content": [
+                      { "files": ["**/*.{md,yml}"], "src": "docs", "dest": "docs" }
+                    ]
+                  }
+                }
+                """);
+            Assert.Equal("http://127.0.0.1:8080/docs/agent/backends.html",
+                DocsService.PreviewUrl(root, "agent/backends.md"));
+            Assert.Equal("http://127.0.0.1:8081/",
+                DocsService.PreviewUrl(root, "toc.yml", "http://127.0.0.1:8081/"));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void PreviewUrl_ScaffoldedDocfxIsSiteRoot()
+    {
+        var root = NewTemp();
+        try
+        {
+            DocsService.Scaffold(root, new DocsScaffoldContext("X", root, [], [], "", null));
+            Assert.Equal("http://127.0.0.1:8080/user/getting-started.html",
+                DocsService.PreviewUrl(root, "user/getting-started.md"));
+            Assert.Equal("", DocsService.ContentDestPrefix(root));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void PreviewUrl_ReadsThisRepoDocfxWhenPresent()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        if (!File.Exists(Path.Combine(root, "docfx.json")) || !Directory.Exists(Path.Combine(root, "docs")))
+            return;
+        Assert.Equal("docs", DocsService.ContentDestPrefix(root));
+        Assert.Equal(
+            "http://127.0.0.1:8080/docs/agent/backends.html",
+            DocsService.PreviewUrl(root, "agent/backends.md"));
+        var status = DocsService.Scan(root);
+        var tree = DocsService.BuildTree(status.Files);
+        Assert.Contains(tree, n => n.IsFolder && n.Name == "agent");
+        Assert.Contains(tree, n => n.IsFolder && n.Name == "user");
+    }
+
+    [Fact]
+    public async Task ServeAsync_PicksFreePortAndResponds()
+    {
+        var root = NewTemp();
+        DocsServeHandle? handle = null;
+        try
+        {
+            DocsService.Scaffold(root, new DocsScaffoldContext("X", root, [], [], "", null));
+            handle = await DocsService.ServeAsync(root, port: 8080, readyTimeoutMs: 90_000);
+            Assert.True(handle.IsRunning);
+            Assert.StartsWith("http://127.0.0.1:", handle.Url);
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var resp = await client.GetAsync(handle.Url);
+            Assert.True((int)resp.StatusCode < 500);
+            var page = DocsService.PreviewUrl(root, "user/getting-started.md", handle.Url);
+            using var pageResp = await client.GetAsync(page);
+            Assert.True(pageResp.IsSuccessStatusCode);
+        }
+        finally
+        {
+            handle?.Dispose();
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public void TitleOf_ReadsFrontMatter()
     {
         Assert.Equal("安裝", DocsService.TitleOf("user/x.md", "---\ntitle: 安裝\n---\n\n# 別的\n"));

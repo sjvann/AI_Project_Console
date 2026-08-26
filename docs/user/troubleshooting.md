@@ -62,7 +62,7 @@
 - Release、PR、Actions 需要 `gh auth login`。
 - 私人倉「檢查控制台更新」失敗：登入 `gh` 或設 `GH_TOKEN`。
 - 摘要列「文件 無文件／缺骨架」：按文件 → 建立／補齊體系。已有內容不會被覆蓋。
-- 網站預覽起不來：環境體檢看 `dotnet`。第一次會 `dotnet tool restore` 安裝 DocFX，需網路。
+- 網站預覽起不來：環境體檢看 `dotnet`。第一次會 `dotnet tool restore` 安裝 DocFX，需網路。若提示埠被占用，關掉其他 DocFX／本機網站後再試；控制台會改用下一格埠。
 - 啟用 GitHub Pages 失敗：登入 `gh`，或到倉庫 Settings → Pages，Source 選 GitHub Actions。
 - 線上文件 404：確認已 push 到 `main`，且 Actions 的 Deploy docs 成功。
 

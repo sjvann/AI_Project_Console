@@ -253,6 +253,7 @@
                     <div class="row task-toolbar">
                         <span class="hint grow">@(S.Docs?.Label() ?? "尚未掃描")</span>
                         <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.ScaffoldDocsAsync">建立體系</button>
+                        <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.OpenNewDocDialog())">新增文件</button>
                         <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.RefreshDocs(true))">刷新</button>
                     </div>
                     @if (!string.IsNullOrEmpty(S.DocsHint))
@@ -269,21 +270,48 @@
                     }
                     else
                     {
-                        <div class="doc-list" role="listbox" aria-label="文件清單">
-                            @foreach (var f in S.Docs.Files)
+                        <div class="doc-tree" role="tree" aria-label="文件目錄">
+                            <div class="doc-tree-root">docs/</div>
+                            @foreach (var row in S.VisibleDocsTree)
                             {
-                                <button type="button"
-                                        class="doc-row @(f.RelPath == S.SelectedDocPath ? "sel" : null)"
-                                        role="option"
-                                        aria-selected="@(f.RelPath == S.SelectedDocPath)"
-                                        @onclick="@(() => S.SelectDocAsync(f.RelPath))">
-                                    <span class="doc-row-name">@f.RelPath</span>
-                                    <span class="hint">@f.Title</span>
-                                    @if (f.IsStub)
-                                    {
-                                        <span class="doc-stub">待補</span>
-                                    }
-                                </button>
+                                var pad = 8 + row.Depth * 14;
+                                if (row.IsFolder)
+                                {
+                                    var collapsed = S.IsDocFolderCollapsed(row.RelPath);
+                                    <div class="doc-tree-line" style="padding-left: @(pad)px">
+                                        <button type="button"
+                                                class="doc-folder @(collapsed ? "collapsed" : null)"
+                                                role="treeitem"
+                                                aria-expanded="@(!collapsed)"
+                                                title="展開／收合"
+                                                @onclick="@(() => S.ToggleDocFolder(row.RelPath))">
+                                            <span class="group-chevron" aria-hidden="true"></span>
+                                            <span class="doc-folder-name">@row.Name/</span>
+                                            <span class="group-count">@row.ChildCount</span>
+                                        </button>
+                                        <button type="button"
+                                                class="btn-link doc-folder-add"
+                                                title="在此目錄新增文件"
+                                                @onclick="@(() => S.OpenNewDocDialog(row.RelPath))">新增</button>
+                                    </div>
+                                }
+                                else if (row.File is { } f)
+                                {
+                                    <button type="button"
+                                            class="doc-file @(f.RelPath == S.SelectedDocPath ? "sel" : null)"
+                                            style="padding-left: @(pad)px"
+                                            role="treeitem"
+                                            aria-selected="@(f.RelPath == S.SelectedDocPath)"
+                                            title="@f.RelPath"
+                                            @onclick="@(() => S.SelectDocAsync(f.RelPath))">
+                                        <span class="doc-file-name">@row.Name</span>
+                                        <span class="hint">@f.Title</span>
+                                        @if (f.IsStub)
+                                        {
+                                            <span class="doc-stub">待補</span>
+                                        }
+                                    </button>
+                                }
                             }
                         </div>
                     }
@@ -532,21 +560,31 @@
                         <span class="warn">未儲存</span>
                     }
                     <span class="grow"></span>
-                    <label class="check">
-                        <input type="checkbox" checked="@S.DocsPreviewMode" @onchange="e => S.DocsPreviewMode = (bool)(e.Value ?? false)" />
-                        預覽
+                    <label class="check" title="在右側顯示目前這頁的 Markdown，不是 DocFX 網站">
+                        <input type="checkbox" checked="@S.DocsPreviewMode" @onchange="e => S.SetDocsPreviewMode((bool)(e.Value ?? false))" />
+                        本頁預覽
                     </label>
                     <button class="btn-sec" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath) || S.JobBusy)" @onclick="@(() => S.AiFillDocsAsync(true))">AI 補齊本頁</button>
                     <button class="btn-primary" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath) || !S.DocsDirty)" @onclick="S.SaveSelectedDoc">儲存</button>
-                    <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.ServeDocsAsync">@(S.DocsServing ? "開啟網站預覽" : "網站預覽")</button>
+                    <button class="btn-sec"
+                            disabled="@S.JobBusy"
+                            title="@(S.DocsPreviewOpensCurrentPage ? "用瀏覽器開 DocFX 網站的目前這頁" : "用瀏覽器開 DocFX 網站首頁")"
+                            @onclick="S.ServeDocsAsync">
+                        @(S.DocsServing
+                            ? (S.DocsPreviewOpensCurrentPage ? "開啟本頁網站" : "開啟網站首頁")
+                            : (S.DocsPreviewOpensCurrentPage ? "網站預覽本頁" : "網站預覽"))
+                    </button>
                 </div>
+                <p class="hint doc-preview-hint">
+                    「本頁預覽」只轉目前編輯的 Markdown。「網站預覽」會啟動 DocFX 並開瀏覽器到目前這頁；設定檔則開首頁。
+                </p>
                 @if (!S.HasProject)
                 {
                     <p class="hint pane-pad">請先選擇專案目錄。</p>
                 }
                 else if (string.IsNullOrEmpty(S.SelectedDocPath))
                 {
-                    <p class="hint pane-pad">從左側選一份 docs/ 檔案，或按「建立體系」。</p>
+                    <p class="hint pane-pad">從左側目錄選一份文件再編修，或按「建立體系／新增文件」。</p>
                 }
                 else if (S.DocsPreviewMode)
                 {
@@ -997,6 +1035,24 @@
     </div>
 }
 
+@if (S.Dialog == "new-doc")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="new-doc-title" aria-modal="true">
+            <h2 id="new-doc-title">新增文件</h2>
+            <p class="hint">@S.NewDocHint</p>
+            <div class="field">
+                <span>docs/ 路徑</span>
+                <input value="@S.NewDocPath" @oninput="OnNewDocPath" placeholder="user/new-page.md" />
+            </div>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.CreateNewDoc">建立並編修</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (S.Dialog == "agent")
 {
     <div class="overlay" @onclick="S.CloseDialog">
@@ -1081,6 +1137,8 @@
     void OnAskDraft(ChangeEventArgs e) => S.SetAskDraft(e.Value?.ToString() ?? "");
 
     void OnDocsDraft(ChangeEventArgs e) => S.SetDocsDraft(e.Value?.ToString() ?? "");
+
+    void OnNewDocPath(ChangeEventArgs e) => S.SetNewDocPath(e.Value?.ToString() ?? "");
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
 

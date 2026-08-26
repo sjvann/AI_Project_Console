@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -422,35 +425,155 @@ public static class DocsService
         return string.IsNullOrEmpty(output) ? "DocFX 建置完成。" : output;
     }
 
-    public static async Task<DocsServeHandle> ServeAsync(string projectRoot, int port = 8080)
+    public static async Task<DocsServeHandle> ServeAsync(
+        string projectRoot,
+        int port = 8080,
+        int readyTimeoutMs = 180_000,
+        CancellationToken ct = default)
     {
         var json = FindDocfxJson(projectRoot)
             ?? throw new InvalidOperationException("找不到 docfx.json。請先「建立／補齊體系」。");
         if (!CliUtil.CommandExists("dotnet"))
             throw new InvalidOperationException("找不到 dotnet。請安裝 .NET SDK。");
+        EnsureToolsManifest(projectRoot);
         await RestoreDocfxAsync(projectRoot).ConfigureAwait(false);
+        var chosen = FindFreePort(port);
         var cwd = Path.GetDirectoryName(json) ?? projectRoot;
         var psi = new ProcessStartInfo("dotnet")
         {
             WorkingDirectory = cwd,
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         psi.ArgumentList.Add("docfx");
         psi.ArgumentList.Add(json);
         psi.ArgumentList.Add("--serve");
+        psi.ArgumentList.Add("--hostname");
+        psi.ArgumentList.Add("127.0.0.1");
+        psi.ArgumentList.Add("--port");
+        psi.ArgumentList.Add(chosen.ToString());
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var handle = new DocsServeHandle(proc, $"http://127.0.0.1:{chosen}/");
         try
         {
             if (!proc.Start())
                 throw new InvalidOperationException("無法啟動 DocFX。");
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            proc.Dispose();
+            handle.Dispose();
             throw new InvalidOperationException("無法啟動 DocFX：" + ex.Message);
         }
-        return new DocsServeHandle(proc, $"http://127.0.0.1:{port}/");
+
+        try
+        {
+            await WaitUntilReadyAsync(handle, readyTimeoutMs, ct).ConfigureAwait(false);
+            return handle;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    public static string PreviewUrl(string projectRoot, string? docsRelPath, string? baseUrl = null)
+    {
+        var root = (string.IsNullOrWhiteSpace(baseUrl) ? DefaultServeUrl : baseUrl.Trim()).TrimEnd('/') + "/";
+        if (string.IsNullOrWhiteSpace(docsRelPath))
+            return root;
+        var rel = NormalizeRel(docsRelPath);
+        if (!rel.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+            return root;
+        var dest = ContentDestPrefix(projectRoot);
+        var stem = rel[..^3];
+        if (string.Equals(stem, "index", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(dest))
+            return root;
+        var path = string.IsNullOrEmpty(dest) ? stem : dest.Trim('/') + "/" + stem;
+        return root + path + ".html";
+    }
+
+    public static string ContentDestPrefix(string projectRoot)
+    {
+        var jsonPath = FindDocfxJson(projectRoot);
+        if (jsonPath is null)
+            return "";
+        var docsDir = FindDocsDirectory(projectRoot);
+        if (docsDir is not null && IsUnder(jsonPath, docsDir))
+            return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath, Encoding.UTF8));
+            if (doc.RootElement.TryGetProperty("build", out var build)
+                && build.TryGetProperty("content", out var content)
+                && content.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in content.EnumerateArray())
+                {
+                    var src = item.TryGetProperty("src", out var s) ? s.GetString() ?? "" : "";
+                    if (!string.Equals(src.Replace('\\', '/').Trim('/'), FolderName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (item.TryGetProperty("dest", out var d) && !string.IsNullOrWhiteSpace(d.GetString()))
+                        return d.GetString()!.Replace('\\', '/').Trim('/');
+                    return FolderName;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // fall through
+        }
+        return FolderName;
+    }
+
+    public static IReadOnlyList<DocsTreeNode> BuildTree(IEnumerable<DocsFile> files)
+    {
+        var root = new MutableNode("", "");
+        foreach (var file in files)
+        {
+            var rel = NormalizeRel(file.RelPath);
+            if (string.IsNullOrEmpty(rel))
+                continue;
+            var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var node = root;
+            var path = "";
+            for (var i = 0; i < parts.Length - 1; i++)
+            {
+                path = string.IsNullOrEmpty(path) ? parts[i] : path + "/" + parts[i];
+                node = node.Folder(parts[i], path);
+            }
+            node.Files.Add(file);
+        }
+        return root.ToNodes();
+    }
+
+    public static IReadOnlyList<DocsTreeRow> FlattenTree(IEnumerable<DocsTreeNode> nodes, ISet<string>? collapsed = null)
+    {
+        var rows = new List<DocsTreeRow>();
+        Walk(nodes, 0);
+        return rows;
+
+        void Walk(IEnumerable<DocsTreeNode> list, int depth)
+        {
+            foreach (var n in list)
+            {
+                rows.Add(new DocsTreeRow(depth, n.Name, n.RelPath, n.IsFolder, n.File, n.Children.Count));
+                if (n.IsFolder && (collapsed is null || !collapsed.Contains(n.RelPath)))
+                    Walk(n.Children, depth + 1);
+            }
+        }
+    }
+
+    public static string NewPageStub(string relPath)
+    {
+        var title = TitleOf(relPath, null);
+        return $"---\ntitle: {title}\n---\n\n# {title}\n\n（待補）寫這頁的說明。\n";
     }
 
     public static string ReadRootReadmeExcerpt(string projectRoot, int maxChars = 800)
@@ -494,7 +617,131 @@ public static class DocsService
         var manifest = Path.Combine(Path.GetFullPath(projectRoot), ToolsManifestRelPath.Replace('/', Path.DirectorySeparatorChar));
         if (!File.Exists(manifest))
             return;
-        await CliUtil.RunAsync("dotnet", ["tool", "restore"], projectRoot, 120_000).ConfigureAwait(false);
+        var (code, output) = await CliUtil.RunAsync("dotnet", ["tool", "restore"], projectRoot, 120_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(
+                string.IsNullOrEmpty(output)
+                    ? "dotnet tool restore 失敗，無法安裝 DocFX。"
+                    : "dotnet tool restore 失敗：\n" + output);
+    }
+
+    static async Task WaitUntilReadyAsync(DocsServeHandle handle, int timeoutMs, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(Math.Max(timeoutMs, 3_000));
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!handle.IsRunning)
+                throw new InvalidOperationException(ServeFailMessage(handle.Output));
+            if (handle.LooksReady || await IsHttpUpAsync(handle.Url, ct).ConfigureAwait(false))
+                return;
+            await Task.Delay(400, ct).ConfigureAwait(false);
+        }
+        if (!handle.IsRunning)
+            throw new InvalidOperationException(ServeFailMessage(handle.Output));
+        if (await IsHttpUpAsync(handle.Url, ct).ConfigureAwait(false) || handle.LooksReady)
+            return;
+        throw new InvalidOperationException(
+            "DocFX 預覽逾時，網站還沒回應。第一次建置 API 文件可能較久，請稍後再按「網站預覽」。"
+            + (string.IsNullOrWhiteSpace(handle.Output) ? "" : "\n\n" + TrimOutput(handle.Output)));
+    }
+
+    static string ServeFailMessage(string output)
+    {
+        var detail = TrimOutput(output);
+        if (string.IsNullOrEmpty(detail))
+            return "DocFX 預覽沒有起來。請確認已安裝 .NET SDK，並先建立文件體系。";
+        if (detail.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+            || detail.Contains("正在使用", StringComparison.Ordinal)
+            || detail.Contains("只允許使用一次", StringComparison.Ordinal))
+            return "預覽埠已被占用。關閉其他 DocFX／本機網站後再試。\n\n" + detail;
+        return "DocFX 預覽沒有起來。\n\n" + detail;
+    }
+
+    static string TrimOutput(string output)
+    {
+        var text = (output ?? "").Trim();
+        if (text.Length <= 1600)
+            return text;
+        return text[^1600..].Trim();
+    }
+
+    static async Task<bool> IsHttpUpAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
+            using var resp = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    static int FindFreePort(int start)
+    {
+        for (var port = Math.Max(start, 1); port < start + 20; port++)
+        {
+            if (IsPortFree(port))
+                return port;
+        }
+        throw new InvalidOperationException($"找不到可用的預覽埠（{start}–{start + 19}）。請關掉占用的本機網站後再試。");
+    }
+
+    static bool IsPortFree(int port)
+    {
+        try
+        {
+            var listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    sealed class MutableNode
+    {
+        public MutableNode(string name, string relPath)
+        {
+            Name = name;
+            RelPath = relPath;
+        }
+
+        public string Name { get; }
+        public string RelPath { get; }
+        public Dictionary<string, MutableNode> Folders { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<DocsFile> Files { get; } = [];
+
+        public MutableNode Folder(string name, string relPath)
+        {
+            if (!Folders.TryGetValue(name, out var child))
+            {
+                child = new MutableNode(name, relPath);
+                Folders[name] = child;
+            }
+            return child;
+        }
+
+        public List<DocsTreeNode> ToNodes()
+        {
+            var nodes = new List<DocsTreeNode>();
+            foreach (var folder in Folders.Values.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+                nodes.Add(new DocsTreeNode(folder.Name, folder.RelPath, true, null, folder.ToNodes()));
+            foreach (var file in Files
+                .OrderBy(f => f.IsConfig ? 1 : 0)
+                .ThenBy(f => Path.GetFileName(f.RelPath), StringComparer.OrdinalIgnoreCase))
+            {
+                var name = Path.GetFileName(file.RelPath.Replace('\\', '/'));
+                nodes.Add(new DocsTreeNode(name, file.RelPath, false, file, []));
+            }
+            return nodes;
+        }
     }
 
     static List<DocsFile> ListFiles(string docsRoot)

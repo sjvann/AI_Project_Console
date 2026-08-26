@@ -240,12 +240,25 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; min-width: 0; overflow: hidden; }
 .task-empty { padding: 12px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .doc-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; }
+.doc-tree { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; min-height: 160px; }
+.doc-tree-root { padding: 8px 10px 4px; font: 700 12px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--muted); }
+.doc-tree-line { display: flex; align-items: center; gap: 6px; }
+.doc-folder { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 6px 8px 6px 0; background: none; border: none; color: var(--muted); font: 700 12px "Segoe UI", "Noto Sans TC", sans-serif; cursor: pointer; text-align: left; }
+.doc-folder:hover { color: var(--text); }
+.doc-folder.collapsed .group-chevron { transform: rotate(0deg); }
+.doc-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-folder-add { flex: none; font-size: 11px; padding-right: 8px; }
+.doc-file { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-radius: 0; padding: 6px 10px; color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
+.doc-file:hover:not(:disabled) { background: var(--sel); }
+.doc-file.sel { background: var(--sel); }
+.doc-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
 .doc-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 7px 10px; color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
 .doc-row:last-child { border-bottom: none; }
 .doc-row:hover:not(:disabled) { background: var(--sel); }
 .doc-row.sel { background: var(--sel); }
 .doc-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
 .doc-stub { font-size: 11px; color: var(--wait); }
+.doc-preview-hint { margin: 0 10px 6px; }
 .doc-editor { flex: 1; min-height: 0; margin: 0 8px 8px; padding: 10px; border: 1px solid var(--border); border-radius: 3px; resize: none; font: 13px/1.45 "Cascadia Mono", Consolas, monospace; background: var(--panel); color: var(--text); }
 .doc-preview { flex: 1; min-height: 0; overflow: auto; margin: 0 8px 8px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); }
 .doc-preview h1, .doc-preview h2, .doc-preview h3 { margin: 0.8em 0 0.4em; }

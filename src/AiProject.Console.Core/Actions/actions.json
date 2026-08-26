@@ -186,7 +186,7 @@
     },
     {
       "id": "docs_serve",
-      "label": "本機網站預覽",
+      "label": "本機網站預覽（目前這頁）",
       "group": "docs",
       "kind": "internal",
       "handler": "docs_serve"

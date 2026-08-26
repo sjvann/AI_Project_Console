@@ -200,15 +200,24 @@ public sealed class ConsoleSession : IDisposable
     public string? SelectedDocPath { get; private set; }
     public string DocsDraft { get; set; } = "";
     public bool DocsDirty { get; private set; }
-    public bool DocsPreviewMode { get; set; }
+    public bool DocsPreviewMode { get; private set; }
     public string DocsHint { get; private set; } = "";
     public bool DocsServing => _docsServe is { IsRunning: true };
     public string DocsServeUrl => _docsServe?.Url ?? DocsService.DefaultServeUrl;
     public string DocsPreviewHtml => DocsMarkdown.ToSafeHtml(DocsDraft);
+    public string DocsPreviewPageUrl =>
+        Catalog is null
+            ? DocsServeUrl
+            : DocsService.PreviewUrl(Catalog.Root, SelectedDocPath, DocsServeUrl);
+    public bool DocsPreviewOpensCurrentPage =>
+        !string.Equals(DocsPreviewPageUrl.TrimEnd('/'), DocsServeUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
     public bool DocsChipWarn => Docs is null or { Health: not DocsHealth.Ready };
+    public string NewDocPath { get; private set; } = "";
+    public string NewDocHint { get; private set; } = "";
 
     private readonly HashSet<string> _collapsedServiceGroups = new(StringComparer.Ordinal);
     private readonly HashSet<string> _collapsedProjectGroups = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsedDocFolders = new(StringComparer.OrdinalIgnoreCase);
 
     public IEnumerable<IGrouping<string, ServiceEntry>> ServiceGroups =>
         Catalog?.Services.GroupBy(s => string.IsNullOrEmpty(s.Group) ? "其他" : s.Group)
@@ -249,6 +258,30 @@ public sealed class ConsoleSession : IDisposable
     public void ToggleAllServiceGroups()
     {
         ToggleAllGroups(_collapsedServiceGroups, ServiceGroups.Select(g => g.Key));
+    }
+
+    public IReadOnlyList<DocsTreeRow> VisibleDocsTree =>
+        Docs is null ? [] : DocsService.FlattenTree(DocsService.BuildTree(Docs.Files), _collapsedDocFolders);
+
+    public bool IsDocFolderCollapsed(string relPath) => _collapsedDocFolders.Contains(relPath);
+
+    public void ToggleDocFolder(string relPath)
+    {
+        if (!_collapsedDocFolders.Add(relPath))
+            _collapsedDocFolders.Remove(relPath);
+        Notify();
+    }
+
+    public void SetDocsPreviewMode(bool value)
+    {
+        DocsPreviewMode = value;
+        Notify();
+    }
+
+    public void SetNewDocPath(string value)
+    {
+        NewDocPath = value ?? "";
+        Notify();
     }
 
     public void ToggleAllProjectGroups()
@@ -2022,25 +2055,88 @@ public sealed class ConsoleSession : IDisposable
             return;
         if (DocsServing)
         {
-            CliUtil.OpenUrl(DocsServeUrl);
-            JobText = "文件網站預覽已在跑：" + DocsServeUrl;
-            Notify();
+            OpenDocsPreviewPage();
             return;
         }
         await RunJobAsync("啟動文件網站預覽…", async () =>
         {
-            var handle = await DocsService.ServeAsync(Catalog!.Root).ConfigureAwait(false);
+            var handle = await DocsService.ServeAsync(Catalog!.Root, readyTimeoutMs: 180_000).ConfigureAwait(false);
             _docsServe = handle;
-            await Task.Delay(1200).ConfigureAwait(false);
-            if (!handle.IsRunning)
-            {
-                handle.Dispose();
-                _docsServe = null;
-                throw new InvalidOperationException("DocFX 預覽沒有起來。請確認已安裝 .NET SDK，並先建立文件體系。");
-            }
-            CliUtil.OpenUrl(handle.Url);
-            return "本機文件站：" + handle.Url;
+            var pageUrl = DocsService.PreviewUrl(Catalog.Root, SelectedDocPath, handle.Url);
+            CliUtil.OpenUrl(pageUrl);
+            return DocsPreviewOpensCurrentPage
+                ? "本機文件站（目前這頁）：" + pageUrl
+                : "本機文件站（首頁）：" + pageUrl;
         }).ConfigureAwait(false);
+        Notify();
+    }
+
+    public void OpenNewDocDialog(string? folder = null)
+    {
+        if (!RequireCatalog())
+            return;
+        var prefix = folder;
+        if (string.IsNullOrEmpty(prefix) && !string.IsNullOrEmpty(SelectedDocPath))
+        {
+            var slash = SelectedDocPath.LastIndexOf('/');
+            prefix = slash >= 0 ? SelectedDocPath[..slash] : "";
+        }
+        NewDocPath = string.IsNullOrEmpty(prefix) ? "user/new-page.md" : prefix.TrimEnd('/') + "/new-page.md";
+        NewDocHint = "路徑相對於 docs/，例如 user/new-page.md。資料夾不存在會自動建立。";
+        Dialog = "new-doc";
+        Notify();
+    }
+
+    public void CreateNewDoc()
+    {
+        if (!RequireCatalog())
+            return;
+        var rel = (NewDocPath ?? "").Trim().Replace('\\', '/').Trim('/');
+        if (string.IsNullOrEmpty(Path.GetExtension(rel)))
+            rel += ".md";
+        if (!rel.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            NewDocHint = "新增文件請用 .md。";
+            Notify();
+            return;
+        }
+        if (!DocsService.IsSafeRelPath(rel))
+        {
+            NewDocHint = "路徑無效。只能用 docs/ 內的相對路徑。";
+            Notify();
+            return;
+        }
+        if (!ConfirmDiscardDocs())
+            return;
+        try
+        {
+            var existing = DocsService.Read(Catalog!.Root, rel);
+            if (string.IsNullOrEmpty(existing))
+                DocsService.Write(Catalog.Root, rel, DocsService.NewPageStub(rel));
+            var folder = rel.Contains('/') ? rel[..rel.LastIndexOf('/')] : "";
+            if (!string.IsNullOrEmpty(folder))
+                _collapsedDocFolders.Remove(folder);
+            Docs = DocsService.Scan(Catalog.Root);
+            LoadDoc(rel);
+            RightTab = "docs";
+            DocsHint = string.IsNullOrEmpty(existing) ? "已新增 " + rel : "已開啟既有檔 " + rel;
+            JobText = DocsHint;
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            NewDocHint = FirstLine(ex.Message);
+            Notify();
+        }
+    }
+
+    void OpenDocsPreviewPage()
+    {
+        var pageUrl = DocsPreviewPageUrl;
+        CliUtil.OpenUrl(pageUrl);
+        JobText = DocsPreviewOpensCurrentPage
+            ? "文件網站預覽（目前這頁）：" + pageUrl
+            : "文件網站預覽（首頁）：" + pageUrl;
         Notify();
     }
 
@@ -2146,6 +2242,9 @@ public sealed class ConsoleSession : IDisposable
         DocsDirty = false;
         DocsPreviewMode = false;
         DocsHint = "";
+        NewDocPath = "";
+        NewDocHint = "";
+        _collapsedDocFolders.Clear();
     }
 
     public void OpenCloneDialog()

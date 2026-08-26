@@ -14,6 +14,21 @@ public sealed record DocsFile(
     bool IsStub,
     bool IsConfig);
 
+public sealed record DocsTreeNode(
+    string Name,
+    string RelPath,
+    bool IsFolder,
+    DocsFile? File,
+    IReadOnlyList<DocsTreeNode> Children);
+
+public sealed record DocsTreeRow(
+    int Depth,
+    string Name,
+    string RelPath,
+    bool IsFolder,
+    DocsFile? File,
+    int ChildCount);
+
 public sealed record DocsStatus(
     string Root,
     string DocsRoot,
@@ -69,14 +84,28 @@ public sealed record DocsScaffoldResult(
 
 public sealed class DocsServeHandle : IDisposable
 {
+    readonly System.Text.StringBuilder _output = new();
+    readonly object _gate = new();
+
     public DocsServeHandle(System.Diagnostics.Process process, string url)
     {
         Process = process;
         Url = url;
+        process.OutputDataReceived += (_, e) => Append(e.Data);
+        process.ErrorDataReceived += (_, e) => Append(e.Data);
     }
 
     public System.Diagnostics.Process Process { get; }
     public string Url { get; }
+    public string Output
+    {
+        get
+        {
+            lock (_gate)
+                return _output.ToString().Trim();
+        }
+    }
+
     public bool IsRunning
     {
         get
@@ -84,6 +113,18 @@ public sealed class DocsServeHandle : IDisposable
             try { return !Process.HasExited; }
             catch { return false; }
         }
+    }
+
+    public bool LooksReady =>
+        Output.Contains("Serving", StringComparison.OrdinalIgnoreCase)
+        || Output.Contains("http://", StringComparison.OrdinalIgnoreCase);
+
+    void Append(string? line)
+    {
+        if (line is null)
+            return;
+        lock (_gate)
+            _output.AppendLine(line);
     }
 
     public void Stop()
