@@ -1,0 +1,70 @@
+# 90 分鐘導入劇本
+
+給 Tech Lead：用自己的多服務 .NET 倉走完「掃描 → 編譯真相 → 啟動 → 求救」。結束時新人應少開數個終端機。
+
+一般使用者不必照時鐘走；請改看 [安裝與第一次使用](../user/getting-started.md) 與 [日常操作](../user/daily-use.md)。
+
+## 成功標準
+
+- 左側看得出哪個專案在編、哪個需重編、上次編譯何時
+- 建置輸出看得到 `{已完成}/{預計}`
+- 編譯失敗能用團隊既有的 Agent 帶上下文求救
+- 倉裡留下或更新 `ai-project.json`
+- Agent 能用 MCP `stack_status` 讀堆疊，而不是猜
+
+## 0–10 分：安裝與後端
+
+1. 從 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 安裝，或見 [從原始碼執行](../maintainer/develop.md)。
+2. 按「設定」：
+   - Agent 後端選團隊主力。見 [Agent 後端](../agent/backends.md)。
+   - 確認偵測狀態為可用；必要時填 CLI 路徑覆寫。
+   - 可選深色外觀。
+3. 按「環境體檢」，確認 dotnet、git，以及目前後端。
+
+## 10–30 分：打開真實倉
+
+1. 「選擇專案目錄…」指向多服務倉根（含多個 `.csproj` 或薄工作區）。
+2. 若是薄工作區，依 [工作區設定](../workspace/ai-project-json.md) 建立 `ai-project.json`，填 `productLines`／`services`／`startOrder`。範例：[`schema/ai-project.example.json`](../../schema/ai-project.example.json)。
+3. 左側「服務」應出現可啟動項目；「專案」顯示需重編／未建置／最新。
+4. 把滑鼠停在「需重編」上看原因（哪個檔比 DLL 新）。這是編譯可信度的核心。
+
+## 30–55 分：編譯可見性
+
+1. 建置選單「編譯過期項目」。
+2. 切到「專案」分頁：等待＝灰、編譯中＝主色、完成＝綠、失敗＝紅。
+3. 右側建置輸出應顯示例如 `3/12`，摘要列同步。
+4. 結束後確認「上次編譯」相對時間；若仍需重編，點列上看觸發檔，而不是再盲編一次。
+5. 成功／失敗各會寫入 `.ai_project/build-reports/`。控制台**自己編譯成功**且來源沒再改，應顯示「最新」，即使 DLL 時間戳看起來較舊。
+
+## 55–70 分：啟動與求救
+
+1. 按「啟動」，看摘要「就緒 N / M」與服務 Log。
+2. 若有服務失敗：選該列 →「執行求救」→ 確認。提示已複製；Cursor 會開 New Agent，其他後端依設定開啟。
+3. 可故意讓一個專案編譯失敗，走「編譯求救」。
+
+步驟細節：[卡住時怎麼辦](../user/help.md)。
+
+## 70–80 分：接上 MCP（Agentic 閉環）
+
+1. 設定 → MCP，把「本控制台」加入專案，或複製設定到使用者 MCP。
+2. 在 Cursor 問：「用 duty_summary 看這個倉現在能不能交班。」控制台摘要列應與工具回報一致。
+3. 確認 Agent 真的呼叫工具，而不是猜。求救提示已要求修完後 `build`／`stack_status`。
+4. 企業試用可「寫入政策範本」，確認 `stop_all` 沒帶 confirm 會被拒；右側「MCP 審計」應出現該筆拒絕。
+
+細節：[MCP](../agent/mcp.md)。
+
+## 80–90 分：收尾與落地
+
+1. GitHub 選單看狀態；有髒檔可「提交…」並用「AI 建議」。見 [GitHub](../user/github.md)。
+2. 把可用的 `ai-project.json` 提交進主分支（這是團隊採用的證據）。
+3. 記下三個數字給下一次對照：誤報需重編次數、從開啟到全服務就緒分鐘數、求救到開始改碼是否少開終端機。
+
+## 常見卡住
+
+對照 [常見問題](../user/troubleshooting.md)。精簡表：
+
+| 現象 | 處理 |
+|------|------|
+| 編譯成功仍需重編 | 看列上的原因檔；`appsettings`／`data/*.json` 不應觸發。按「刷新」。 |
+| 後端不可用 | 設定裡換已安裝的後端，或填 CLI 路徑。VS Code／Windsurf 是開倉 + 貼上提示。 |
+| 沒有服務 | 補 `ai-project.json` 的 `services`，或確認 `launchSettings.json` 有 `applicationUrl`。 |

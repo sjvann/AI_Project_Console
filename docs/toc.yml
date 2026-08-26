@@ -1,0 +1,42 @@
+- name: 使用文件
+  href: README.md
+- name: 一般使用者
+  items:
+    - name: 安裝與第一次使用
+      href: user/getting-started.md
+    - name: 畫面導覽
+      href: user/interface.md
+    - name: 日常操作
+      href: user/daily-use.md
+    - name: GitHub
+      href: user/github.md
+    - name: 卡住時怎麼辦
+      href: user/help.md
+    - name: 設定
+      href: user/settings.md
+    - name: 部署
+      href: user/deploy.md
+    - name: 常見問題
+      href: user/troubleshooting.md
+- name: 工作區
+  items:
+    - name: ai-project.json
+      href: workspace/ai-project-json.md
+- name: 團隊導入
+  items:
+    - name: 90 分鐘導入
+      href: team/trial-90min.md
+- name: Agent
+  items:
+    - name: Agent 後端
+      href: agent/backends.md
+    - name: MCP
+      href: agent/mcp.md
+- name: 維護者
+  items:
+    - name: 開發與維護
+      href: maintainer/develop.md
+    - name: 發版
+      href: maintainer/release.md
+    - name: 文件網站（DocFX）
+      href: maintainer/docfx.md

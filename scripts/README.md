@@ -1,5 +1,7 @@
 # Windows 安裝包與 GitHub Release
 
+這份是**控制台維護者**的發版清單。一般使用者請看 [使用文件](https://sjvann.github.io/AI_Project_Console/)（原稿 [docs/](../docs/README.md)），從 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 安裝即可。摘要見 [docs/maintainer/release.md](../docs/maintainer/release.md)。
+
 發佈新版本時依序做：改版號 → 打包 → 推送 → 建立 Release。已安裝舊版的使用者會靠 GitHub Releases 的 latest 做「檢查更新」，因此**不可覆寫舊 tag**，必須升版。
 
 目前程式版號見 `src/AiProject.Console.Core/AppInfo.cs` 的 `Version`（例如 `0.3.7`）。下列指令以 `0.3.8` 為例，請改成實際新版號。

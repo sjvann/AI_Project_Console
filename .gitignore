@@ -10,3 +10,6 @@
 dist/
 artifacts/
 .ai_project/
+_site/
+api/**/*.yml
+api/.manifest
