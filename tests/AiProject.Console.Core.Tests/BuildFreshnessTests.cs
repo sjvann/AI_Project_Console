@@ -49,7 +49,10 @@ public class BuildFreshnessTests
             var (outMtime, _) = BuildFreshness.BuildOutput(projectDir);
             Assert.False(srcPath!.EndsWith("launchSettings.json", StringComparison.OrdinalIgnoreCase));
             Assert.True(srcMtime <= outMtime);
-            Assert.Equal("fresh", BuildFreshness.ProjectBuildState(root, DemoApiInfo()).Status);
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("fresh", state.Status);
+            Assert.Contains("無需重編", state.Reason);
+            Assert.Equal("最新", BuildFreshness.BadgeText(state));
         }
         finally
         {
@@ -103,6 +106,7 @@ public class BuildFreshnessTests
             Assert.Equal("stale", state.Status);
             Assert.Equal("C#", state.Language);
             Assert.Contains("Program.cs", state.Reason);
+            Assert.Contains("需重編", state.Reason);
             Assert.NotNull(state.LastBuildUtc);
             Assert.Equal("需重編", BuildFreshness.BadgeText(state));
         }

@@ -309,9 +309,9 @@ public static class BuildFreshness
         if (status == "stale")
         {
             var delta = TimeSpan.FromSeconds(Math.Max(0, srcMtime - outMtime));
-            return $"{srcName} 比 {dllName} 新 {FormatDuration(delta)}";
+            return $"{srcName} 比 {dllName} 新 {FormatDuration(delta)}，需重編";
         }
-        return $"來源不新於 {dllName}";
+        return $"已與 {dllName} 一致，無需重編";
     }
 
     static string FormatDuration(TimeSpan delta)

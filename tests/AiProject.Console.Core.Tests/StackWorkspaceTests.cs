@@ -18,6 +18,9 @@ public class StackWorkspaceTests
             Assert.Contains("staleProjects", status);
             var freshness = await Invoke(ws, "build_freshness");
             Assert.Contains("Mini.Api", freshness);
+            Assert.Contains("\"needsRebuild\":", freshness);
+            Assert.Contains("\"badge\":", freshness);
+            Assert.Contains("無需重編，全部最新", freshness);
         }
         finally
         {

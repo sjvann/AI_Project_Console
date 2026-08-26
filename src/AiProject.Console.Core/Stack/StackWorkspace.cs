@@ -104,16 +104,26 @@ public sealed class StackWorkspace
     public string ListProjects()
     {
         var states = BuildFreshness.AllProjectBuildStates(Catalog);
-        return Json(states.Select(p => new
+        var needsRebuild = states.Count(p => p.Status is "stale" or "unbuilt");
+        return Json(new
         {
-            p.Name,
-            p.Path,
-            p.Kind,
-            p.Status,
-            p.Reason,
-            lastBuild = BuildFreshness.FormatAgo(p.LastBuildUtc),
-            newestSource = string.IsNullOrEmpty(p.NewestSourcePath) ? "" : Path.GetFileName(p.NewestSourcePath),
-        }));
+            needsRebuild,
+            summary = needsRebuild == 0
+                ? "無需重編，全部最新"
+                : $"需重編 {needsRebuild}",
+            projects = states.Select(p => new
+            {
+                p.Name,
+                p.Path,
+                p.Kind,
+                p.Status,
+                badge = BuildFreshness.BadgeText(p),
+                needsRebuild = p.Status is "stale" or "unbuilt",
+                p.Reason,
+                lastBuild = BuildFreshness.FormatAgo(p.LastBuildUtc),
+                newestSource = string.IsNullOrEmpty(p.NewestSourcePath) ? "" : Path.GetFileName(p.NewestSourcePath),
+            }),
+        });
     }
 
     public string BuildFreshnessReport() => ListProjects();

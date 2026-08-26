@@ -38,6 +38,9 @@ public static class ProjectAskService
         "你是 AI_Project 控制台的專案問答助手。只回答目前開啟專案的本機堆疊、編譯狀態、服務 Log、MCP 審計與環境體檢。\n"
         + "不要當通用聊天，不要改程式碼，不要把話題帶到這個倉以外。\n"
         + "先呼叫工具取得事實，再以繁體中文簡短回答。編譯與啟停請使用者用控制台按鈕。\n"
+        + "編譯狀態以工具為準，且必須與畫面徽章相同：badge「最新」或 status=fresh 或 needsRebuild=false 表示無需重編；"
+        + "「需重編」／stale、「未建置」／unbuilt 才要重編。值班摘要的 staleProjects／需重編數字必須與回答一致。"
+        + "不要把「已與 DLL 一致」或「幾分鐘前」的時間戳理解成要重編。\n"
         + "專案：" + projectName + "\n根目錄：" + root + "\n目前值班摘要：\n" + dutySnapshot;
 
     public static async Task<string> AskAsync(

@@ -23,6 +23,15 @@ public class ProjectAskTests
     }
 
     [Fact]
+    public void SystemPrompt_MapsFreshToNoRebuild()
+    {
+        var prompt = ProjectAskService.SystemPrompt("Demo", @"E:\demo", """{"staleProjects":0}""");
+        Assert.Contains("無需重編", prompt);
+        Assert.Contains("staleProjects", prompt);
+        Assert.Contains("\"staleProjects\":0", prompt);
+    }
+
+    [Fact]
     public void AskTools_AreReadOnly()
     {
         foreach (var tool in ProjectAskService.AskTools)
