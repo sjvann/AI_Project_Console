@@ -1,0 +1,95 @@
+@using AiProject.Console.Core.ProcessOps
+
+<div class="overlay" @onclick="S.CloseDialog">
+    <div class="dialog dialog-lg doctor-dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="doctor-title" aria-modal="true">
+        <div class="doctor-head">
+            <h2 id="doctor-title">環境體檢</h2>
+        </div>
+        @if (S.DoctorView is { } report)
+        {
+            <div class="doctor-body">
+                <div class="doctor-summary doctor-@Css(report.Overall)" role="status" aria-atomic="true">
+                    <span class="doctor-summary-dot" aria-hidden="true"></span>
+                    <div class="doctor-summary-text">
+                        <strong>@report.Headline</strong>
+                        <span>@report.HeadlineDetail</span>
+                    </div>
+                </div>
+
+                @foreach (var section in report.Sections)
+                {
+                    <section class="doctor-section" aria-labelledby="doctor-@section.Id">
+                        <div class="doctor-section-head">
+                            <h3 id="doctor-@section.Id">@section.Title</h3>
+                            @if (!string.IsNullOrEmpty(section.Badge))
+                            {
+                                <span class="doctor-status doctor-@Css(section.Level)">@section.Badge</span>
+                            }
+                        </div>
+                        <ul class="doctor-list">
+                            @foreach (var item in section.Items)
+                            {
+                                <li class="doctor-row">
+                                    <span class="doctor-label">@item.Label</span>
+                                    <span class="doctor-value">
+                                        @item.Value
+                                        @if (!string.IsNullOrEmpty(item.Detail) && !string.Equals(item.Detail, item.Value, StringComparison.Ordinal))
+                                        {
+                                            <span class="doctor-detail" title="@item.Detail">@item.Detail</span>
+                                        }
+                                    </span>
+                                    @if (!string.IsNullOrEmpty(item.StatusText))
+                                    {
+                                        <span class="doctor-status doctor-@Css(item.Level)">@item.StatusText</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(item.HowTo))
+                                    {
+                                        <pre class="doctor-howto">@item.HowTo</pre>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                        @if (!string.IsNullOrEmpty(section.Note))
+                        {
+                            <p class="hint doctor-note">@section.Note</p>
+                        }
+                        @if (section.ActionId == "prefs-agent")
+                        {
+                            <button type="button" class="btn-link doctor-action" @onclick="@(() => S.OpenDoctorSettings("agent"))">前往 Agent 設定</button>
+                        }
+                        else if (section.ActionId == "prefs-mcp")
+                        {
+                            <button type="button" class="btn-link doctor-action" @onclick="@(() => S.OpenDoctorSettings("mcp"))">前往 MCP 設定</button>
+                        }
+                        else if (section.ActionId == "pick-project")
+                        {
+                            <button type="button" class="btn-sec doctor-action-btn" @onclick="S.PickProjectFromDoctorAsync">選擇專案目錄…</button>
+                        }
+                        else if (section.ActionId == "install-docfx")
+                        {
+                            <button type="button" class="btn-primary doctor-action-btn" disabled="@S.JobBusy" @onclick="S.InstallDocfxFromDoctorAsync">安裝 DocFX</button>
+                        }
+                    </section>
+                }
+            </div>
+            <div class="dialog-actions doctor-actions">
+                <button type="button" class="btn-sec" @onclick="S.CopyDoctorAsync">@(S.DoctorCopied ? "已複製" : "複製報告")</button>
+                <span class="grow"></span>
+                <button type="button" class="btn-primary" @onclick="S.CloseDialog">確定</button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+
+    static string Css(DoctorLevel level) => level switch
+    {
+        DoctorLevel.Ok => "ok",
+        DoctorLevel.Warn => "warn",
+        DoctorLevel.Missing => "missing",
+        _ => "info",
+    };
+}

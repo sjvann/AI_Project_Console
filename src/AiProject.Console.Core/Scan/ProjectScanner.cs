@@ -118,7 +118,9 @@ public static class ProjectScanner
     }
 
     public static IReadOnlyList<ProjectInfo> ExternalServiceCandidates(ScanResult scan) =>
-        scan.Projects.Where(p => p.IsExecutable && (p.Ports.Count > 0 || p.ApplicationUrls.Count > 0)).ToList();
+        scan.Projects.Where(p =>
+            p.IsExecutable
+            && (p.IsUi || p.Ports.Count > 0 || p.ApplicationUrls.Count > 0)).ToList();
 
     public static ProjectInfo ScanProject(string csproj, string root)
     {
@@ -131,10 +133,15 @@ public static class ProjectScanner
         var isTest = parts.Contains("tests")
             || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)
             || name.EndsWith("Test", StringComparison.OrdinalIgnoreCase);
+        var hasRazor = HasRazorFiles(projectDir);
+        var isUi = !isTest && isExe && (
+            hasUiMarkers
+            || hasRazor
+            || NameLooksLikeUiWeb(name));
         var isWebApi = isWeb
             && !hasUiMarkers
             && !NameLooksLikeUiWeb(name)
-            && !HasRazorFiles(projectDir)
+            && !hasRazor
             && (hasApiDocs || NameLooksLikeApi(name));
         return new ProjectInfo(
             RelDir: relDir,
@@ -150,7 +157,8 @@ public static class ProjectScanner
             ApplicationUrls: urls,
             LaunchUrl: launchUrl,
             Group: GuessGroup(relDir),
-            Language: DetectLanguage(csproj));
+            Language: DetectLanguage(csproj),
+            IsUi: isUi);
     }
 
     public static string DetectLanguage(string projectFile)
@@ -250,7 +258,8 @@ public static class ProjectScanner
                     if (ApiDocPackages.Contains(include))
                         hasApiDocs = true;
                     if (include.Contains("Components.Web", StringComparison.OrdinalIgnoreCase)
-                        || include.Contains("Blazor", StringComparison.OrdinalIgnoreCase))
+                        || include.Contains("Blazor", StringComparison.OrdinalIgnoreCase)
+                        || include.Contains("Photino", StringComparison.OrdinalIgnoreCase))
                         hasUiMarkers = true;
                 }
                 if (local.StartsWith("Blazor", StringComparison.OrdinalIgnoreCase))

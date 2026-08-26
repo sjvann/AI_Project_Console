@@ -1,13 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
-using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Catalog;
-using AiProject.Console.Core.Docs;
-using AiProject.Console.Core.Stack;
-using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Runtime;
-using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.ProcessOps;
@@ -33,6 +28,9 @@ public static class ProcessSupervisor
             return false;
         }
     }
+
+    public static async Task<bool> ProbeHealthAsync(ProjectCatalog catalog, ServiceEntry svc) =>
+        ServiceCatalogBuilder.IsCurrentConsole(catalog, svc) || await ProbeHealthAsync(svc).ConfigureAwait(false);
 
     public static async Task<bool> ProbeHealthAsync(ServiceEntry svc)
     {
@@ -213,8 +211,12 @@ public static class ProcessSupervisor
         return path;
     }
 
+    public const string SelfConsoleStartMessage = "這是目前這個控制台，再啟動會再開一扇視窗。";
+
     public static int? StartService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
     {
+        if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
+            throw new InvalidOperationException(SelfConsoleStartMessage);
         var host = ServiceCatalogBuilder.HostService(catalog, svc);
         var stem = host.Stem;
         KillPidFile(rt, stem);
@@ -290,7 +292,7 @@ public static class ProcessSupervisor
         var results = new List<(string Id, string Label, string? Error)>();
         foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
         {
-            if (health.GetValueOrDefault(svc.Id))
+            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc) || health.GetValueOrDefault(svc.Id))
                 continue;
             var err = TryStartService(catalog, rt, svc);
             results.Add((svc.Id, svc.Label, err));
@@ -321,6 +323,8 @@ public static class ProcessSupervisor
         var started = new List<string>();
         foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
         {
+            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
+                continue;
             StartService(catalog, rt, svc);
             started.Add(svc.Id);
             if (delayMs > 0)
@@ -342,48 +346,7 @@ public static class ProcessSupervisor
         KillAllPids(rt);
     }
 
-    public static string DoctorReport(ProjectCatalog? catalog)
-    {
-        var lines = new List<string>
-        {
-            "AI_Project 環境體檢",
-            "",
-            $".NET: {Environment.Version}",
-            $"控制台: {AppInfo.Version}（{SelfUpdate.DetectInstallKind()}）",
-            $"dotnet: {(CliUtil.CommandExists("dotnet") ? "OK" : "缺少")}",
-            $"git: {(CliUtil.CommandExists("git") ? "OK" : "缺少")}",
-            $"gh: {(CliUtil.CommandExists("gh") ? "OK" : "缺少（GitHub CLI，選用）")}",
-        };
-        lines.Add("");
-        lines.AddRange(AgentBackendRegistry.DoctorLines());
-        lines.Add(CommitMessageSuggester.DoctorLine());
-        lines.Add(McpLaunch.DoctorLine());
-        if (catalog is not null)
-            lines.Add(McpPolicy.Load(catalog.Root).DoctorLine());
-        lines.Add(DocsService.DoctorLine(catalog?.Root));
-        if (catalog is null)
-        {
-            lines.Add("");
-            lines.Add("尚未選擇專案目錄。");
-            return string.Join('\n', lines);
-        }
-        lines.AddRange(
-        [
-            "",
-            $"專案：{catalog.Name}",
-            $"路徑：{catalog.Root}",
-            $"摘要：{catalog.Summary}",
-            $"服務：{catalog.Services.Count}",
-        ]);
-        foreach (var svc in catalog.Services)
-        {
-            var port = svc.Port?.ToString() ?? "-";
-            var pre = string.IsNullOrEmpty(svc.PreStart) ? "" : $" preStart={svc.PreStart}";
-            lines.Add($"  - {svc.Label} [{svc.Id}] port={port}{pre} ({svc.Source})");
-        }
-        lines.Add(catalog.Manifest.Count > 0 ? "manifest: ai-project.json 已載入" : "manifest: 無（使用掃描結果）");
-        return string.Join('\n', lines);
-    }
+    public static string DoctorReport(ProjectCatalog? catalog) => DoctorSnapshot.Build(catalog).ToText();
 
     internal static string? ResolvePreStartPath(string root, string? preStart)
     {

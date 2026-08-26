@@ -134,6 +134,41 @@ public class DocsServiceTests
     }
 
     [Fact]
+    public void LooksLikeStub_OnlyFullwidthPlaceholder()
+    {
+        Assert.True(DocsService.LooksLikeStub("（待補）寫這頁的說明。"));
+        Assert.True(DocsService.LooksLikeStub(DocsService.NewPageStub("user/x.md")));
+        Assert.False(DocsService.LooksLikeStub("摘要列會顯示待補 2。"));
+        Assert.False(DocsService.LooksLikeStub("黃色＝無文件／缺骨架／有待補"));
+        Assert.False(DocsService.LooksLikeStub(""));
+        Assert.False(DocsService.LooksLikeStub(null));
+    }
+
+    [Fact]
+    public void Scan_MentioningChipLabel_IsNotStub()
+    {
+        var root = NewTemp();
+        try
+        {
+            DocsService.Scaffold(root, new DocsScaffoldContext("X", root, [], [], "", null));
+            foreach (var rel in DocsService.ScaffoldFiles)
+            {
+                if (!rel.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                DocsService.Write(root, rel, $"---\ntitle: {rel}\n---\n\n# 已寫\n\n摘要列：待補 2。\n");
+            }
+            var status = DocsService.Scan(root);
+            Assert.Equal(DocsHealth.Ready, status.Health);
+            Assert.Equal(0, status.StubCount);
+            Assert.DoesNotContain(status.Files, f => f.IsStub);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public void WorkflowAndDocfxTemplates_PointAtDocsFolder()
     {
         var yml = DocsService.WorkflowTemplate();
@@ -238,6 +273,37 @@ public class DocsServiceTests
         var line = DocsService.DoctorLine(null);
         Assert.Contains("文件", line);
         Assert.Contains("dotnet", line);
+    }
+
+    [Fact]
+    public void InspectDocfx_SeesProjectManifestOnly()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-docfx-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.False(DocsService.DocfxAvailable(root));
+            Assert.Equal(DocfxDetectKind.Missing, DocsService.InspectDocfx(root).Kind);
+            Directory.CreateDirectory(Path.Combine(root, ".config"));
+            File.WriteAllText(Path.Combine(root, ".config", "dotnet-tools.json"), """{"version":1,"isRoot":true,"tools":{}}""");
+            Assert.True(DocsService.DocfxAvailable(root));
+            Assert.Equal(DocfxDetectKind.ProjectManifest, DocsService.InspectDocfx(root).Kind);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void InspectDocfx_WithoutProject_SeesHostManifest()
+    {
+        var host = DocsService.FindHostToolsManifest();
+        if (host is null)
+            return;
+        var detect = DocsService.InspectDocfx(null);
+        Assert.True(detect.Available);
+        Assert.Equal(DocfxDetectKind.HostManifest, detect.Kind);
     }
 
     [Fact]

@@ -138,6 +138,8 @@ public sealed class ConsoleSession : IDisposable
     public BuildFailure? LastBuildFailure { get; private set; }
 
     public string? Dialog { get; private set; }
+    public DoctorSnapshot? DoctorView { get; private set; }
+    public bool DoctorCopied { get; private set; }
     public string AlertTitle { get; private set; } = "";
     public string AlertBody { get; private set; } = "";
     public GithubConfig GithubDraft { get; private set; } = new();
@@ -313,6 +315,11 @@ public sealed class ConsoleSession : IDisposable
 
     public int ReadyCount => Catalog is null ? 0 : Catalog.Services.Count(s => Health.GetValueOrDefault(s.Id));
     public int ServiceCount => Catalog?.Services.Count ?? 0;
+    public bool HasOpenableFrontend => ServiceCatalogBuilder.HasOpenableFrontend(Catalog);
+    public bool HasUatTarget => ServiceCatalogBuilder.HasUiOrService(Catalog);
+
+    public bool IsSelfService(ServiceEntry svc) =>
+        Catalog is not null && ServiceCatalogBuilder.IsCurrentConsole(Catalog, svc);
     public int OfflineCount => Math.Max(0, ServiceCount - ReadyCount);
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
     public string? LastAuditFailTool => AuditEntries.LastOrDefault(e => !e.Ok)?.Tool;
@@ -885,6 +892,11 @@ public sealed class ConsoleSession : IDisposable
             LastBuildFailure = null;
             CompileHelpEnabled = false;
             Health.Clear();
+            foreach (var svc in catalog.Services)
+            {
+                if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
+                    Health[svc.Id] = true;
+            }
             StartErrors.Clear();
             _collapsedServiceGroups.Clear();
             _collapsedProjectGroups.Clear();
@@ -1459,6 +1471,11 @@ public sealed class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return Task.CompletedTask;
+        if (IsSelfService(svc))
+        {
+            _native.Info("本機控制台", ProcessSupervisor.SelfConsoleStartMessage);
+            return Task.CompletedTask;
+        }
         if (!string.IsNullOrEmpty(svc.HostedBy))
         {
             _native.Info("隨宿主啟動", $"「{svc.Label}」隨 {svc.HostedBy} 一併提供，請啟動宿主服務。");
@@ -1501,6 +1518,11 @@ public sealed class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return Task.CompletedTask;
+        if (IsSelfService(svc))
+        {
+            _native.Info("本機控制台", "這是目前這個控制台，停止請用右上角「離開」。");
+            return Task.CompletedTask;
+        }
         var catalog = Catalog!;
         var runtime = Runtime!;
         return RunJobAsync($"停止 {svc.Label}…", () =>
@@ -1514,6 +1536,11 @@ public sealed class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return Task.CompletedTask;
+        if (IsSelfService(svc))
+        {
+            _native.Info("本機控制台", ProcessSupervisor.SelfConsoleStartMessage);
+            return Task.CompletedTask;
+        }
         var catalog = Catalog!;
         var runtime = Runtime!;
         return RunJobAsync($"重啟 {svc.Label}…", () =>
@@ -1557,7 +1584,68 @@ public sealed class ConsoleSession : IDisposable
             CliUtil.OpenUrl(svc.OpenUrl);
     }
 
-    public void Doctor() => _native.Info("環境體檢", ProcessSupervisor.DoctorReport(Catalog));
+    public void Doctor()
+    {
+        DoctorView = DoctorSnapshot.Build(Catalog);
+        DoctorCopied = false;
+        Dialog = "doctor";
+        Notify();
+    }
+
+    public async Task CopyDoctorAsync()
+    {
+        if (DoctorView is null || Js is null)
+            return;
+        try
+        {
+            await Js.InvokeVoidAsync("aiConsole.copyText", DoctorView.ToText()).ConfigureAwait(false);
+            DoctorCopied = true;
+            JobText = "已複製環境體檢報告。";
+        }
+        catch
+        {
+            DoctorCopied = false;
+            JobText = "無法複製到剪貼簿。";
+        }
+        Notify();
+    }
+
+    public void OpenDoctorSettings(string tab)
+    {
+        OpenPreferences(tab);
+    }
+
+    public async Task PickProjectFromDoctorAsync()
+    {
+        CloseDialog();
+        await PickProjectAsync().ConfigureAwait(false);
+    }
+
+    public async Task InstallDocfxFromDoctorAsync()
+    {
+        if (Catalog is null || JobBusy)
+            return;
+        JobBusy = true;
+        JobText = "安裝 DocFX…";
+        Notify();
+        try
+        {
+            var msg = await DocsService.InstallDocfxAsync(Catalog.Root).ConfigureAwait(false);
+            JobText = msg;
+        }
+        catch (Exception ex)
+        {
+            JobText = "錯誤";
+            _native.Error("安裝 DocFX", FirstLine(ex.Message));
+        }
+        finally
+        {
+            JobBusy = false;
+            if (Dialog == "doctor")
+                DoctorView = DoctorSnapshot.Build(Catalog);
+            Notify();
+        }
+    }
 
     public Task CheckUpdateAsync() =>
         RunJobAsync("檢查更新…", async () =>
@@ -1924,11 +2012,19 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
+    public void RefreshDocsFromUi()
+    {
+        RefreshDocs(keepSelection: true);
+        JobText = Docs is null ? "已刷新文件" : "文件 " + Docs.Label();
+        Notify();
+    }
+
     public void RefreshDocs(bool keepSelection = false)
     {
         if (Catalog is null)
         {
             ClearDocsState();
+            Notify();
             return;
         }
         var previous = keepSelection ? SelectedDocPath : null;
@@ -1944,6 +2040,7 @@ public sealed class ConsoleSession : IDisposable
         {
             if (!DocsDirty)
                 LoadDoc(previous);
+            Notify();
             return;
         }
         SelectedDocPath = null;
@@ -1952,6 +2049,7 @@ public sealed class ConsoleSession : IDisposable
         var first = Docs.Files.FirstOrDefault(f => !f.IsConfig) ?? Docs.Files.FirstOrDefault();
         if (first is not null)
             LoadDoc(first.RelPath);
+        Notify();
     }
 
     public void SetDocsDraft(string value)
@@ -2493,7 +2591,7 @@ public sealed class ConsoleSession : IDisposable
 
     public void OpenUatDialog()
     {
-        if (!RequireCatalog())
+        if (!RequireCatalog() || !HasUatTarget)
             return;
         UatTitle = "";
         UatDescription = "";
@@ -2639,6 +2737,8 @@ public sealed class ConsoleSession : IDisposable
     public void CloseDialog()
     {
         Dialog = null;
+        DoctorView = null;
+        DoctorCopied = false;
         Notify();
     }
 
@@ -3148,7 +3248,7 @@ public sealed class ConsoleSession : IDisposable
                     var catalog = Catalog;
                     var health = new Dictionary<string, bool>();
                     foreach (var svc in catalog.Services)
-                        health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(svc).ConfigureAwait(false);
+                        health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(catalog, svc).ConfigureAwait(false);
                     Health.Clear();
                     foreach (var kv in health)
                         Health[kv.Key] = kv.Value;

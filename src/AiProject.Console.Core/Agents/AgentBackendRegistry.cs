@@ -46,15 +46,10 @@ public static class AgentBackendRegistry
         return backend.Detect(CliOverrideFor(backend));
     }
 
-    public static IReadOnlyList<string> DoctorLines()
+    public static AgentDoctorInfo Inspect()
     {
         var current = Current();
         var currentDetect = current.Detect(CliOverrideFor(current));
-        var lines = new List<string>
-        {
-            $"目前 Agent 後端：{current.DisplayName}（{(currentDetect.Available ? "可用" : "不可用")}）",
-            "  " + currentDetect.Summary,
-        };
         var othersOk = new List<string>();
         var othersMissing = new List<string>();
         foreach (var backend in Backends)
@@ -67,11 +62,38 @@ public static class AgentBackendRegistry
             else
                 othersMissing.Add(backend.DisplayName);
         }
-        if (othersOk.Count > 0)
-            lines.Add("其他已安裝：" + string.Join("、", othersOk));
-        if (othersMissing.Count > 0)
-            lines.Add("未偵測：" + string.Join("、", othersMissing));
+        return new AgentDoctorInfo(
+            current.Id,
+            current.DisplayName,
+            currentDetect.Available,
+            currentDetect.Summary,
+            currentDetect.CliPath,
+            othersOk,
+            othersMissing);
+    }
+
+    public static IReadOnlyList<string> DoctorLines()
+    {
+        var info = Inspect();
+        var lines = new List<string>
+        {
+            $"目前 Agent 後端：{info.CurrentName}（{(info.Available ? "可用" : "不可用")}）",
+            "  " + info.Summary,
+        };
+        if (info.InstalledOthers.Count > 0)
+            lines.Add("其他已安裝：" + string.Join("、", info.InstalledOthers));
+        if (info.MissingOthers.Count > 0)
+            lines.Add("未偵測：" + string.Join("、", info.MissingOthers));
         lines.Add("可在「設定」切換後端。");
         return lines;
     }
 }
+
+public sealed record AgentDoctorInfo(
+    string CurrentId,
+    string CurrentName,
+    bool Available,
+    string Summary,
+    string? CliPath,
+    IReadOnlyList<string> InstalledOthers,
+    IReadOnlyList<string> MissingOthers);

@@ -134,7 +134,7 @@ public static class ServiceCatalogBuilder
                 frontend = first.Id;
         }
 
-        var summary = $"{projects.Count} 專案 · {projects.Count(p => p.IsExecutable)} 可執行 · {services.Count} 對外服務";
+        var summary = $"{projects.Count} 專案 · {projects.Count(p => p.IsExecutable)} 可執行 · {services.Count} 服務";
         if (!string.IsNullOrEmpty(scan.Error))
             summary = scan.Error;
 
@@ -151,6 +151,44 @@ public static class ServiceCatalogBuilder
             Summary = summary,
         };
     }
+
+    public static bool HasOpenableFrontend(ProjectCatalog? catalog) =>
+        catalog is not null && catalog.Services.Any(s => !string.IsNullOrEmpty(s.OpenUrl));
+
+    public static bool HasUiOrService(ProjectCatalog? catalog) =>
+        catalog is not null && catalog.Services.Count > 0;
+
+    public static bool IsCurrentConsole(ProjectCatalog catalog, ServiceEntry svc, string? processDirectory = null)
+    {
+        var host = HostService(catalog, svc);
+        var projectDir = ResolveProjectDirectory(catalog, host);
+        if (projectDir is null)
+            return false;
+        var procDir = Path.GetFullPath(processDirectory ?? AppContext.BaseDirectory);
+        return IsSameOrUnder(procDir, projectDir);
+    }
+
+    internal static string? ResolveProjectDirectory(ProjectCatalog catalog, ServiceEntry svc)
+    {
+        var rel = (svc.Project ?? "").Replace('/', Path.DirectorySeparatorChar);
+        var full = Path.GetFullPath(Path.Combine(catalog.Root, rel));
+        if (Directory.Exists(full))
+            return full;
+        if (File.Exists(full))
+            return Path.GetDirectoryName(full);
+        var csproj = full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? full : full + ".csproj";
+        return File.Exists(csproj) ? Path.GetDirectoryName(csproj) : null;
+    }
+
+    internal static bool IsSameOrUnder(string path, string root)
+    {
+        var a = WithTrailingSep(Path.GetFullPath(path));
+        var b = WithTrailingSep(Path.GetFullPath(root));
+        return a.StartsWith(b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string WithTrailingSep(string path) =>
+        path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
     public static ServiceEntry? ById(ProjectCatalog catalog, string id) =>
         catalog.Services.FirstOrDefault(s => s.Id == id);

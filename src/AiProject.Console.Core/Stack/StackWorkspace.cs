@@ -182,6 +182,8 @@ public sealed class StackWorkspace
     public string StartService(string id)
     {
         var svc = RequireService(id);
+        if (ServiceCatalogBuilder.IsCurrentConsole(Catalog, svc))
+            return Error(ProcessSupervisor.SelfConsoleStartMessage);
         if (!string.IsNullOrEmpty(svc.HostedBy))
             return Error($"「{svc.Label}」隨 {svc.HostedBy} 啟動，請啟動宿主。");
         var err = ProcessSupervisor.TryStartService(Catalog, Runtime, svc);
@@ -193,6 +195,8 @@ public sealed class StackWorkspace
     public string StopService(string id)
     {
         var svc = RequireService(id);
+        if (ServiceCatalogBuilder.IsCurrentConsole(Catalog, svc))
+            return Error("這是目前這個控制台，停止請用右上角「離開」。");
         ProcessSupervisor.StopService(Catalog, Runtime, svc);
         return Json(new { ok = true, id = svc.Id, label = svc.Label, stopped = true });
     }
@@ -294,7 +298,7 @@ public sealed class StackWorkspace
     {
         var health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         foreach (var svc in Catalog.Services)
-            health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(svc).ConfigureAwait(false);
+            health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(Catalog, svc).ConfigureAwait(false);
         return health;
     }
 

@@ -8,6 +8,49 @@ public enum DocsHealth
     Ready,
 }
 
+public enum DocfxDetectKind
+{
+    Command,
+    ProjectManifest,
+    HostManifest,
+    Missing,
+    NoDotnet,
+}
+
+public sealed record DocfxDetect(bool Available, DocfxDetectKind Kind)
+{
+    public string DoctorText => Kind switch
+    {
+        DocfxDetectKind.Command => "OK",
+        DocfxDetectKind.ProjectManifest => "OK（專案 dotnet 本機工具）",
+        DocfxDetectKind.HostManifest => "OK（控制台 dotnet 本機工具）",
+        DocfxDetectKind.NoDotnet => "缺少（需要 dotnet）",
+        _ => "缺少（將用 dotnet tool restore）",
+    };
+
+    public string Label => Kind switch
+    {
+        DocfxDetectKind.Command => "已安裝",
+        DocfxDetectKind.ProjectManifest => "已就緒（此專案的 dotnet 本機工具）",
+        DocfxDetectKind.HostManifest => "已就緒（控制台倉庫的 dotnet 本機工具）",
+        DocfxDetectKind.NoDotnet => "需要先安裝 .NET SDK，才能安裝 DocFX。",
+        _ => "此專案還沒有 DocFX 本機工具。",
+    };
+
+    public string Badge => Available ? "正常" : Kind == DocfxDetectKind.NoDotnet ? "缺少" : "未安裝";
+
+    public string? HowTo => Kind switch
+    {
+        DocfxDetectKind.NoDotnet => "先安裝 .NET SDK：https://dot.net/  再回到這裡按「安裝 DocFX」。",
+        DocfxDetectKind.Missing =>
+            "在專案根目錄執行：\n" +
+            "dotnet tool restore\n\n" +
+            "若還沒有 .config/dotnet-tools.json，按「安裝 DocFX」會寫入清單並 restore。\n" +
+            "之後預覽：dotnet docfx docs/docfx.json --serve",
+        _ => null,
+    };
+}
+
 public sealed record DocsFile(
     string RelPath,
     string Title,

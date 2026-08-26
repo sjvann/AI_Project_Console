@@ -223,6 +223,38 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .prewrap { white-space: pre-wrap; }
 .change-list { max-height: 180px; overflow: auto; margin: 0; padding: 8px 10px; border-radius: 3px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; background: var(--log-bg); color: var(--log-fg); white-space: pre; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.doctor-dialog { display: flex; flex-direction: column; width: min(680px, 94vw); max-height: min(640px, 88vh); padding: 16px 0 0; overflow: hidden; }
+.doctor-head { padding: 0 18px; }
+.doctor-dialog h2 { margin: 0; }
+.doctor-body { flex: 1; overflow: auto; padding: 12px 18px 4px; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.doctor-summary { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--ok-row); }
+.doctor-summary.doctor-warn { background: var(--panel); border-color: var(--wait); }
+.doctor-summary.doctor-missing { background: var(--fail-row); }
+.doctor-summary-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--ok); }
+.doctor-summary.doctor-warn .doctor-summary-dot { background: var(--wait); }
+.doctor-summary.doctor-missing .doctor-summary-dot { background: var(--danger); }
+.doctor-summary.doctor-info .doctor-summary-dot { background: var(--down); }
+.doctor-summary-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.doctor-summary-text strong { font-size: 15px; }
+.doctor-summary-text span { color: var(--muted); font-size: 13px; }
+.doctor-section { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 10px 12px; }
+.doctor-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.doctor-section h3 { margin: 0; font-size: 13px; }
+.doctor-list { list-style: none; margin: 0; padding: 0; }
+.doctor-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.doctor-row:last-child { border-bottom: none; }
+.doctor-label { color: var(--muted); font-weight: 600; padding-top: 1px; }
+.doctor-value { min-width: 0; font-weight: 600; }
+.doctor-detail { display: block; margin-top: 2px; color: var(--muted); font: 12px/1.45 "Cascadia Mono", Consolas, monospace; font-weight: 400; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
+.doctor-status { font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--muted); white-space: nowrap; cursor: default; }
+.doctor-status.doctor-ok { color: var(--ok); }
+.doctor-status.doctor-warn { color: var(--wait); }
+.doctor-status.doctor-missing { color: var(--danger); }
+.doctor-note { margin: 6px 0 0; }
+.doctor-action { margin-top: 6px; padding: 0; }
+.doctor-action-btn { margin-top: 8px; }
+.doctor-howto { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); color: var(--text); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; font-weight: 400; white-space: pre-wrap; grid-column: 1 / -1; }
+.doctor-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; }
 select.history { max-width: 360px; padding: 6px 8px; }
 label.check { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .btn-compact { padding: 5px 8px; white-space: nowrap; }

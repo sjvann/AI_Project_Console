@@ -161,7 +161,7 @@
                 {
                     @if (S.Catalog is null || S.Catalog.Services.Count == 0)
                     {
-                        <p class="hint">沒有對外服務。可放置 ai-project.json，或確認 launchSettings 有 applicationUrl。</p>
+                        <p class="hint">沒有服務或 UI。可放置 ai-project.json；Web 專案請確認 launchSettings 有 applicationUrl。Blazor／桌面 UI 即使沒有網址也會列入。</p>
                     }
                     else
                     {
@@ -177,9 +177,10 @@
                             {
                             @foreach (var svc in g)
                             {
-                                var on = S.Health.GetValueOrDefault(svc.Id);
+                                var self = S.IsSelfService(svc);
+                                var on = self || S.Health.GetValueOrDefault(svc.Id);
                                 <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null)" @onclick="@(() => S.SelectService(svc.Id))">
-                                    <span class="@(on ? "status-on" : "status-off")">@(on ? "線上" : "離線")</span>
+                                    <span class="@(on ? "status-on" : "status-off")">@(self ? "本機" : on ? "線上" : "離線")</span>
                                     <span>@svc.Label</span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
                                     <span>
@@ -187,7 +188,11 @@
                                         {
                                             <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.OpenServiceUrl(svc))">開啟</button>
                                         }
-                                        @if (!string.IsNullOrEmpty(svc.HostedBy))
+                                        @if (self)
+                                        {
+                                            <span class="hint" title="這是目前這個控制台，再啟動會再開一扇視窗">目前這個視窗</span>
+                                        }
+                                        else if (!string.IsNullOrEmpty(svc.HostedBy))
                                         {
                                             <span class="hint">隨 @svc.HostedBy</span>
                                         }
@@ -254,7 +259,7 @@
                         <span class="hint grow">@(S.Docs?.Label() ?? "尚未掃描")</span>
                         <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.ScaffoldDocsAsync">建立體系</button>
                         <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.OpenNewDocDialog())">新增文件</button>
-                        <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.RefreshDocs(true))">刷新</button>
+                        <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.RefreshDocsFromUi">刷新</button>
                     </div>
                     @if (!string.IsNullOrEmpty(S.DocsHint))
                     {
@@ -1066,6 +1071,11 @@
             </div>
         </div>
     </div>
+}
+
+@if (S.Dialog == "doctor")
+{
+    <DoctorDialog S="S" />
 }
 
 @code {

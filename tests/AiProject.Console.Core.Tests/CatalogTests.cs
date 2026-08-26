@@ -399,6 +399,135 @@ public class CatalogTests
     }
 
     [Fact]
+    public void BuildCatalog_DesktopUiWithoutLaunchSettings_IsListed()
+    {
+        var root = CreateProjectWithoutLaunch("Demo.App", """
+        <Project Sdk="Microsoft.NET.Sdk.Razor">
+          <PropertyGroup>
+            <OutputType>WinExe</OutputType>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+          <ItemGroup>
+            <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+          </ItemGroup>
+        </Project>
+        """, extraFile: ("Home.razor", "<h1>Hi</h1>"));
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Single(catalog.Services);
+            Assert.True(catalog.Scan.Projects[0].IsUi);
+            Assert.True(catalog.Scan.Projects[0].IsExecutable);
+            Assert.Equal("", catalog.Services[0].OpenUrl);
+            Assert.Null(catalog.Services[0].Port);
+            Assert.True(ServiceCatalogBuilder.HasUiOrService(catalog));
+            Assert.False(ServiceCatalogBuilder.HasOpenableFrontend(catalog));
+            var bin = Path.Combine(root, "src", "Demo.App", "bin", "Debug", "net8.0");
+            Directory.CreateDirectory(bin);
+            Assert.True(ServiceCatalogBuilder.IsCurrentConsole(catalog, catalog.Services[0], bin));
+            Assert.False(ServiceCatalogBuilder.IsCurrentConsole(catalog, catalog.Services[0], Path.GetTempPath()));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IsCurrentConsole_FalseWhenProcessIsElsewhere()
+    {
+        Assert.False(ServiceCatalogBuilder.IsCurrentConsole(
+            new ProjectCatalog
+            {
+                Root = Path.GetTempPath(),
+                Name = "x",
+                Services = [new ServiceEntry("web", "Web", "Web", "src/Web", null, "", "", "src")],
+                Projects = [],
+                StartOrder = [],
+                Frontend = "",
+                Manifest = new JsonObject(),
+                Scan = new ScanResult(Path.GetTempPath(), []),
+            },
+            new ServiceEntry("web", "Web", "Web", "src/Web", null, "", "", "src"),
+            AppContext.BaseDirectory));
+    }
+
+    [Fact]
+    public void BuildCatalog_WebUiWithoutLaunchSettings_IsListed()
+    {
+        var root = CreateProjectWithoutLaunch("Demo.Web", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+        </Project>
+        """, extraFile: ("Home.razor", "<h1>Hi</h1>"));
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Single(catalog.Services);
+            Assert.True(catalog.Scan.Projects[0].IsUi);
+            Assert.False(catalog.Scan.Projects[0].IsWebApi);
+            Assert.Equal("", catalog.Services[0].OpenUrl);
+            Assert.False(ServiceCatalogBuilder.HasOpenableFrontend(catalog));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_WebApiWithoutLaunchSettings_IsNotListed()
+    {
+        var root = CreateProjectWithoutLaunch("Demo.Api", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+          <ItemGroup>
+            <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+          </ItemGroup>
+        </Project>
+        """);
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Empty(catalog.Services);
+            Assert.True(catalog.Scan.Projects[0].IsWebApi);
+            Assert.False(catalog.Scan.Projects[0].IsUi);
+            Assert.False(ServiceCatalogBuilder.HasUiOrService(catalog));
+            Assert.False(ServiceCatalogBuilder.HasOpenableFrontend(catalog));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void HasOpenableFrontend_TrueWhenServiceHasUrl()
+    {
+        var root = CreateScanOnlyProject("Demo.Web", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+        </Project>
+        """, launchUrl: "", extraFile: ("Home.razor", "<h1>Hi</h1>"));
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.True(ServiceCatalogBuilder.HasUiOrService(catalog));
+            Assert.True(ServiceCatalogBuilder.HasOpenableFrontend(catalog));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void BuildCatalog_ExplicitLaunchUrlWinsOverScalarDefault()
     {
         var root = CreateScanOnlyProject("Demo.Api", """
@@ -450,6 +579,17 @@ public class CatalogTests
           "frontend": "web"
         }
         """);
+        return root;
+    }
+
+    static string CreateProjectWithoutLaunch(string name, string csproj, (string Name, string Content)? extraFile = null)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-test-" + Guid.NewGuid().ToString("N"));
+        var proj = Path.Combine(root, "src", name);
+        Directory.CreateDirectory(proj);
+        File.WriteAllText(Path.Combine(proj, name + ".csproj"), csproj);
+        if (extraFile is { } extra)
+            File.WriteAllText(Path.Combine(proj, extra.Name), extra.Content);
         return root;
     }
 

@@ -16,7 +16,8 @@ public sealed record ProjectInfo(
     IReadOnlyList<string> ApplicationUrls,
     string LaunchUrl,
     string Group,
-    string Language = "");
+    string Language = "",
+    bool IsUi = false);
 
 public sealed record ScanResult(string Root, IReadOnlyList<ProjectInfo> Projects, string Error = "");
 

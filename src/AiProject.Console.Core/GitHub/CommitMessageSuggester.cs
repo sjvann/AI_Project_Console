@@ -32,16 +32,28 @@ public static class CommitMessageSuggester
         return FindWellKnownAgentCli();
     }
 
-    public static string DoctorLine()
+    public static AgentCliDoctor InspectCli()
     {
         var cli = ResolveAgentCli();
         if (cli is null)
-            return "Cursor Agent CLI: 缺少（選用；提交對話框的「AI 建議」會改依 diff 產生草稿）";
-        var login = ProbeAgentLogin(cli);
-        return login is null
-            ? "Cursor Agent CLI: OK — " + cli
-            : "Cursor Agent CLI: 已安裝但未登入 — " + cli + "（請在終端機執行 agent login）";
+        {
+            return new AgentCliDoctor(
+                false,
+                false,
+                null,
+                "Cursor Agent CLI: 缺少（選用；提交對話框的「AI 建議」會改依 diff 產生草稿）");
+        }
+        var needsLogin = ProbeAgentLogin(cli) is not null;
+        return new AgentCliDoctor(
+            true,
+            needsLogin,
+            cli,
+            needsLogin
+                ? "Cursor Agent CLI: 已安裝但未登入 — " + cli + "（請在終端機執行 agent login）"
+                : "Cursor Agent CLI: OK — " + cli);
     }
+
+    public static string DoctorLine() => InspectCli().Line;
 
     public static string LocalDraftHint(string? agentError)
     {
@@ -507,3 +519,5 @@ public static class CommitMessageSuggester
         _ => c,
     };
 }
+
+public sealed record AgentCliDoctor(bool Installed, bool NeedsLogin, string? Path, string Line);

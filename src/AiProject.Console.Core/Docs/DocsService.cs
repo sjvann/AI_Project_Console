@@ -13,7 +13,8 @@ namespace AiProject.Console.Core.Docs;
 public static class DocsService
 {
     public const string FolderName = "docs";
-    public const string TodoMarker = "待補";
+    /// <summary>骨架占位句。判定待補只認這組字，避免說明文提到摘要列「待補」也被算進去。</summary>
+    public const string TodoMarker = "（待補）";
     public const string DefaultServeUrl = "http://127.0.0.1:8080/";
     public const string WorkflowRelPath = ".github/workflows/docs.yml";
     public const string ToolsManifestRelPath = ".config/dotnet-tools.json";
@@ -391,7 +392,7 @@ public static class DocsService
         var parts = new List<string>
         {
             "dotnet: " + (CliUtil.CommandExists("dotnet") ? "OK" : "缺少"),
-            "docfx: " + (DocfxAvailable(projectRoot) ? "OK" : "缺少（將用 dotnet tool restore）"),
+            "docfx: " + InspectDocfx(projectRoot).DoctorText,
         };
         if (string.IsNullOrWhiteSpace(projectRoot))
             return "文件：" + string.Join("；", parts);
@@ -401,16 +402,52 @@ public static class DocsService
         return "文件：" + string.Join("；", parts);
     }
 
-    public static bool DocfxAvailable(string? projectRoot)
+    public static bool DocfxAvailable(string? projectRoot) => InspectDocfx(projectRoot).Available;
+
+    /// <summary>
+    /// 專案有工具清單時看該專案；未選專案時改看控制台所在倉庫（本機 <c>dotnet tool</c>，不是 PATH 上的 <c>docfx</c>）。
+    /// </summary>
+    public static DocfxDetect InspectDocfx(string? projectRoot)
     {
         if (CliUtil.CommandExists("docfx"))
-            return true;
+            return new DocfxDetect(true, DocfxDetectKind.Command);
         if (!CliUtil.CommandExists("dotnet"))
-            return false;
-        var root = string.IsNullOrWhiteSpace(projectRoot) ? null : Path.GetFullPath(projectRoot);
-        if (root is not null && File.Exists(Path.Combine(root, ToolsManifestRelPath.Replace('/', Path.DirectorySeparatorChar))))
-            return true;
-        return false;
+            return new DocfxDetect(false, DocfxDetectKind.NoDotnet);
+        if (!string.IsNullOrWhiteSpace(projectRoot))
+        {
+            return HasToolsManifest(projectRoot)
+                ? new DocfxDetect(true, DocfxDetectKind.ProjectManifest)
+                : new DocfxDetect(false, DocfxDetectKind.Missing);
+        }
+        return FindHostToolsManifest() is not null
+            ? new DocfxDetect(true, DocfxDetectKind.HostManifest)
+            : new DocfxDetect(false, DocfxDetectKind.Missing);
+    }
+
+    public static bool HasToolsManifest(string projectRoot) =>
+        File.Exists(Path.Combine(Path.GetFullPath(projectRoot), ToolsManifestRelPath.Replace('/', Path.DirectorySeparatorChar)));
+
+    internal static string? FindHostToolsManifest()
+    {
+        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            DirectoryInfo? dir;
+            try
+            {
+                dir = new DirectoryInfo(Path.GetFullPath(start));
+            }
+            catch
+            {
+                continue;
+            }
+            for (var i = 0; dir is not null && i < 8; i++, dir = dir.Parent)
+            {
+                var path = Path.Combine(dir.FullName, ".config", "dotnet-tools.json");
+                if (File.Exists(path))
+                    return path;
+            }
+        }
+        return null;
     }
 
     public static async Task<string> BuildAsync(string projectRoot, int timeoutMs = 180_000)
@@ -611,6 +648,17 @@ public static class DocsService
 
     public static bool LooksLikeStub(string? content) =>
         !string.IsNullOrEmpty(content) && content.Contains(TodoMarker, StringComparison.Ordinal);
+
+    public static async Task<string> InstallDocfxAsync(string projectRoot)
+    {
+        if (!CliUtil.CommandExists("dotnet"))
+            throw new InvalidOperationException("需要 dotnet。請先安裝 .NET SDK：https://dot.net/");
+        var created = EnsureToolsManifest(projectRoot);
+        await RestoreDocfxAsync(projectRoot).ConfigureAwait(false);
+        return created
+            ? "已寫入 .config/dotnet-tools.json，並完成 dotnet tool restore。"
+            : "已執行 dotnet tool restore。";
+    }
 
     static async Task RestoreDocfxAsync(string projectRoot)
     {
