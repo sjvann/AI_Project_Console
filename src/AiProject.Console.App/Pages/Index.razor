@@ -125,6 +125,12 @@
                     @S.CiChipText
                 </button>
             }
+            @if (S.ShowPrChip)
+            {
+                <button type="button" class="duty-chip is-@S.PrChipTone" title="目前分支的 PR 檢查是否通過，點一下看摘要" @onclick="S.OpenPrDialogAsync">
+                    @S.PrChipText
+                </button>
+            }
             @if (!string.IsNullOrEmpty(S.DutyAttention))
             {
                 <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
@@ -764,6 +770,10 @@
         <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="ci-title" aria-modal="true">
             <h2 id="ci-title">Actions 狀態</h2>
             <p class="hint">遠端 GitHub Actions 最近執行。控制台只告訴你過了沒有；詳細 log 請在 GitHub 開，不要把這裡當成第二個 CI 畫面。</p>
+            @if (S.CanScaffoldCi)
+            {
+                <p class="hint">這個倉庫還沒有建置／測試 workflow。可寫入骨架，審查後再提交。</p>
+            }
             @if (!string.IsNullOrEmpty(S.Actions?.Error))
             {
                 <p class="hint warn">@S.Actions!.Error</p>
@@ -786,7 +796,51 @@
             }
             <div class="dialog-actions">
                 <button class="btn-sec" @onclick="S.CloseDialog">關閉</button>
+                @if (S.CanScaffoldCi)
+                {
+                    <button class="btn-sec" disabled="@S.JobBusy" @onclick="@(() => S.ScaffoldCiWorkflowAsync())">補齊 CI workflow</button>
+                }
                 <button class="btn-primary" disabled="@(S.Actions?.Latest is null)" @onclick="S.OpenLatestCiRun">開啟最新</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "pr")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="pr-title" aria-modal="true">
+            <h2 id="pr-title">PR 檢查</h2>
+            <p class="hint">控制台只看檢查過了沒有。留言、指定審查人與合併請到 GitHub。</p>
+            @if (S.PullRequest is { HasPr: true } pr)
+            {
+                <p><strong>@pr.Title</strong></p>
+                <p class="hint">@(string.IsNullOrEmpty(pr.Head) ? "" : pr.Head)@(string.IsNullOrEmpty(pr.Base) ? "" : " → " + pr.Base)@(pr.IsDraft ? " · 草稿" : "")</p>
+                <p class="hint">@pr.Hint()</p>
+                @if (pr.Checks.Count > 0)
+                {
+                    <div class="ci-list" role="list">
+                        @foreach (var check in pr.Checks)
+                        {
+                            <button type="button" class="ci-row" role="listitem" title="在瀏覽器開啟" @onclick="@(() => S.OpenPrCheck(check.Url))">
+                                <span class="ci-row-name">@check.Line()</span>
+                                <span class="ci-row-meta">@(check.IsFailure ? "失敗" : check.IsPending ? "進行中" : "通過")</span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="hint">@(S.PullRequest?.Hint() ?? "尚未讀到 PR。")</p>
+            }
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">關閉</button>
+                @if (S.CanScaffoldCi)
+                {
+                    <button class="btn-sec" disabled="@S.JobBusy" @onclick="@(() => S.ScaffoldCiWorkflowAsync())">補齊 CI workflow</button>
+                }
+                <button class="btn-primary" disabled="@(S.PullRequest is not { HasPr: true })" @onclick="S.OpenPullRequest">在 GitHub 開啟</button>
             </div>
         </div>
     </div>

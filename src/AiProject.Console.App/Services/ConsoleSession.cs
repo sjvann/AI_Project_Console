@@ -207,6 +207,17 @@ public sealed class ConsoleSession : IDisposable
     public bool ShowCiChip => HasProject && GithubManaged && GithubLoggedIn;
     public string CiChipText => Actions?.ChipText() ?? "CI …";
     public string CiChipTone => Actions?.ChipTone() ?? "wait";
+    public bool CanScaffoldCi => Catalog is not null && !CiWorkflow.HasBuildTest(Catalog.Root);
+    public PullRequestStatus? PullRequest { get; private set; }
+    public bool ShowPrChip =>
+        ShowCiChip
+        && PullRequest is not null
+        && (PullRequest.HasPr
+            || !string.IsNullOrEmpty(PullRequest.Error)
+            || (GitBrief is { Branch: var branch }
+                && branch is not "main" and not "master" and not "HEAD"));
+    public string PrChipText => PullRequest?.ChipText() ?? "PR …";
+    public string PrChipTone => PullRequest?.ChipTone() ?? "wait";
     public bool GithubAuthBusy { get; private set; }
     public string GithubAuthHint { get; private set; } = "";
     public IReadOnlyList<GithubIssue> AssignedIssues { get; private set; } = [];
@@ -1035,6 +1046,7 @@ public sealed class ConsoleSession : IDisposable
             {
                 await RefreshIssuesAsync().ConfigureAwait(false);
                 await RefreshActionsAsync().ConfigureAwait(false);
+                await RefreshPullRequestAsync().ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1173,6 +1185,7 @@ public sealed class ConsoleSession : IDisposable
                 {
                     await RefreshIssuesAsync().ConfigureAwait(false);
                     await RefreshActionsAsync().ConfigureAwait(false);
+                    await RefreshPullRequestAsync().ConfigureAwait(false);
                 }
                 Notify();
                 return;
@@ -1923,7 +1936,10 @@ public sealed class ConsoleSession : IDisposable
                 await PublishCurrentBranchAsync().ConfigureAwait(false);
                 return;
             case "github_pr":
-                await RunJobAsync("PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!)).ConfigureAwait(false);
+                await OpenOrCreatePrAsync().ConfigureAwait(false);
+                return;
+            case "github_ci_scaffold":
+                await ScaffoldCiWorkflowAsync(alreadyConfirmed: true).ConfigureAwait(false);
                 return;
             case "github_actions":
                 await OpenCiDialogAsync().ConfigureAwait(false);
@@ -2989,6 +3005,98 @@ public sealed class ConsoleSession : IDisposable
         await RunJobAsync("發布中…", async () => await GitHubService.PublishBranchAsync(Catalog!)).ConfigureAwait(false);
         await RefreshGitStatusAsync().ConfigureAwait(false);
         BeginWatchCiAfterPush();
+        await RefreshPullRequestAsync().ConfigureAwait(false);
+    }
+
+    public async Task ScaffoldCiWorkflowAsync(bool alreadyConfirmed = false)
+    {
+        if (!RequireCatalog())
+            return;
+        if (!alreadyConfirmed
+            && !_native.Confirm(
+                "補齊 CI workflow",
+                "將在 .github/workflows/ci.yml 寫入建置／測試骨架（既有檔不覆蓋）。請審查後再提交。控制台不會代跑 Actions。確定？"))
+            return;
+        try
+        {
+            var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+            var branch = string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch;
+            var result = CiWorkflow.Ensure(Catalog!.Root, branch);
+            JobText = result.Created ? "已寫入 CI workflow" : "CI workflow 已存在";
+            Notify();
+            _native.Info("CI workflow", result.Message);
+        }
+        catch (Exception ex)
+        {
+            _native.Error("補齊 CI workflow", FirstLine(ex.Message));
+        }
+    }
+
+    public async Task OpenOrCreatePrAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        await RefreshPullRequestAsync().ConfigureAwait(false);
+        if (PullRequest is { HasPr: true })
+        {
+            Dialog = "pr";
+            Notify();
+            return;
+        }
+        if (PullRequest is { Error: not null and not "" })
+        {
+            _native.Warn("PR", PullRequest.Error);
+            return;
+        }
+        if (!_native.Confirm(
+            "建立 PR",
+            "目前分支還沒有 PR。要用提交說明自動建立嗎？\n審查、留言與合併請到 GitHub。"))
+            return;
+        await RunJobAsync("建立 PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!)).ConfigureAwait(false);
+        await RefreshPullRequestAsync().ConfigureAwait(false);
+        if (PullRequest is { HasPr: true })
+        {
+            Dialog = "pr";
+            Notify();
+        }
+    }
+
+    public async Task OpenPrDialogAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        await RefreshPullRequestAsync().ConfigureAwait(false);
+        Dialog = "pr";
+        Notify();
+    }
+
+    public void OpenPullRequest()
+    {
+        if (!GitHubService.OpenWorkflowRun(PullRequest?.Url))
+            _native.Info("無法開啟", "沒有可開的 PR。請先建立，或到 GitHub 看倉庫。");
+    }
+
+    public void OpenPrCheck(string? url)
+    {
+        if (!GitHubService.OpenWorkflowRun(url))
+            _native.Info("無法開啟", "這個檢查沒有網址。");
+    }
+
+    private async Task RefreshPullRequestAsync()
+    {
+        if (Catalog is null || !GithubLoggedIn || !GithubManaged)
+        {
+            PullRequest = null;
+            return;
+        }
+        try
+        {
+            PullRequest = await GitHubService.GetPullRequestStatusAsync(Catalog).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            PullRequest = PullRequestStatus.Unavailable(FirstLine(ex.Message));
+        }
     }
 
     public async Task OpenCiDialogAsync()
@@ -3058,6 +3166,7 @@ public sealed class ConsoleSession : IDisposable
                 if (gen != _ciWatchGen || Catalog is null)
                     return;
                 await RefreshActionsAsync().ConfigureAwait(false);
+                await RefreshPullRequestAsync().ConfigureAwait(false);
                 var watched = Actions is null ? null : ActionsStatus.PreferWatched(Actions, branch, started);
                 if (watched is null)
                 {
@@ -3516,9 +3625,15 @@ public sealed class ConsoleSession : IDisposable
                     await RefreshIssuesAsync().ConfigureAwait(false);
                 var watchingCi = _ciWatchUntil is { } until && DateTimeOffset.UtcNow < until;
                 if (watchingCi && healthEvery % 6 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
+                {
                     await RefreshActionsAsync().ConfigureAwait(false);
+                    await RefreshPullRequestAsync().ConfigureAwait(false);
+                }
                 else if (healthEvery % 45 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
+                {
                     await RefreshActionsAsync().ConfigureAwait(false);
+                    await RefreshPullRequestAsync().ConfigureAwait(false);
+                }
                 if (healthEvery % 37 == 0)
                     _workHours.Touch();
                 Notify();
@@ -3546,6 +3661,7 @@ public sealed class ConsoleSession : IDisposable
         GitStatusText = "";
         GitBrief = null;
         Actions = null;
+        PullRequest = null;
         _ciWatchUntil = null;
         _ciWatchGen++;
         BranchList = [];

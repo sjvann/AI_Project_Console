@@ -166,7 +166,7 @@ public class StackWorkspaceTests
     public void Tools_CoverManagerLoop()
     {
         var names = StackToolRouter.Tools.Select(t => t.Name).ToHashSet();
-        foreach (var need in new[] { "duty_summary", "stack_status", "build", "get_log", "start_all", "git_status", "ci_status", "doctor" })
+        foreach (var need in new[] { "duty_summary", "stack_status", "build", "get_log", "start_all", "git_status", "ci_status", "pr_status", "doctor" })
             Assert.Contains(need, names);
     }
 

@@ -328,6 +328,42 @@ public sealed class StackWorkspace
         }
     }
 
+    public async Task<string> PrStatusAsync()
+    {
+        try
+        {
+            var snap = await GitHubService.GetPullRequestStatusAsync(Catalog).ConfigureAwait(false);
+            return Json(new
+            {
+                ok = string.IsNullOrEmpty(snap.Error),
+                hasPr = snap.HasPr,
+                chip = snap.ChipText(),
+                tone = snap.ChipTone(),
+                readyForReview = snap.ReadyForReview,
+                snap.Title,
+                snap.Url,
+                snap.IsDraft,
+                head = snap.Head,
+                @base = snap.Base,
+                passed = snap.PassedCount,
+                failed = snap.FailedCount,
+                pending = snap.PendingCount,
+                hint = snap.Hint(),
+                error = snap.Error,
+                checks = snap.Checks.Select(c => new
+                {
+                    c.Name,
+                    result = c.ResultText(),
+                    c.Url,
+                }),
+            });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { ok = false, hasPr = false, chip = "PR 無法讀取", error = ex.Message });
+        }
+    }
+
     public async Task<string> GitStatusAsync()
     {
         var brief = await GitHubService.TryBriefStatusAsync(Root).ConfigureAwait(false);

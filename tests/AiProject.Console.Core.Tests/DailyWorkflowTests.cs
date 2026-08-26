@@ -41,6 +41,9 @@ public class DailyWorkflowTests
         var actions = ActionCatalog.Load("github").Single(a => a.Id == "github_actions");
         Assert.Equal("Actions 狀態…", actions.Label);
         Assert.True(actions.RequiresGithub);
+        var scaffold = ActionCatalog.Load("github").Single(a => a.Id == "github_ci_scaffold");
+        Assert.Equal("補齊 CI workflow…", scaffold.Label);
+        Assert.Contains("不覆蓋", scaffold.Confirm);
         var test = ActionCatalog.Load("build").Single(a => a.Id == "build_test");
         Assert.Equal("跑測試", test.Label);
         Assert.Equal("build_test", test.Handler);

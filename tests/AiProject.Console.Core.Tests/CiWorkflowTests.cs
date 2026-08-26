@@ -46,4 +46,44 @@ public class CiWorkflowTests
             try { Directory.Delete(root, true); } catch { /* temp */ }
         }
     }
+
+    [Fact]
+    public void Template_UsesSolutionAndGlobalJson()
+    {
+        var yaml = CiWorkflow.Template("Demo.slnx", useGlobalJson: true, defaultBranch: "develop");
+        Assert.Contains("branches: [develop]", yaml);
+        Assert.Contains("global-json-file: global.json", yaml);
+        Assert.Contains("dotnet restore Demo.slnx", yaml);
+        Assert.Contains("dotnet test Demo.slnx", yaml);
+        Assert.Contains("permissions:", yaml);
+        Assert.Contains("contents: read", yaml);
+        Assert.DoesNotContain("pages: write", yaml);
+    }
+
+    [Fact]
+    public void Ensure_WritesOnceAndDoesNotOverwrite()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-ci-ensure-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "Demo.sln"), "");
+        File.WriteAllText(Path.Combine(root, "global.json"), """{ "sdk": { "version": "10.0.100" } }""");
+        try
+        {
+            var first = CiWorkflow.Ensure(root, "main");
+            Assert.True(first.Created);
+            Assert.True(File.Exists(first.Path));
+            var text = File.ReadAllText(first.Path);
+            Assert.Contains("dotnet restore Demo.sln", text);
+            Assert.Contains("global-json-file: global.json", text);
+            File.WriteAllText(first.Path, "name: keep\n");
+            var second = CiWorkflow.Ensure(root);
+            Assert.False(second.Created);
+            Assert.Equal("name: keep\n", File.ReadAllText(second.Path));
+            Assert.Equal("10.0.x", CiWorkflow.DetectDotnetVersion(root));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* temp */ }
+        }
+    }
 }

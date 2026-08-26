@@ -125,6 +125,14 @@
       "requiresGithub": true
     },
     {
+      "id": "github_ci_scaffold",
+      "label": "補齊 CI workflow…",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_ci_scaffold",
+      "confirm": "將在 .github/workflows/ci.yml 寫入建置／測試骨架（既有檔不覆蓋）。請審查後再提交。控制台不會代跑 Actions。確定？"
+    },
+    {
       "id": "github_actions",
       "label": "Actions 狀態…",
       "group": "github",

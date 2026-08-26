@@ -64,13 +64,13 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 ## 工具一覽
 
-`duty_summary`、`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`、`ci_status`、`list_audit`、`docs_status`、`list_docs`、`read_doc`。
+`duty_summary`、`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`、`ci_status`、`pr_status`、`list_audit`、`docs_status`、`list_docs`、`read_doc`。
 
-`ci_status` 只回最近 Actions 的通過／失敗／進行中（與摘要列同一組數字）。不要叫 Agent 在控制台裡翻 workflow log。
+`ci_status` 只回最近 Actions 的通過／失敗／進行中；`pr_status` 只回目前分支能不能請人審。不要叫 Agent 在控制台裡翻 workflow 或 PR 畫面。
 
 文件工具只讀 `docs/`：看狀態、列檔、讀一頁。寫檔請用控制台編輯或 Agent 在工作區改，沒有 `write_doc`。
 
-晨會／值班先呼叫 `duty_summary`（就緒、離線、需重編、最近 MCP 拒絕）。遠端 CI 再用 `ci_status`。控制台摘要列：點「需重編」切到專案頁，點「MCP 拒絕」打開審計，點「CI」看 Actions 是否通過。
+晨會／值班先呼叫 `duty_summary`（就緒、離線、需重編、最近 MCP 拒絕）。遠端 CI 再用 `ci_status`，PR 檢查用 `pr_status`。控制台摘要列：點「需重編」切到專案頁，點「MCP 拒絕」打開審計，點「CI／PR」看遠端過了沒有。
 
 ## 企業政策（白名單／確認／審計）
 

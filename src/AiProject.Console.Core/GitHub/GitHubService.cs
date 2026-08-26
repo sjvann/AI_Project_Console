@@ -770,6 +770,34 @@ public static class GitHubService
         return true;
     }
 
+    public static async Task<PullRequestStatus> GetPullRequestStatusAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    {
+        if (!GhAvailable())
+            return PullRequestStatus.Unavailable("需要 GitHub CLI（gh）才能讀 PR。");
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var args = new List<string>
+        {
+            "pr", "view",
+            "--json", "title,url,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup",
+        };
+        if (!string.IsNullOrEmpty(cfg.Slug()))
+            args.AddRange(["--repo", cfg.Slug()]);
+        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 60_000).ConfigureAwait(false);
+        if (code != 0)
+            return PrStatus.LooksLikeNoPr(output)
+                ? PullRequestStatus.None()
+                : PullRequestStatus.Unavailable(string.IsNullOrEmpty(output) ? "無法讀取 PR。" : FirstLine(output));
+        try
+        {
+            var parsed = PrStatus.Parse(output);
+            return parsed.HasPr ? parsed : PullRequestStatus.None();
+        }
+        catch (Exception ex)
+        {
+            return PullRequestStatus.Unavailable(FirstLine(ex.Message));
+        }
+    }
+
     public static async Task<ReleaseInspect> InspectReleaseAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
     {
         cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
