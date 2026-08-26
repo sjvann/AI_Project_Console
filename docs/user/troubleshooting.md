@@ -61,6 +61,10 @@
 - 同步／發布／Release／PR 需要完成 GitHub 設定（或從 remote 預填）以及網路。
 - Release、PR、Actions 需要 `gh auth login`。
 - 私人倉「檢查控制台更新」失敗：登入 `gh` 或設 `GH_TOKEN`。
+- 摘要列「文件 無文件／缺骨架」：按文件 → 建立／補齊體系。已有內容不會被覆蓋。
+- 網站預覽起不來：環境體檢看 `dotnet`。第一次會 `dotnet tool restore` 安裝 DocFX，需網路。
+- 啟用 GitHub Pages 失敗：登入 `gh`，或到倉庫 Settings → Pages，Source 選 GitHub Actions。
+- 線上文件 404：確認已 push 到 `main`，且 Actions 的 Deploy docs 成功。
 
 同步是 `pull --rebase`。衝突請在 IDE／終端機解決。
 

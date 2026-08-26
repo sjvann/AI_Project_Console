@@ -162,6 +162,59 @@
       "kind": "internal",
       "handler": "deploy_ci_hint",
       "requiresDeploy": true
+    },
+    {
+      "id": "docs_scaffold",
+      "label": "建立／補齊體系…",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_scaffold"
+    },
+    {
+      "id": "docs_open_folder",
+      "label": "開啟 docs 資料夾",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_open_folder"
+    },
+    {
+      "id": "docs_ai_fill",
+      "label": "AI 補齊…",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_ai_fill"
+    },
+    {
+      "id": "docs_serve",
+      "label": "本機網站預覽",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_serve"
+    },
+    {
+      "id": "docs_open_pages",
+      "label": "開啟線上文件",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_open_pages",
+      "requiresGithub": true
+    },
+    {
+      "id": "docs_enable_pages",
+      "label": "啟用 GitHub Pages",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_enable_pages",
+      "requiresGithub": true
+    },
+    {
+      "id": "docs_publish_pages",
+      "label": "同步到 GitHub Pages（push）",
+      "group": "docs",
+      "kind": "internal",
+      "handler": "docs_publish_pages",
+      "requiresGithub": true,
+      "confirm": "將 push 目前分支。推到 main 後 Actions 會發佈文件站。確定？"
     }
   ]
 }

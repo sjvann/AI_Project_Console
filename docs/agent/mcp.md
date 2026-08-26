@@ -64,7 +64,9 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 ## 工具一覽
 
-`duty_summary`、`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`、`list_audit`。
+`duty_summary`、`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`、`list_audit`、`docs_status`、`list_docs`、`read_doc`。
+
+文件工具只讀 `docs/`：看狀態、列檔、讀一頁。寫檔請用控制台編輯或 Agent 在工作區改，沒有 `write_doc`。
 
 晨會／值班先呼叫 `duty_summary`（就緒、離線、需重編、最近 MCP 拒絕）。控制台摘要列顯示同一組數字：點「需重編」切到專案頁，點「MCP 拒絕」打開審計分頁。
 

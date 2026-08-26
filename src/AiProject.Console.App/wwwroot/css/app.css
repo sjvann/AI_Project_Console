@@ -239,3 +239,19 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-title:hover { color: var(--accent); text-decoration: underline; }
 .task-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; min-width: 0; overflow: hidden; }
 .task-empty { padding: 12px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.doc-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; }
+.doc-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 7px 10px; color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
+.doc-row:last-child { border-bottom: none; }
+.doc-row:hover:not(:disabled) { background: var(--sel); }
+.doc-row.sel { background: var(--sel); }
+.doc-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+.doc-stub { font-size: 11px; color: var(--wait); }
+.doc-editor { flex: 1; min-height: 0; margin: 0 8px 8px; padding: 10px; border: 1px solid var(--border); border-radius: 3px; resize: none; font: 13px/1.45 "Cascadia Mono", Consolas, monospace; background: var(--panel); color: var(--text); }
+.doc-preview { flex: 1; min-height: 0; overflow: auto; margin: 0 8px 8px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); }
+.doc-preview h1, .doc-preview h2, .doc-preview h3 { margin: 0.8em 0 0.4em; }
+.doc-preview p, .doc-preview ul, .doc-preview ol { margin: 0.4em 0; }
+.doc-preview pre { overflow: auto; padding: 8px; background: var(--log-bg); color: var(--log-fg); border-radius: 3px; }
+.doc-preview code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+.doc-preview table { border-collapse: collapse; width: 100%; }
+.doc-preview th, .doc-preview td { border: 1px solid var(--border); padding: 4px 8px; }
+.pane-pad { padding: 12px; }

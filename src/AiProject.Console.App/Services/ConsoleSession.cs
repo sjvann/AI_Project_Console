@@ -6,6 +6,7 @@ using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Cursor;
 using AiProject.Console.Core.Deploy;
+using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
@@ -26,6 +27,7 @@ public sealed class ConsoleSession : IDisposable
     private bool _pendingOpenCursor;
     private bool _unassignedCollapseUserSet;
     private long _logOffset;
+    private DocsServeHandle? _docsServe;
 
     public ConsoleSession(NativeUi native)
     {
@@ -193,6 +195,17 @@ public sealed class ConsoleSession : IDisposable
     public IReadOnlyList<ConsoleAction> BuildActions => ActionCatalog.Load("build");
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
     public IReadOnlyList<ConsoleAction> DeployActions => ActionCatalog.Load("deploy");
+    public IReadOnlyList<ConsoleAction> DocsActions => ActionCatalog.Load("docs");
+    public DocsStatus? Docs { get; private set; }
+    public string? SelectedDocPath { get; private set; }
+    public string DocsDraft { get; set; } = "";
+    public bool DocsDirty { get; private set; }
+    public bool DocsPreviewMode { get; set; }
+    public string DocsHint { get; private set; } = "";
+    public bool DocsServing => _docsServe is { IsRunning: true };
+    public string DocsServeUrl => _docsServe?.Url ?? DocsService.DefaultServeUrl;
+    public string DocsPreviewHtml => DocsMarkdown.ToSafeHtml(DocsDraft);
+    public bool DocsChipWarn => Docs is null or { Health: not DocsHealth.Ready };
 
     private readonly HashSet<string> _collapsedServiceGroups = new(StringComparer.Ordinal);
     private readonly HashSet<string> _collapsedProjectGroups = new(StringComparer.Ordinal);
@@ -849,6 +862,7 @@ public sealed class ConsoleSession : IDisposable
             ReloadLog();
             LoadAudit(reloadPolicy: true);
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
+            RefreshDocs();
             Notify();
             _ = RefreshBuildStatesAsync();
             await AfterProjectLoadedAsync(openCursor, rememberErr).ConfigureAwait(false);
@@ -886,6 +900,7 @@ public sealed class ConsoleSession : IDisposable
             if (!_native.Confirm("停止服務失敗", $"停止舊專案服務時發生問題：\n{ex.Message}\n\n仍要開啟新專案嗎？"))
                 return false;
         }
+        StopDocsServe();
         return true;
     }
 
@@ -1264,6 +1279,14 @@ public sealed class ConsoleSession : IDisposable
     {
         LeftTab = "prj";
         StaleOnly = StaleProjectCount > 0;
+        Notify();
+    }
+
+    public void ShowDocs()
+    {
+        LeftTab = "docs";
+        RightTab = "docs";
+        RefreshDocs(keepSelection: true);
         Notify();
     }
 
@@ -1726,6 +1749,27 @@ public sealed class ConsoleSession : IDisposable
             case "build_projects":
                 await RunBuildActionAsync(handler).ConfigureAwait(false);
                 return;
+            case "docs_scaffold":
+                await ScaffoldDocsAsync().ConfigureAwait(false);
+                return;
+            case "docs_open_folder":
+                OpenDocsFolder();
+                return;
+            case "docs_ai_fill":
+                await AiFillDocsAsync(currentOnly: false).ConfigureAwait(false);
+                return;
+            case "docs_serve":
+                await ServeDocsAsync().ConfigureAwait(false);
+                return;
+            case "docs_open_pages":
+                await OpenDocsPagesAsync().ConfigureAwait(false);
+                return;
+            case "docs_enable_pages":
+                await EnableDocsPagesAsync().ConfigureAwait(false);
+                return;
+            case "docs_publish_pages":
+                await PublishDocsPagesAsync().ConfigureAwait(false);
+                return;
         }
     }
 
@@ -1846,6 +1890,262 @@ public sealed class ConsoleSession : IDisposable
             BranchDialogHint = FirstLine(ex.Message);
         }
         Notify();
+    }
+
+    public void RefreshDocs(bool keepSelection = false)
+    {
+        if (Catalog is null)
+        {
+            ClearDocsState();
+            return;
+        }
+        var previous = keepSelection ? SelectedDocPath : null;
+        Docs = DocsService.Scan(Catalog.Root);
+        DocsHint = Docs.Health switch
+        {
+            DocsHealth.Missing => "還沒有 docs/。按「建立／補齊體系」產生標準骨架。",
+            DocsHealth.Incomplete => "有文件但缺 toc.yml 或 docfx.json。可再按「建立／補齊體系」。",
+            DocsHealth.Draft => $"有 {Docs.StubCount} 頁仍標待補。可用 AI 補齊或在右側編輯。",
+            _ => Docs.HasWorkflow ? "文件就緒。可本機預覽或發布到 GitHub Pages。" : "文件就緒。尚未放 Pages workflow，發布前會自動補上。",
+        };
+        if (previous is not null && Docs.Files.Any(f => f.RelPath == previous))
+        {
+            if (!DocsDirty)
+                LoadDoc(previous);
+            return;
+        }
+        SelectedDocPath = null;
+        DocsDraft = "";
+        DocsDirty = false;
+        var first = Docs.Files.FirstOrDefault(f => !f.IsConfig) ?? Docs.Files.FirstOrDefault();
+        if (first is not null)
+            LoadDoc(first.RelPath);
+    }
+
+    public void SetDocsDraft(string value)
+    {
+        DocsDraft = value ?? "";
+        DocsDirty = true;
+        Notify();
+    }
+
+    public async Task SelectDocAsync(string relPath)
+    {
+        if (!ConfirmDiscardDocs())
+            return;
+        LoadDoc(relPath);
+        RightTab = "docs";
+        Notify();
+        await Task.CompletedTask;
+    }
+
+    public void SaveSelectedDoc()
+    {
+        if (!RequireCatalog() || string.IsNullOrEmpty(SelectedDocPath))
+            return;
+        try
+        {
+            DocsService.Write(Catalog!.Root, SelectedDocPath, DocsDraft);
+            DocsDirty = false;
+            Docs = DocsService.Scan(Catalog.Root);
+            DocsHint = "已儲存 " + SelectedDocPath;
+            JobText = "已儲存文件";
+            Notify();
+        }
+        catch (Exception ex)
+        {
+            _native.Error("無法儲存文件", ex.Message);
+        }
+    }
+
+    public async Task ScaffoldDocsAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (!_native.Confirm(
+            "建立文件體系",
+            "將在 docs/ 建立標準 Markdown 骨架與 DocFX／Pages 設定。已有的檔不會覆蓋。確定？"))
+            return;
+        await RunJobAsync("建立文件體系…", async () =>
+        {
+            var ctx = DocsScaffoldContext.FromCatalog(Catalog);
+            try
+            {
+                var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(cfg.Slug()))
+                    ctx = ctx with { GithubSlug = cfg.Slug() };
+            }
+            catch
+            {
+                // slug optional
+            }
+            var result = DocsService.Scaffold(Catalog!.Root, ctx);
+            return result.Message;
+        }).ConfigureAwait(false);
+        RefreshDocs();
+        ShowDocs();
+    }
+
+    public async Task AiFillDocsAsync(bool currentOnly)
+    {
+        if (!RequireCatalog())
+            return;
+        if (!ConfirmDiscardDocs())
+            return;
+        RefreshDocs(keepSelection: true);
+        var ctx = DocsScaffoldContext.FromCatalog(Catalog);
+        try
+        {
+            var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(cfg.Slug()))
+                ctx = ctx with { GithubSlug = cfg.Slug() };
+        }
+        catch
+        {
+            // optional
+        }
+        string prompt;
+        if (currentOnly && !string.IsNullOrEmpty(SelectedDocPath))
+            prompt = DocsPrompts.FillOne(SelectedDocPath, DocsDraft, ctx);
+        else
+            prompt = DocsPrompts.FillAll(Docs ?? DocsService.Scan(Catalog!.Root), ctx);
+        AgentPrompt = prompt;
+        AgentTitle = currentOnly ? "AI 補齊本頁" : "AI 補齊文件";
+        AgentIntro = AgentLaunchIntro();
+        Dialog = "agent";
+        Notify();
+    }
+
+    public async Task ServeDocsAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (DocsServing)
+        {
+            CliUtil.OpenUrl(DocsServeUrl);
+            JobText = "文件網站預覽已在跑：" + DocsServeUrl;
+            Notify();
+            return;
+        }
+        await RunJobAsync("啟動文件網站預覽…", async () =>
+        {
+            var handle = await DocsService.ServeAsync(Catalog!.Root).ConfigureAwait(false);
+            _docsServe = handle;
+            await Task.Delay(1200).ConfigureAwait(false);
+            if (!handle.IsRunning)
+            {
+                handle.Dispose();
+                _docsServe = null;
+                throw new InvalidOperationException("DocFX 預覽沒有起來。請確認已安裝 .NET SDK，並先建立文件體系。");
+            }
+            CliUtil.OpenUrl(handle.Url);
+            return "本機文件站：" + handle.Url;
+        }).ConfigureAwait(false);
+        Notify();
+    }
+
+    public async Task OpenDocsPagesAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        try
+        {
+            var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+            var status = await DocsService.PagesStatusAsync(Catalog!, cfg).ConfigureAwait(false);
+            var url = status.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? status.Split('\n')[0].Trim()
+                : DocsService.PagesUrl(cfg);
+            if (!DocsService.OpenPages(cfg, url))
+                _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo），或先啟用 GitHub Pages。");
+            else
+                JobText = "已開啟線上文件";
+            Notify();
+        }
+        catch (Exception ex)
+        {
+            _native.Warn("線上文件", FirstLine(ex.Message));
+        }
+    }
+
+    public async Task EnableDocsPagesAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        await RunJobAsync("啟用 GitHub Pages…", async () =>
+            await DocsService.EnablePagesAsync(Catalog!).ConfigureAwait(false)).ConfigureAwait(false);
+        RefreshDocs(keepSelection: true);
+    }
+
+    public async Task PublishDocsPagesAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        DocsService.EnsureWorkflow(Catalog!.Root);
+        DocsService.EnsureToolsManifest(Catalog.Root);
+        await RunJobAsync("發布中…", async () =>
+        {
+            var push = await GitHubService.PublishBranchAsync(Catalog!).ConfigureAwait(false);
+            try
+            {
+                var runs = await GitHubService.WatchActionsAsync(Catalog!).ConfigureAwait(false);
+                return push + "\n\n最近 Actions：\n" + runs;
+            }
+            catch (Exception ex)
+            {
+                return push + "\n\n已推送，但讀不到 Actions：\n" + FirstLine(ex.Message);
+            }
+        }).ConfigureAwait(false);
+        await RefreshGitStatusAsync().ConfigureAwait(false);
+        RefreshDocs(keepSelection: true);
+    }
+
+    public void OpenDocsFolder()
+    {
+        if (!RequireCatalog())
+            return;
+        var dir = DocsService.DocsDirectory(Catalog!.Root);
+        Directory.CreateDirectory(dir);
+        CliUtil.OpenPath(dir);
+    }
+
+    public void StopDocsServe()
+    {
+        _docsServe?.Dispose();
+        _docsServe = null;
+    }
+
+    private void LoadDoc(string relPath)
+    {
+        if (Catalog is null)
+            return;
+        try
+        {
+            SelectedDocPath = relPath;
+            DocsDraft = DocsService.Read(Catalog.Root, relPath);
+            DocsDirty = false;
+        }
+        catch (Exception ex)
+        {
+            DocsHint = FirstLine(ex.Message);
+        }
+    }
+
+    private bool ConfirmDiscardDocs()
+    {
+        if (!DocsDirty)
+            return true;
+        return _native.Confirm("尚未儲存", "這頁有未儲存的修改。要放棄並切換嗎？");
+    }
+
+    private void ClearDocsState()
+    {
+        StopDocsServe();
+        Docs = null;
+        SelectedDocPath = null;
+        DocsDraft = "";
+        DocsDirty = false;
+        DocsPreviewMode = false;
+        DocsHint = "";
     }
 
     public void OpenCloneDialog()
@@ -2321,6 +2621,7 @@ public sealed class ConsoleSession : IDisposable
 
     public void Dispose()
     {
+        StopDocsServe();
         _askCts?.Cancel();
         _askCts?.Dispose();
         _githubLoginCts?.Cancel();
@@ -2837,6 +3138,7 @@ public sealed class ConsoleSession : IDisposable
         GithubAuthBusy = false;
         GithubAuthHint = "";
         ClearIssueLists();
+        ClearDocsState();
     }
 
     private async Task RestoreLastProjectOnStartAsync()

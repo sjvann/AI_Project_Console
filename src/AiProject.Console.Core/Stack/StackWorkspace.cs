@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
@@ -229,6 +230,49 @@ public sealed class StackWorkspace
     }
 
     public string Doctor() => ProcessSupervisor.DoctorReport(Catalog);
+
+    public string DocsStatus()
+    {
+        var status = DocsService.Scan(Root);
+        return Json(new
+        {
+            ok = true,
+            health = status.Health.ToString().ToLowerInvariant(),
+            label = status.Label(),
+            fileCount = status.FileCount,
+            stubCount = status.StubCount,
+            hasToc = status.HasToc,
+            hasDocfx = status.HasDocfx,
+            hasWorkflow = status.HasWorkflow,
+            missingScaffold = status.MissingScaffold,
+            docsRoot = status.DocsRoot,
+        });
+    }
+
+    public string ListDocs()
+    {
+        var status = DocsService.Scan(Root);
+        return Json(new
+        {
+            ok = true,
+            count = status.Files.Count,
+            files = status.Files.Select(f => new
+            {
+                path = f.RelPath,
+                title = f.Title,
+                stub = f.IsStub,
+                config = f.IsConfig,
+            }),
+        });
+    }
+
+    public string ReadDoc(string path)
+    {
+        if (!DocsService.IsSafeRelPath(path))
+            return Error("path 必須是 docs/ 內的相對路徑，例如 user/getting-started.md。");
+        var text = DocsService.Read(Root, path);
+        return Json(new { ok = true, path = path.Replace('\\', '/'), text });
+    }
 
     public async Task<string> GitStatusAsync()
     {

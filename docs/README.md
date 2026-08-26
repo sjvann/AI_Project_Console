@@ -25,6 +25,7 @@
 5. [卡住時怎麼辦](user/help.md) — UAT 求救、編譯求救、專案問答
 6. [設定](user/settings.md) — 外觀、Agent、MCP、問答模型
 7. [常見問題](user/troubleshooting.md) — 服務起不來、需重編、更新失敗
+8. [專案文件](user/docs.md) — `docs/`、DocFX、本機預覽、GitHub Pages
 
 可選：
 

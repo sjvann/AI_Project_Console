@@ -88,6 +88,7 @@
             <span class="sep"></span>
             <ActionMenu Title="GitHub" Actions="S.GithubActions" Session="S" @bind-Open="openMenu" Key="github" />
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
+            <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
             <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
         </div>
     </div>
@@ -108,6 +109,9 @@
                     我的任務 @S.AssignedIssues.Count
                 </button>
             }
+            <button type="button" class="duty-chip @(S.DocsChipWarn ? "is-warn" : "is-ok")" title="專案文件（docs/）" @onclick="S.ShowDocs">
+                @(S.Docs?.ChipText() ?? "文件 無文件")
+            </button>
             @if (!string.IsNullOrEmpty(S.DutyAttention))
             {
                 <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
@@ -130,12 +134,19 @@
 
     <div class="split" id="split-view">
         <div class="pane">
-            <div class="tabs" role="tablist" aria-label="服務、專案與任務">
+            <div class="tabs" role="tablist" aria-label="服務、專案、文件與任務">
                 <div class="tab @(S.LeftTab == "svc" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "svc")" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "svc")" @ondblclick="S.ToggleAllServiceGroups" @onkeydown="@(e => OnLeftTabKey(e, "svc"))">
                     服務 <span class="badge">@S.ReadyCount/@S.ServiceCount</span>
                 </div>
                 <div class="tab @(S.LeftTab == "prj" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "prj")" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "prj")" @ondblclick="S.ToggleAllProjectGroups" @onkeydown="@(e => OnLeftTabKey(e, "prj"))">
                     專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
+                </div>
+                <div class="tab @(S.LeftTab == "docs" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "docs")" title="專案 docs/" @onclick="S.ShowDocs" @onkeydown="@(e => OnLeftTabKey(e, "docs"))">
+                    文件
+                    @if (S.Docs is not null)
+                    {
+                        <span class="badge">@S.Docs.FileCount</span>
+                    }
                 </div>
                 <div class="tab @(S.LeftTab == "task" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "task")" title="指派給我的 GitHub Issue" @onclick="S.ShowTasks" @onkeydown="@(e => OnLeftTabKey(e, "task"))">
                     任務
@@ -235,6 +246,46 @@
                     @if (!S.VisibleProjects.Any())
                     {
                         <p class="hint">@(S.Catalog is null ? "請先選擇專案目錄。" : "沒有專案。")</p>
+                    }
+                }
+                else if (S.LeftTab == "docs")
+                {
+                    <div class="row task-toolbar">
+                        <span class="hint grow">@(S.Docs?.Label() ?? "尚未掃描")</span>
+                        <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.ScaffoldDocsAsync">建立體系</button>
+                        <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.RefreshDocs(true))">刷新</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(S.DocsHint))
+                    {
+                        <p class="hint">@S.DocsHint</p>
+                    }
+                    @if (S.Catalog is null)
+                    {
+                        <p class="hint">請先選擇專案目錄。文件規定都放在 docs/。</p>
+                    }
+                    else if (S.Docs is null || S.Docs.Files.Count == 0)
+                    {
+                        <p class="hint">還沒有 docs/。按「建立體系」產生標準 Markdown 骨架與 DocFX 設定。</p>
+                    }
+                    else
+                    {
+                        <div class="doc-list" role="listbox" aria-label="文件清單">
+                            @foreach (var f in S.Docs.Files)
+                            {
+                                <button type="button"
+                                        class="doc-row @(f.RelPath == S.SelectedDocPath ? "sel" : null)"
+                                        role="option"
+                                        aria-selected="@(f.RelPath == S.SelectedDocPath)"
+                                        @onclick="@(() => S.SelectDocAsync(f.RelPath))">
+                                    <span class="doc-row-name">@f.RelPath</span>
+                                    <span class="hint">@f.Title</span>
+                                    @if (f.IsStub)
+                                    {
+                                        <span class="doc-stub">待補</span>
+                                    }
+                                </button>
+                            }
+                        </div>
                     }
                 }
                 else
@@ -356,6 +407,13 @@
                         <span class="badge">@S.AskMessages.Count</span>
                     }
                 </div>
+                <div class="tab @(S.RightTab == "docs" ? "active" : null)" @onclick="@(() => S.SetRightTab("docs"))">
+                    文件
+                    @if (S.DocsDirty)
+                    {
+                        <span class="badge">未存</span>
+                    }
+                </div>
             </div>
             @if (S.RightTab == "log")
             {
@@ -464,6 +522,41 @@
                         </div>
                     }
                 </div>
+            }
+            else if (S.RightTab == "docs")
+            {
+                <div class="log-tools">
+                    <strong>@(string.IsNullOrEmpty(S.SelectedDocPath) ? "文件" : S.SelectedDocPath)</strong>
+                    @if (S.DocsDirty)
+                    {
+                        <span class="warn">未儲存</span>
+                    }
+                    <span class="grow"></span>
+                    <label class="check">
+                        <input type="checkbox" checked="@S.DocsPreviewMode" @onchange="e => S.DocsPreviewMode = (bool)(e.Value ?? false)" />
+                        預覽
+                    </label>
+                    <button class="btn-sec" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath) || S.JobBusy)" @onclick="@(() => S.AiFillDocsAsync(true))">AI 補齊本頁</button>
+                    <button class="btn-primary" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath) || !S.DocsDirty)" @onclick="S.SaveSelectedDoc">儲存</button>
+                    <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.ServeDocsAsync">@(S.DocsServing ? "開啟網站預覽" : "網站預覽")</button>
+                </div>
+                @if (!S.HasProject)
+                {
+                    <p class="hint pane-pad">請先選擇專案目錄。</p>
+                }
+                else if (string.IsNullOrEmpty(S.SelectedDocPath))
+                {
+                    <p class="hint pane-pad">從左側選一份 docs/ 檔案，或按「建立體系」。</p>
+                }
+                else if (S.DocsPreviewMode)
+                {
+                    <div class="doc-preview">@((MarkupString)S.DocsPreviewHtml)</div>
+                }
+                else
+                {
+                    <textarea class="doc-editor" value="@S.DocsDraft" @oninput="OnDocsDraft" spellcheck="false"
+                              placeholder="Markdown…"></textarea>
+                }
             }
             else
             {
@@ -968,6 +1061,8 @@
             return;
         if (tab == "task")
             S.ShowTasks();
+        else if (tab == "docs")
+            S.ShowDocs();
         else
             S.LeftTab = tab;
     }
@@ -984,6 +1079,8 @@
     void OnAuditFilter(ChangeEventArgs e) => S.SetAuditFilter(e.Value?.ToString() ?? "");
 
     void OnAskDraft(ChangeEventArgs e) => S.SetAskDraft(e.Value?.ToString() ?? "");
+
+    void OnDocsDraft(ChangeEventArgs e) => S.SetDocsDraft(e.Value?.ToString() ?? "");
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
 

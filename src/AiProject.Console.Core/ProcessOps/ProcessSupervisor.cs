@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Runtime;
@@ -359,6 +360,7 @@ public static class ProcessSupervisor
         lines.Add(McpLaunch.DoctorLine());
         if (catalog is not null)
             lines.Add(McpPolicy.Load(catalog.Root).DoctorLine());
+        lines.Add(DocsService.DoctorLine(catalog?.Root));
         if (catalog is null)
         {
             lines.Add("");

@@ -27,6 +27,9 @@ public static class StackToolRouter
         new("doctor", "環境體檢（dotnet／git／Agent 後端／MCP 政策）。", ""),
         new("git_status", "目前分支、未提交、領先／落後。", ""),
         new("list_audit", "讀取最近的 MCP 審計紀錄（.ai_project/mcp-audit.jsonl）。", "tail"),
+        new("docs_status", "文件體系狀態：docs/ 是否存在、骨架、待補頁數、DocFX／Pages workflow。", ""),
+        new("list_docs", "列出 docs/ 內的 Markdown 與 DocFX 設定檔。", ""),
+        new("read_doc", "讀取 docs/ 內一份檔案。path 為相對 docs/ 的路徑，例如 user/getting-started.md。", "path"),
     ];
 
     public static string DisplayTitle(string name) => name switch
@@ -45,6 +48,9 @@ public static class StackToolRouter
         "doctor" => "環境體檢",
         "git_status" => "Git 狀態",
         "list_audit" => "MCP 審計",
+        "docs_status" => "文件狀態",
+        "list_docs" => "文件清單",
+        "read_doc" => "讀取文件",
         _ => name,
     };
 
@@ -112,6 +118,9 @@ public static class StackToolRouter
             "doctor" => workspace.Doctor(),
             "git_status" => await workspace.GitStatusAsync().ConfigureAwait(false),
             "list_audit" => McpAuditLog.ListRecent(workspace.Runtime, ParseTail(Arg(args, "tail"), 50)),
+            "docs_status" => workspace.DocsStatus(),
+            "list_docs" => workspace.ListDocs(),
+            "read_doc" => workspace.ReadDoc(Require(args, "path")),
             _ => Fail("未知工具：" + key),
         };
 

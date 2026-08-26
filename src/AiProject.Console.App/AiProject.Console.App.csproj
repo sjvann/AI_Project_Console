@@ -16,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.41.3" />
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />
     <ProjectReference Include="..\AiProject.Console.Core\AiProject.Console.Core.csproj" />
   </ItemGroup>

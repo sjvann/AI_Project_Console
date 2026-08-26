@@ -16,6 +16,8 @@
       href: user/settings.md
     - name: 部署
       href: user/deploy.md
+    - name: 專案文件
+      href: user/docs.md
     - name: 常見問題
       href: user/troubleshooting.md
 - name: 工作區
