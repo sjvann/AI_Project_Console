@@ -1189,6 +1189,21 @@
     <WorkHoursDialog S="S" />
 }
 
+@if (S.Dialog == "releases")
+{
+    <ReleaseListDialog S="S" />
+}
+
+@if (S.Dialog == "info")
+{
+    <InfoStatusDialog S="S" />
+}
+
+@if (S.Dialog == "job-result")
+{
+    <JobResultDialog S="S" />
+}
+
 @code {
     string? openMenu;
 

@@ -1,0 +1,35 @@
+@if (S.JobResult is { } result)
+{
+    <AppDialog Title="@result.Title" TitleId="job-result-title" OnClose="S.CloseDialog">
+        <ChildContent>
+        <div class="doctor-summary doctor-@Css(result.Tone)" role="status" aria-atomic="true">
+            <span class="doctor-summary-dot" aria-hidden="true"></span>
+            <div class="doctor-summary-text">
+                <strong>@result.Summary</strong>
+            </div>
+        </div>
+        @if (result.HasDetail)
+        {
+            <pre class="job-log">@result.Detail</pre>
+        }
+        </ChildContent>
+        <Actions>
+            <button type="button" class="btn-sec" @onclick="S.CopyInfoAsync">@(S.InfoCopied ? "已複製" : "複製")</button>
+            <span class="grow"></span>
+            <button type="button" class="btn-primary" @onclick="S.CloseDialog">關閉</button>
+        </Actions>
+    </AppDialog>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+
+    static string Css(string tone) => tone switch
+    {
+        "ok" => "ok",
+        "warn" => "warn",
+        "error" => "missing",
+        _ => "info",
+    };
+}

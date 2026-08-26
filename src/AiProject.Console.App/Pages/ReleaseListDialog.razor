@@ -1,0 +1,63 @@
+<AppDialog Title="Release 列表" Hint="@Hint" TitleId="releases-title" OnClose="S.CloseDialog">
+    <ChildContent>
+    @if (S.ReleaseList is { } list)
+    {
+        <div class="doctor-summary doctor-@Tone(list)" role="status" aria-atomic="true">
+            <span class="doctor-summary-dot" aria-hidden="true"></span>
+            <div class="doctor-summary-text">
+                <strong>@list.Headline</strong>
+                <span>@(list.Items.Count == 0 ? "這個倉庫還沒有 Release。" : $"{list.Items.Count} 筆最近發行")</span>
+            </div>
+        </div>
+        @if (list.Items.Count == 0)
+        {
+            <p class="hint">發行後會出現在這裡。可用 GitHub 選單的「發行 Release…」。</p>
+        }
+        else
+        {
+            <div class="release-list" role="list">
+                @foreach (var item in list.Items)
+                {
+                    <button type="button" class="release-row" role="listitem" title="在瀏覽器開啟" @onclick="@(() => S.OpenReleaseItem(item))">
+                        <span class="release-tag">@item.Tag</span>
+                        <span class="release-title">@(string.IsNullOrEmpty(item.Title) ? "—" : item.Title)</span>
+                        <span class="release-badges">
+                            @if (item.IsLatest)
+                            {
+                                <span class="doctor-status doctor-ok">Latest</span>
+                            }
+                            @if (item.IsDraft)
+                            {
+                                <span class="doctor-status doctor-warn">草稿</span>
+                            }
+                            @if (item.IsPrerelease)
+                            {
+                                <span class="doctor-status doctor-info">預發行</span>
+                            }
+                        </span>
+                        <span class="release-when">@(string.IsNullOrEmpty(item.PublishedText) ? "—" : item.PublishedText)</span>
+                    </button>
+                }
+            </div>
+        }
+    }
+    </ChildContent>
+    <Actions>
+        <button type="button" class="btn-sec" @onclick="S.CopyInfoAsync">@(S.InfoCopied ? "已複製" : "複製清單")</button>
+        <span class="grow"></span>
+        <button type="button" class="btn-sec" @onclick="S.CloseDialog">關閉</button>
+        <button type="button" class="btn-primary" disabled="@(string.IsNullOrEmpty(S.ReleaseList?.ReleasesUrl))" @onclick="S.OpenReleaseListOnGithub">在 GitHub 開啟</button>
+    </Actions>
+</AppDialog>
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+
+    string Hint =>
+        S.ReleaseList is { Items.Count: > 0 }
+            ? "點一列可到該版本的 GitHub 頁。Latest、草稿與預發行用徽章標示。"
+            : "從 GitHub 讀取的最近發行。";
+
+    static string Tone(ReleaseListView list) => list.Items.Count == 0 ? "info" : "ok";
+}

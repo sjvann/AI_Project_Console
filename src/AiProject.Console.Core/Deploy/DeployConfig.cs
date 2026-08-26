@@ -333,27 +333,60 @@ public static class DeployConfigResolver
         return true;
     }
 
-    public static string StatusReport(ProjectCatalog? catalog)
+    public static string StatusReport(ProjectCatalog? catalog) => StatusView(catalog).Text;
+
+    public static InfoReport StatusView(ProjectCatalog? catalog)
     {
         var cfg = Resolve(catalog);
         var lines = new List<string> { "部署設定", "" };
         if (catalog is null)
         {
             lines.Add("尚未選擇專案。");
-            return string.Join('\n', lines);
+            return new InfoReport(
+                Title: "部署狀態",
+                Hint: "選擇專案後可看發佈目標與連線設定。",
+                Headline: "尚未選擇專案",
+                HeadlineDetail: "請先選擇專案目錄。",
+                Tone: "info",
+                Sections: [],
+                Text: string.Join('\n', lines));
         }
+
         var target = cfg.NormalizedTarget();
+        var targetLabel = DeployTargets.TargetLabel(target);
         lines.Add($"專案目錄：{catalog.Root}");
-        lines.Add($"發佈目標：{DeployTargets.TargetLabel(target)}");
+        lines.Add($"發佈目標：{targetLabel}");
         lines.Add("");
         if (target == DeployTargets.None)
         {
             lines.Add("此專案只在本機執行，不發佈到雲端或遠端伺服器。");
-            return string.Join('\n', lines);
+            return new InfoReport(
+                Title: "部署狀態",
+                Hint: DeployTargets.Hints.GetValueOrDefault(target) ?? "",
+                Headline: targetLabel,
+                HeadlineDetail: "此專案只在本機執行，不發佈到雲端或遠端伺服器。",
+                Tone: "info",
+                Sections:
+                [
+                    new InfoSection(
+                        "target",
+                        "發佈目標",
+                        [
+                            new InfoField("專案目錄", catalog.Root),
+                            new InfoField("發佈目標", targetLabel, Badge: "本機", Tone: "info"),
+                        ],
+                        Note: "若要開啟線上，請先改選發佈目標。"),
+                ],
+                Text: string.Join('\n', lines),
+                PrimaryAction: "edit-deploy",
+                PrimaryLabel: "編輯設定");
         }
+
+        var fields = new List<InfoField>();
         if (target == DeployTargets.Gcp)
         {
             var g = cfg.Gcp;
+            var wfOk = WorkflowExists(catalog, g);
             lines.AddRange(
             [
                 $"projectId：{OrUnset(g.ProjectId)}",
@@ -361,7 +394,15 @@ public static class DeployConfigResolver
                 $"instance：{OrUnset(g.Instance)}",
                 $"host：{OrUnset(g.Host)}",
                 $"workflow：{g.Workflow}",
-                $"workflow 檔案：{(WorkflowExists(catalog, g) ? "存在" : "找不到")}",
+                $"workflow 檔案：{(wfOk ? "存在" : "找不到")}",
+            ]);
+            fields.AddRange(
+            [
+                new InfoField("Project ID", OrUnset(g.ProjectId), Tone: UnsetTone(g.ProjectId)),
+                new InfoField("Zone", OrUnset(g.Zone), Tone: UnsetTone(g.Zone)),
+                new InfoField("Instance", OrUnset(g.Instance), Tone: UnsetTone(g.Instance)),
+                new InfoField("Host", OrUnset(g.Host)),
+                new InfoField("Workflow", string.IsNullOrEmpty(g.Workflow) ? "deploy-gcp.yml" : g.Workflow, Badge: wfOk ? "存在" : "找不到", Tone: wfOk ? "ok" : "warn"),
             ]);
         }
         else if (target == DeployTargets.Onprem)
@@ -377,6 +418,16 @@ public static class DeployConfigResolver
                 $"SSH 金鑰：{(string.IsNullOrEmpty(o.KeyPath) ? "（未設定，使用預設 agent）" : o.KeyPath)}",
                 $"對外網址：{OrUnset(o.OpenUrl)}",
             ]);
+            fields.AddRange(
+            [
+                new InfoField("協定", DeployTargets.ProtocolLabel(o.Protocol)),
+                new InfoField("主機", OrUnset(o.Host), Tone: UnsetTone(o.Host)),
+                new InfoField("連接埠", OrUnset(o.Port, "（預設）")),
+                new InfoField("帳號", OrUnset(o.User), Tone: UnsetTone(o.User)),
+                new InfoField("遠端路徑", OrUnset(o.RemotePath)),
+                new InfoField("SSH 金鑰", string.IsNullOrEmpty(o.KeyPath) ? "（未設定，使用預設 agent）" : o.KeyPath),
+                new InfoField("對外網址", OrUnset(o.OpenUrl)),
+            ]);
         }
         else if (target == DeployTargets.Azure)
         {
@@ -390,21 +441,68 @@ public static class DeployConfigResolver
                 $"對外網址：{OrUnset(a.OpenUrl)}",
                 $"workflow：{a.Workflow}",
             ]);
+            fields.AddRange(
+            [
+                new InfoField("Subscription", OrUnset(a.SubscriptionId), Tone: UnsetTone(a.SubscriptionId)),
+                new InfoField("Resource Group", OrUnset(a.ResourceGroup), Tone: UnsetTone(a.ResourceGroup)),
+                new InfoField("App Name", OrUnset(a.AppName), Tone: UnsetTone(a.AppName)),
+                new InfoField("Region", OrUnset(a.Region)),
+                new InfoField("對外網址", OrUnset(a.OpenUrl)),
+                new InfoField("Workflow", string.IsNullOrEmpty(a.Workflow) ? "deploy-azure.yml" : a.Workflow),
+            ]);
         }
+
+        var complete = cfg.IsComplete();
         lines.Add("");
-        lines.Add(cfg.IsComplete() ? "設定齊全。" : "設定未齊全：請先完成「部署設定…」。");
-        return string.Join('\n', lines);
+        lines.Add(complete ? "設定齊全。" : "設定未齊全：請先完成「部署設定…」。");
+        var hasUrl = !string.IsNullOrWhiteSpace(cfg.PublicUrl());
+        return new InfoReport(
+            Title: "部署狀態",
+            Hint: DeployTargets.Hints.GetValueOrDefault(target) ?? "",
+            Headline: targetLabel,
+            HeadlineDetail: complete ? "設定齊全。" : "設定未齊全：請先完成部署設定。",
+            Tone: complete ? "ok" : "warn",
+            Sections:
+            [
+                new InfoSection(
+                    "target",
+                    "發佈目標",
+                    [
+                        new InfoField("專案目錄", catalog.Root),
+                        new InfoField("發佈目標", targetLabel, Badge: complete ? "齊全" : "未齊全", Tone: complete ? "ok" : "warn"),
+                    ]),
+                new InfoSection("fields", "連線與發佈", fields),
+            ],
+            Text: string.Join('\n', lines),
+            PrimaryAction: hasUrl ? "open-deploy" : "edit-deploy",
+            PrimaryLabel: hasUrl ? "開啟線上" : "編輯設定");
     }
 
-    public static string CiHint(ProjectCatalog? catalog)
+    public static string CiHint(ProjectCatalog? catalog) => CiHintView(catalog).Text;
+
+    public static InfoReport CiHintView(ProjectCatalog? catalog)
     {
         var cfg = Resolve(catalog);
         var target = cfg.NormalizedTarget();
         if (target == DeployTargets.None)
-            return "目前選擇不下發。若之後要發佈，請在「部署設定…」改選目標。";
+        {
+            const string text = "目前選擇不下發。若之後要發佈，請在「部署設定…」改選目標。";
+            return new InfoReport(
+                Title: "部署說明",
+                Hint: "這個專案目前只在本機執行。",
+                Headline: DeployTargets.TargetLabel(target),
+                HeadlineDetail: text,
+                Tone: "info",
+                Sections: [],
+                Text: text,
+                PrimaryAction: "edit-deploy",
+                PrimaryLabel: "編輯設定");
+        }
+
         if (target == DeployTargets.Gcp)
         {
             var wf = string.IsNullOrEmpty(cfg.Gcp.Workflow) ? "deploy-gcp.yml" : cfg.Gcp.Workflow;
+            var wfOk = catalog is not null && WorkflowExists(catalog, cfg.Gcp);
             var lines = new List<string>
             {
                 "GCP CI 部署說明", "",
@@ -413,7 +511,7 @@ public static class DeployConfigResolver
                 "2. 完成 GCP 部署設定",
                 "3. 以 git tag 或 gh workflow 觸發", "",
             };
-            if (catalog is not null && WorkflowExists(catalog, cfg.Gcp))
+            if (wfOk)
             {
                 lines.Add($"已找到 workflow：.github/workflows/{wf}");
                 if (CliUtil.CommandExists("gh"))
@@ -421,8 +519,30 @@ public static class DeployConfigResolver
             }
             else
                 lines.Add($"尚未找到 .github/workflows/{wf}");
-            return string.Join('\n', lines);
+
+            return new InfoReport(
+                Title: "部署說明",
+                Hint: "本控制台不內建 GCP 直推腳本，請用 GitHub Actions 觸發。",
+                Headline: "GCP CI 部署",
+                HeadlineDetail: wfOk ? $"已找到 workflow：{wf}" : $"尚未找到 .github/workflows/{wf}",
+                Tone: wfOk ? "ok" : "warn",
+                Sections:
+                [
+                    new InfoSection(
+                        "steps",
+                        "建議步驟",
+                        [
+                            new InfoField("1", $"確認 .github/workflows/{wf} 存在", Badge: wfOk ? "存在" : "找不到", Tone: wfOk ? "ok" : "warn"),
+                            new InfoField("2", "完成 GCP 部署設定"),
+                            new InfoField("3", "以 git tag 或 gh workflow 觸發"),
+                        ],
+                        Note: wfOk && CliUtil.CommandExists("gh") ? $"gh workflow run {wf}" : null),
+                ],
+                Text: string.Join('\n', lines),
+                PrimaryAction: "edit-deploy",
+                PrimaryLabel: "編輯設定");
         }
+
         if (target == DeployTargets.Onprem)
         {
             var o = cfg.Onprem;
@@ -438,27 +558,62 @@ public static class DeployConfigResolver
                 $"帳號：{OrUnset(o.User)}",
                 $"遠端路徑：{OrUnset(o.RemotePath)}", "",
             };
+            string note;
             if (proto == "ssh")
             {
                 var dest = !string.IsNullOrEmpty(o.User) && !string.IsNullOrEmpty(o.Host) ? $"{o.User}@{o.Host}" : "user@host";
                 var path = string.IsNullOrEmpty(o.RemotePath) ? "/opt/app" : o.RemotePath;
                 var key = string.IsNullOrEmpty(o.KeyPath) ? "" : $"-i {o.KeyPath} ";
                 var extra = !string.IsNullOrEmpty(port) && port != "22" ? $"-P {port} " : "";
+                note = $"常見作法：建置後以 scp／rsync 複製，再於遠端重啟服務。\nscp {extra}{key}<artifact> {dest}:{path}\nssh {key}{dest} systemctl restart <service>";
                 lines.Add("常見作法：建置後以 scp／rsync 複製，再於遠端重啟服務。");
                 lines.Add($"  scp {extra}{key}<artifact> {dest}:{path}");
                 lines.Add($"  ssh {key}{dest} systemctl restart <service>");
             }
             else if (proto == "winrm")
-                lines.Add("常見作法：WinRM／PowerShell Remoting 複製檔案並重啟 IIS 或 Windows 服務。");
+            {
+                note = "常見作法：WinRM／PowerShell Remoting 複製檔案並重啟 IIS 或 Windows 服務。";
+                lines.Add(note);
+            }
             else if (proto == "iis")
-                lines.Add("常見作法：dotnet publish 後以 msdeploy 或手動複製到 IIS 網站實體路徑。");
+            {
+                note = "常見作法：dotnet publish 後以 msdeploy 或手動複製到 IIS 網站實體路徑。";
+                lines.Add(note);
+            }
             else
-                lines.Add("常見作法：對應到 UNC 路徑後複製發佈輸出。");
-            return string.Join('\n', lines);
+            {
+                note = "常見作法：對應到 UNC 路徑後複製發佈輸出。";
+                lines.Add(note);
+            }
+
+            return new InfoReport(
+                Title: "部署說明",
+                Hint: "本控制台先保存連線設定，實際發佈請用既有腳本或 CI。",
+                Headline: "自家機房／遠端伺服器",
+                HeadlineDetail: DeployTargets.ProtocolLabel(proto),
+                Tone: cfg.IsComplete() ? "ok" : "warn",
+                Sections:
+                [
+                    new InfoSection(
+                        "conn",
+                        "連線",
+                        [
+                            new InfoField("協定", DeployTargets.ProtocolLabel(proto)),
+                            new InfoField("主機", OrUnset(o.Host), Tone: UnsetTone(o.Host)),
+                            new InfoField("連接埠", OrUnset(port, "（預設）")),
+                            new InfoField("帳號", OrUnset(o.User), Tone: UnsetTone(o.User)),
+                            new InfoField("遠端路徑", OrUnset(o.RemotePath)),
+                        ],
+                        Note: note),
+                ],
+                Text: string.Join('\n', lines),
+                PrimaryAction: "edit-deploy",
+                PrimaryLabel: "編輯設定");
         }
+
         var a = cfg.Azure;
         var awf = string.IsNullOrEmpty(a.Workflow) ? "deploy-azure.yml" : a.Workflow;
-        return string.Join('\n',
+        var azureText = string.Join('\n',
         [
             "Azure 部署說明", "",
             "本控制台不內建 Azure 直推腳本。建議以 GitHub Actions 或 Azure DevOps 發佈。",
@@ -467,7 +622,31 @@ public static class DeployConfigResolver
             $"appName：{OrUnset(a.AppName)}",
             $"workflow：{awf}",
         ]);
+        return new InfoReport(
+            Title: "部署說明",
+            Hint: "本控制台不內建 Azure 直推腳本，建議以 GitHub Actions 或 Azure DevOps 發佈。",
+            Headline: "Azure 部署",
+            HeadlineDetail: $"workflow：{awf}",
+            Tone: cfg.IsComplete() ? "ok" : "warn",
+            Sections:
+            [
+                new InfoSection(
+                    "azure",
+                    "設定",
+                    [
+                        new InfoField("Subscription", OrUnset(a.SubscriptionId), Tone: UnsetTone(a.SubscriptionId)),
+                        new InfoField("Resource Group", OrUnset(a.ResourceGroup), Tone: UnsetTone(a.ResourceGroup)),
+                        new InfoField("App Name", OrUnset(a.AppName), Tone: UnsetTone(a.AppName)),
+                        new InfoField("Workflow", awf),
+                    ]),
+            ],
+            Text: azureText,
+            PrimaryAction: "edit-deploy",
+            PrimaryLabel: "編輯設定");
     }
+
+    private static string? UnsetTone(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "warn" : null;
 
     private static bool HasLocalDeploy(string? root)
     {

@@ -189,7 +189,66 @@ public sealed record ReleaseItem(
     bool IsLatest,
     bool IsDraft,
     bool IsPrerelease,
-    string PublishedAt);
+    string PublishedAt)
+{
+    public string Title =>
+        string.IsNullOrWhiteSpace(Name) || string.Equals(Name.Trim(), Tag, StringComparison.Ordinal)
+            ? ""
+            : Name.Trim();
+
+    public string PublishedText
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(PublishedAt))
+                return "";
+            return DateTimeOffset.TryParse(PublishedAt, out var dt)
+                ? dt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")
+                : PublishedAt;
+        }
+    }
+
+    public string Line()
+    {
+        var flags = new List<string>();
+        if (IsLatest)
+            flags.Add("Latest");
+        if (IsDraft)
+            flags.Add("draft");
+        if (IsPrerelease)
+            flags.Add("pre");
+        var mark = flags.Count == 0 ? "" : "  [" + string.Join(", ", flags) + "]";
+        var title = string.IsNullOrEmpty(Title) ? "" : "  " + Title;
+        return $"{Tag}{title}{mark}{(string.IsNullOrEmpty(PublishedText) ? "" : "  " + PublishedText)}";
+    }
+}
+
+public sealed record ReleaseListView(string Slug, string ReleasesUrl, IReadOnlyList<ReleaseItem> Items)
+{
+    public string Headline => string.IsNullOrEmpty(Slug) ? "GitHub Releases" : Slug;
+
+    public string ToText()
+    {
+        var lines = new List<string>
+        {
+            string.IsNullOrEmpty(Slug) ? "GitHub Releases" : $"GitHub Releases · {Slug}",
+            "",
+        };
+        if (Items.Count == 0)
+            lines.Add("（尚無 Release）");
+        else
+        {
+            foreach (var item in Items)
+                lines.Add(item.Line());
+        }
+        if (!string.IsNullOrEmpty(ReleasesUrl))
+        {
+            lines.Add("");
+            lines.Add(ReleasesUrl);
+        }
+        return string.Join('\n', lines);
+    }
+}
 
 public sealed class ReleaseInspect
 {
@@ -521,17 +580,44 @@ public static class GitHubService
         return string.IsNullOrEmpty(output) ? (code == 0 ? "已登入" : "未登入（請執行 gh auth login）") : output;
     }
 
-    public static async Task<string> StatusReportAsync(ProjectCatalog? catalog)
+    public static async Task<string> StatusReportAsync(ProjectCatalog? catalog) =>
+        (await StatusViewAsync(catalog).ConfigureAwait(false)).Text;
+
+    public static async Task<InfoReport> StatusViewAsync(ProjectCatalog? catalog)
     {
         if (catalog is null)
-            return "尚未選擇專案。";
+        {
+            return new InfoReport(
+                Title: "GitHub 狀態",
+                Hint: "選擇專案後可看分支、工作區與遠端設定。",
+                Headline: "尚未選擇專案",
+                HeadlineDetail: "請先選擇專案目錄。",
+                Tone: "info",
+                Sections: [],
+                Text: "GitHub / Git 狀態\n\n尚未選擇專案。");
+        }
+
         var root = catalog.Root;
         var lines = new List<string> { "GitHub / Git 狀態", "" };
         if (!await IsGitRepoAsync(root).ConfigureAwait(false))
         {
             lines.Add($"不是 git 倉庫：{root}");
-            return string.Join('\n', lines);
+            return new InfoReport(
+                Title: "GitHub 狀態",
+                Hint: "這個目錄還不是 git 倉庫，無法讀遠端與分支。",
+                Headline: "不是 git 倉庫",
+                HeadlineDetail: root,
+                Tone: "warn",
+                Sections:
+                [
+                    new InfoSection(
+                        "workspace",
+                        "工作區",
+                        [new InfoField("路徑", root, Badge: "不是 git", Tone: "warn")]),
+                ],
+                Text: string.Join('\n', lines));
         }
+
         var cfg = await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
         var (c1, branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).ConfigureAwait(false);
         branch = c1 == 0 ? branch : "（未知）";
@@ -553,7 +639,14 @@ public static class GitHubService
             }
         }
         var workspace = dirtyN == 0 ? "乾淨" : dirtyN >= 0 ? $"{dirtyN} 筆未提交變更" : "未知";
+        var workspaceTone = dirtyN == 0 ? "ok" : dirtyN > 0 ? "warn" : "info";
         var gh = (await GhAuthStatusAsync(root).ConfigureAwait(false)).Split('\n')[0];
+        var slug = cfg.Slug();
+        var remoteUrl = cfg.RemoteUrl();
+        var complete = cfg.IsComplete();
+        var latest = await TryLatestReleaseTagAsync(catalog, cfg).ConfigureAwait(false);
+        var projectVer = ReleaseVersion.DetectProjectVersion(root);
+
         lines.AddRange(
         [
             $"路徑：{root}",
@@ -562,20 +655,66 @@ public static class GitHubService
             $"相對 upstream：領先 {ahead}／落後 {behind}",
             "",
             $"remote：{cfg.Remote}",
-            $"倉庫：{(string.IsNullOrEmpty(cfg.Slug()) ? "（未設定）" : cfg.Slug())}",
-            $"URL：{(string.IsNullOrEmpty(cfg.RemoteUrl()) ? "（未設定）" : cfg.RemoteUrl())}",
+            $"倉庫：{(string.IsNullOrEmpty(slug) ? "（未設定）" : slug)}",
+            $"URL：{(string.IsNullOrEmpty(remoteUrl) ? "（未設定）" : remoteUrl)}",
             $"預設分支：{cfg.DefaultBranch}",
-            $"設定齊全：{(cfg.IsComplete() ? "是" : "否")}",
+            $"設定齊全：{(complete ? "是" : "否")}",
             "",
             "gh：" + gh,
         ]);
-        var latest = await TryLatestReleaseTagAsync(catalog, cfg).ConfigureAwait(false);
         if (!string.IsNullOrEmpty(latest))
             lines.Add($"最新 Release：{latest}");
-        var projectVer = ReleaseVersion.DetectProjectVersion(root);
         if (!string.IsNullOrEmpty(projectVer))
             lines.Add($"專案檔版號：{projectVer}");
-        return string.Join('\n', lines);
+
+        var sections = new List<InfoSection>
+        {
+            new(
+                "workspace",
+                "工作區",
+                [
+                    new InfoField("路徑", root),
+                    new InfoField("分支", branch, Detail: string.IsNullOrEmpty(sha) ? null : sha),
+                    new InfoField("工作區", workspace, Badge: workspace, Tone: workspaceTone),
+                ]),
+            new(
+                "remote",
+                "遠端",
+                [
+                    new InfoField("相對 upstream", $"領先 {ahead}／落後 {behind}"),
+                    new InfoField("remote", string.IsNullOrEmpty(cfg.Remote) ? "origin" : cfg.Remote),
+                    new InfoField("倉庫", string.IsNullOrEmpty(slug) ? "（未設定）" : slug, Badge: complete ? "齊全" : "未齊全", Tone: complete ? "ok" : "warn"),
+                    new InfoField("URL", string.IsNullOrEmpty(remoteUrl) ? "（未設定）" : remoteUrl),
+                    new InfoField("預設分支", string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch),
+                ],
+                Badge: complete ? "齊全" : "未齊全",
+                Tone: complete ? "ok" : "warn"),
+            new(
+                "version",
+                "版本與登入",
+                [
+                    new InfoField("gh", gh),
+                    new InfoField("最新 Release", string.IsNullOrEmpty(latest) ? "（尚無）" : latest),
+                    new InfoField("專案檔版號", string.IsNullOrEmpty(projectVer) ? "（未偵測）" : projectVer),
+                ]),
+        };
+
+        var tone = !complete || dirtyN > 0 ? "warn" : "ok";
+        var headline = string.IsNullOrEmpty(slug) ? branch : $"{slug} · {branch}";
+        var detail = dirtyN == 0
+            ? $"工作區乾淨 · 領先 {ahead}／落後 {behind}"
+            : $"{workspace} · 領先 {ahead}／落後 {behind}";
+
+        return new InfoReport(
+            Title: "GitHub 狀態",
+            Hint: "控制台只讀目前倉庫狀態。提交、同步與發行請用 GitHub 選單。",
+            Headline: headline,
+            HeadlineDetail: detail,
+            Tone: tone,
+            Sections: sections,
+            Text: string.Join('\n', lines),
+            PrimaryAction: string.IsNullOrEmpty(cfg.WebUrl()) ? null : "open-github",
+            PrimaryLabel: string.IsNullOrEmpty(cfg.WebUrl()) ? null : "在 GitHub 開啟");
     }
 
     public static async Task<string> SyncFromRemoteAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
@@ -858,31 +997,20 @@ public static class GitHubService
         };
     }
 
-    public static async Task<string> ListReleasesAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    public static async Task<string> ListReleasesAsync(ProjectCatalog catalog, GithubConfig? cfg = null) =>
+        (await LoadReleaseListAsync(catalog, cfg).ConfigureAwait(false)).ToText();
+
+    public static async Task<ReleaseListView> LoadReleaseListAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
     {
         if (!GhAvailable())
             throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
         cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
         var items = await ListReleaseItemsAsync(catalog, cfg, 15).ConfigureAwait(false);
-        var lines = new List<string>
-        {
-            string.IsNullOrEmpty(cfg.Slug()) ? "GitHub Releases" : $"GitHub Releases · {cfg.Slug()}",
-            "",
-        };
-        if (items.Count == 0)
-            lines.Add("（尚無 Release）");
-        else
-        {
-            foreach (var item in items)
-                lines.Add(FormatReleaseLine(item));
-        }
         var web = cfg.WebUrl();
-        if (!string.IsNullOrEmpty(web))
-        {
-            lines.Add("");
-            lines.Add(web + "/releases");
-        }
-        return string.Join('\n', lines);
+        return new ReleaseListView(
+            Slug: cfg.Slug(),
+            ReleasesUrl: string.IsNullOrEmpty(web) ? "" : web + "/releases",
+            Items: items);
     }
 
     public static async Task<bool> OpenReleasesAsync(ProjectCatalog catalog, GithubConfig? cfg = null, string? tag = null)
@@ -942,7 +1070,7 @@ public static class GitHubService
         return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
     }
 
-    private static async Task<IReadOnlyList<ReleaseItem>> ListReleaseItemsAsync(ProjectCatalog catalog, GithubConfig cfg, int limit)
+    public static async Task<IReadOnlyList<ReleaseItem>> ListReleaseItemsAsync(ProjectCatalog catalog, GithubConfig cfg, int limit)
     {
         var args = new List<string>
         {
@@ -1009,27 +1137,7 @@ public static class GitHubService
         return "";
     }
 
-    private static string FormatReleaseLine(ReleaseItem item)
-    {
-        var flags = new List<string>();
-        if (item.IsLatest)
-            flags.Add("Latest");
-        if (item.IsDraft)
-            flags.Add("draft");
-        if (item.IsPrerelease)
-            flags.Add("pre");
-        var mark = flags.Count == 0 ? "" : "  [" + string.Join(", ", flags) + "]";
-        var title = string.IsNullOrEmpty(item.Name) || item.Name == item.Tag ? "" : "  " + item.Name;
-        var when = FormatPublishedAt(item.PublishedAt);
-        return $"{item.Tag}{title}{mark}{(string.IsNullOrEmpty(when) ? "" : "  " + when)}";
-    }
-
-    private static string FormatPublishedAt(string iso)
-    {
-        if (string.IsNullOrWhiteSpace(iso))
-            return "";
-        return DateTimeOffset.TryParse(iso, out var dt) ? dt.LocalDateTime.ToString("yyyy-MM-dd HH:mm") : iso;
-    }
+    private static string FormatReleaseLine(ReleaseItem item) => item.Line();
 
     private static string FirstLine(string text)
     {

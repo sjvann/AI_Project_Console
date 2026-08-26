@@ -240,6 +240,7 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .doctor-summary-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--ok); }
 .doctor-summary.doctor-warn .doctor-summary-dot { background: var(--wait); }
 .doctor-summary.doctor-missing .doctor-summary-dot { background: var(--danger); }
+.doctor-summary.doctor-info { background: var(--row-alt); }
 .doctor-summary.doctor-info .doctor-summary-dot { background: var(--down); }
 .doctor-summary-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .doctor-summary-text strong { font-size: 15px; }
@@ -257,6 +258,22 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .doctor-status.doctor-ok { color: var(--ok); }
 .doctor-status.doctor-warn { color: var(--wait); }
 .doctor-status.doctor-missing { color: var(--danger); }
+.doctor-status.doctor-info { color: var(--muted); }
+.app-dialog { display: flex; flex-direction: column; width: min(680px, 94vw); max-height: min(640px, 88vh); padding: 16px 0 0; overflow: hidden; }
+.app-dialog-head { padding: 0 18px; }
+.app-dialog-head h2 { margin: 0; }
+.app-dialog-head .hint { margin: 6px 0 0; }
+.app-dialog-body { flex: 1; overflow: auto; padding: 12px 18px 4px; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.app-dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; }
+.release-list { max-height: 360px; overflow: auto; margin: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+.release-row { display: grid; grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 8px 10px; font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
+.release-row:last-child { border-bottom: none; }
+.release-row:hover { background: var(--sel); }
+.release-tag { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; white-space: nowrap; }
+.release-title { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.release-badges { display: inline-flex; gap: 8px; white-space: nowrap; }
+.release-when { color: var(--muted); font: 600 12px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.job-log { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--log-bg); color: var(--log-fg); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; overflow: auto; max-height: 280px; }
 .doctor-note { margin: 6px 0 0; }
 .doctor-action { margin-top: 6px; padding: 0; }
 .doctor-action-btn { margin-top: 8px; }

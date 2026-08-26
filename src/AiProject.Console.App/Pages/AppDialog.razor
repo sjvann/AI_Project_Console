@@ -1,0 +1,30 @@
+<div class="overlay" @onclick="OnOverlay">
+    <div class="dialog @(Large ? "dialog-lg" : null) app-dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="@TitleId" aria-modal="true">
+        <div class="app-dialog-head">
+            <h2 id="@TitleId">@Title</h2>
+            @if (!string.IsNullOrEmpty(Hint))
+            {
+                <p class="hint">@Hint</p>
+            }
+        </div>
+        <div class="app-dialog-body">
+            @ChildContent
+        </div>
+        <div class="dialog-actions app-dialog-actions">
+            @Actions
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string TitleId { get; set; } = "app-dialog-title";
+    [Parameter] public bool Large { get; set; } = true;
+    [Parameter] public bool DismissOnOverlay { get; set; } = true;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    Task OnOverlay() => DismissOnOverlay ? OnClose.InvokeAsync() : Task.CompletedTask;
+}

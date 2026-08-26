@@ -1,0 +1,77 @@
+@if (S.InfoReport is { } report)
+{
+    <AppDialog Title="@report.Title" Hint="@report.Hint" TitleId="info-status-title" OnClose="S.CloseDialog">
+        <ChildContent>
+        <div class="doctor-summary doctor-@Css(report.Tone)" role="status" aria-atomic="true">
+            <span class="doctor-summary-dot" aria-hidden="true"></span>
+            <div class="doctor-summary-text">
+                <strong>@report.Headline</strong>
+                @if (!string.IsNullOrEmpty(report.HeadlineDetail))
+                {
+                    <span>@report.HeadlineDetail</span>
+                }
+            </div>
+        </div>
+        @foreach (var section in report.Sections)
+        {
+            <section class="doctor-section" aria-labelledby="info-@section.Id">
+                <div class="doctor-section-head">
+                    <h3 id="info-@section.Id">@section.Title</h3>
+                    @if (!string.IsNullOrEmpty(section.Badge))
+                    {
+                        <span class="doctor-status doctor-@Css(section.Tone)">@section.Badge</span>
+                    }
+                </div>
+                @if (section.Fields.Count > 0)
+                {
+                    <ul class="doctor-list">
+                        @foreach (var item in section.Fields)
+                        {
+                            <li class="doctor-row">
+                                <span class="doctor-label">@item.Label</span>
+                                <span class="doctor-value">
+                                    @item.Value
+                                    @if (!string.IsNullOrEmpty(item.Detail) && !string.Equals(item.Detail, item.Value, StringComparison.Ordinal))
+                                    {
+                                        <span class="doctor-detail">@item.Detail</span>
+                                    }
+                                </span>
+                                @if (!string.IsNullOrEmpty(item.Badge))
+                                {
+                                    <span class="doctor-status doctor-@Css(item.Tone)">@item.Badge</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (!string.IsNullOrEmpty(section.Note))
+                {
+                    <pre class="doctor-howto">@section.Note</pre>
+                }
+            </section>
+        }
+        </ChildContent>
+        <Actions>
+            <button type="button" class="btn-sec" @onclick="S.CopyInfoAsync">@(S.InfoCopied ? "已複製" : "複製報告")</button>
+            <span class="grow"></span>
+            <button type="button" class="btn-sec" @onclick="S.CloseDialog">關閉</button>
+            @if (!string.IsNullOrEmpty(report.PrimaryAction) && !string.IsNullOrEmpty(report.PrimaryLabel))
+            {
+                <button type="button" class="btn-primary" @onclick="S.InvokeInfoPrimaryAsync">@report.PrimaryLabel</button>
+            }
+        </Actions>
+    </AppDialog>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+
+    static string Css(string? tone) => tone switch
+    {
+        "ok" => "ok",
+        "warn" => "warn",
+        "error" or "missing" => "missing",
+        _ => "info",
+    };
+}

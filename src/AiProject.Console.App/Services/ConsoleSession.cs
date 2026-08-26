@@ -158,6 +158,10 @@ public sealed class ConsoleSession : IDisposable
     public string? Dialog { get; private set; }
     public DoctorSnapshot? DoctorView { get; private set; }
     public bool DoctorCopied { get; private set; }
+    public ReleaseListView? ReleaseList { get; private set; }
+    public InfoReport? InfoReport { get; private set; }
+    public JobResultView? JobResult { get; private set; }
+    public bool InfoCopied { get; private set; }
     public string AlertTitle { get; private set; } = "";
     public string AlertBody { get; private set; } = "";
     public GithubConfig GithubDraft { get; private set; } = new();
@@ -1886,7 +1890,7 @@ public sealed class ConsoleSession : IDisposable
                 return;
             case "deploy_status":
             case "gcp_status":
-                _native.Info("部署狀態", DeployConfigResolver.StatusReport(Catalog));
+                ShowInfoReport(DeployConfigResolver.StatusView(Catalog));
                 return;
             case "deploy_open":
             case "gcp_open":
@@ -1903,7 +1907,7 @@ public sealed class ConsoleSession : IDisposable
             }
             case "deploy_ci_hint":
             case "gcp_ci_hint":
-                _native.Info("部署說明", DeployConfigResolver.CiHint(Catalog));
+                ShowInfoReport(DeployConfigResolver.CiHintView(Catalog));
                 return;
             case "github_clone":
                 OpenCloneDialog();
@@ -1912,7 +1916,7 @@ public sealed class ConsoleSession : IDisposable
                 await EditGithubAsync().ConfigureAwait(false);
                 return;
             case "github_status":
-                _native.Info("GitHub 狀態", await GitHubService.StatusReportAsync(Catalog).ConfigureAwait(false));
+                await OpenGithubStatusAsync().ConfigureAwait(false);
                 return;
             case "github_switch_branch":
                 await OpenBranchDialogAsync().ConfigureAwait(false);
@@ -1951,7 +1955,7 @@ public sealed class ConsoleSession : IDisposable
                 await OpenReleaseDialogAsync().ConfigureAwait(false);
                 return;
             case "github_releases":
-                await RunJobAsync("Release 列表…", async () => await GitHubService.ListReleasesAsync(Catalog!)).ConfigureAwait(false);
+                await OpenReleaseListAsync().ConfigureAwait(false);
                 return;
             case "github_open_releases":
                 if (Catalog is null || !await GitHubService.OpenReleasesAsync(Catalog).ConfigureAwait(false))
@@ -2082,7 +2086,8 @@ public sealed class ConsoleSession : IDisposable
         await RefreshGitStatusAsync().ConfigureAwait(false);
         await RefreshBuildStatesAsync().ConfigureAwait(false);
         NewBranchName = "";
-        CloseDialog();
+        if (Dialog == "branch")
+            CloseDialog();
     }
 
     private async Task RefreshBranchListAsync()
@@ -2795,9 +2800,7 @@ public sealed class ConsoleSession : IDisposable
         if (GithubApplyRemote)
             msg = await GithubConfigResolver.ApplyRemoteAsync(Catalog, GithubDraft).ConfigureAwait(false);
         CloseDialog();
-        JobText = "已儲存 GitHub 設定";
-        _native.Info("GitHub 設定", msg);
-        Notify();
+        PresentOutcome("GitHub 設定", msg);
     }
 
     public void SaveDeploy()
@@ -2821,6 +2824,137 @@ public sealed class ConsoleSession : IDisposable
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;
+        ReleaseList = null;
+        InfoReport = null;
+        JobResult = null;
+        InfoCopied = false;
+        Notify();
+    }
+
+    public async Task OpenReleaseListAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        ReleaseListView? list = null;
+        await RunJobAsync("Release 列表…", async () =>
+        {
+            list = await GitHubService.LoadReleaseListAsync(Catalog!).ConfigureAwait(false);
+            return (string?)null;
+        }).ConfigureAwait(false);
+        if (list is null)
+            return;
+        ReleaseList = list;
+        InfoReport = null;
+        JobResult = null;
+        InfoCopied = false;
+        Dialog = "releases";
+        Notify();
+    }
+
+    public async Task OpenGithubStatusAsync()
+    {
+        InfoReport? report = null;
+        await RunJobAsync("GitHub 狀態…", async () =>
+        {
+            report = await GitHubService.StatusViewAsync(Catalog).ConfigureAwait(false);
+            return (string?)null;
+        }).ConfigureAwait(false);
+        if (report is not null)
+            ShowInfoReport(report);
+    }
+
+    public void OpenReleaseItem(ReleaseItem item)
+    {
+        if (Catalog is null)
+            return;
+        _ = GitHubService.OpenReleasesAsync(Catalog, tag: item.Tag);
+    }
+
+    public void OpenReleaseListOnGithub()
+    {
+        if (Catalog is null || string.IsNullOrEmpty(ReleaseList?.ReleasesUrl))
+        {
+            _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo）。");
+            return;
+        }
+        CliUtil.OpenUrl(ReleaseList.ReleasesUrl);
+    }
+
+    public async Task InvokeInfoPrimaryAsync()
+    {
+        switch (InfoReport?.PrimaryAction)
+        {
+            case "open-github":
+                if (Catalog is null || !await GitHubService.OpenOnGithubAsync(Catalog).ConfigureAwait(false))
+                    _native.Info("無法開啟", "請先完成 GitHub 設定（owner/repo）。");
+                break;
+            case "edit-deploy":
+                OpenDeployDialog();
+                break;
+            case "open-deploy":
+                if (Catalog is null || !DeployConfigResolver.OpenHost(DeployConfigResolver.Resolve(Catalog)))
+                    _native.Info("未設定網址", "請在部署設定中填寫對外網址或主機。");
+                break;
+        }
+    }
+
+    public async Task CopyInfoAsync()
+    {
+        var text = InfoReport?.Text
+            ?? ReleaseList?.ToText()
+            ?? JobResult?.Detail
+            ?? JobResult?.Summary;
+        if (string.IsNullOrWhiteSpace(text) || Js is null)
+            return;
+        try
+        {
+            await Js.InvokeVoidAsync("aiConsole.copyText", text).ConfigureAwait(false);
+            InfoCopied = true;
+            JobText = "已複製到剪貼簿。";
+        }
+        catch
+        {
+            InfoCopied = false;
+            JobText = "無法複製到剪貼簿。";
+        }
+        Notify();
+    }
+
+    void ShowInfoReport(InfoReport report)
+    {
+        InfoReport = report;
+        ReleaseList = null;
+        JobResult = null;
+        InfoCopied = false;
+        Dialog = "info";
+        Notify();
+    }
+
+    void ShowJobResult(string title, string tone, string summary, string? detail)
+    {
+        JobResult = new JobResultView(JobResultView.CleanTitle(title), tone, summary, detail);
+        InfoReport = null;
+        ReleaseList = null;
+        InfoCopied = false;
+        Dialog = "job-result";
+        Notify();
+    }
+
+    void PresentOutcome(string title, string? message, bool error = false)
+    {
+        if (error)
+        {
+            JobText = "錯誤";
+            ShowJobResult(title, "error", FirstLine(message ?? "發生錯誤"), message);
+            return;
+        }
+        if (JobResultView.IsDense(message))
+        {
+            ShowJobResult(title, "ok", FirstLine(message!), message);
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(message))
+            JobText = message.Trim();
         Notify();
     }
 
@@ -3026,12 +3160,11 @@ public sealed class ConsoleSession : IDisposable
             var branch = string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch;
             var result = CiWorkflow.Ensure(Catalog!.Root, branch);
             JobText = result.Created ? "已寫入 CI workflow" : "CI workflow 已存在";
-            Notify();
-            _native.Info("CI workflow", result.Message);
+            PresentOutcome("CI workflow", result.Message);
         }
         catch (Exception ex)
         {
-            _native.Error("補齊 CI workflow", FirstLine(ex.Message));
+            PresentOutcome("補齊 CI workflow", ex.Message, error: true);
         }
     }
 
@@ -3586,13 +3719,15 @@ public sealed class ConsoleSession : IDisposable
             JobText = "錯誤";
         else if (!refreshBuilds && BuildTotal > 0 && !string.IsNullOrEmpty(BuildProgressText))
             JobText = BuildProgressText;
+        else if (!string.IsNullOrWhiteSpace(msg) && !JobResultView.IsDense(msg))
+            JobText = msg.Trim();
         else
             JobText = "完成";
         Notify();
         if (err is not null)
-            _native.Error(title, err);
-        else if (!string.IsNullOrWhiteSpace(msg))
-            _native.Info(title, msg);
+            PresentOutcome(title, err, error: true);
+        else if (JobResultView.IsDense(msg))
+            PresentOutcome(title, msg);
         UpdateReady();
         if (refreshBuilds)
             await RefreshBuildStatesAsync().ConfigureAwait(false);
@@ -3696,6 +3831,12 @@ public sealed class ConsoleSession : IDisposable
         LeftTab = "svc";
         RightTab = "log";
         Dialog = null;
+        DoctorView = null;
+        DoctorCopied = false;
+        ReleaseList = null;
+        InfoReport = null;
+        JobResult = null;
+        InfoCopied = false;
         GithubDraft = new();
         GithubSaveTarget = "local";
         GithubApplyRemote = true;
