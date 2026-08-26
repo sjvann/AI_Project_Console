@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using AiProject.Console.Core.Agents;
+using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Cursor;
@@ -305,6 +306,27 @@ public static class CursorLauncher
                 lines.Add("- " + Path.GetFullPath(path).Replace('\\', '/'));
         }
         return string.Join('\n', lines) + "\n" + AgentPlaybook.VerificationHint();
+    }
+
+    public static string BuildIssueAgentPrompt(string root, GithubIssue issue)
+    {
+        var title = string.IsNullOrWhiteSpace(issue.Title) ? "（未命名）" : issue.Title.Trim();
+        var body = string.IsNullOrWhiteSpace(issue.Body) ? "（沒有內文）" : issue.Body.Trim();
+        if (body.Length > MaxLogChars)
+            body = body[..MaxLogChars].TrimEnd() + "\n…（內文過長，已截斷）";
+        var labels = issue.Labels.Count == 0 ? "（無）" : string.Join(", ", issue.Labels);
+        var url = string.IsNullOrEmpty(issue.Url) ? "（無）" : issue.Url;
+        return
+            "請協助處理指派給我的 GitHub Issue。先理解需求，再直接在此工作區實作；優先完成任務，不要只做說明。"
+            + "改完後簡短說明改了什麼、如何驗證。\n\n"
+            + $"專案根目錄：{root}\n"
+            + $"Issue：{issue.NumberText} {title}\n"
+            + $"網址：{url}\n"
+            + $"標籤：{labels}\n\n"
+            + "Issue 內容：\n"
+            + body
+            + "\n"
+            + AgentPlaybook.VerificationHint();
     }
 
     public static string PromptDeeplinkUrl(string promptText) =>

@@ -11,6 +11,14 @@
         <span class="grow"></span>
         <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
+        @if (S.GithubLoggedIn)
+        {
+            <span class="gh-id" title="目前 GitHub 帳號">
+                <span class="gh-id-dot" aria-hidden="true"></span>
+                <span>@S.GithubAccount.Display()</span>
+            </span>
+            <button class="btn-sec" disabled="@S.GithubAuthBusy" title="登出 GitHub CLI 帳號" @onclick="S.LogoutGithubAsync">登出 GitHub</button>
+        }
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
 
@@ -82,6 +90,12 @@
             <button type="button" class="duty-chip @(S.AuditFailCount > 0 ? "is-warn" : "is-ok")" @onclick="@(() => S.SetRightTab("audit"))">
                 MCP 拒絕 @S.AuditFailCount
             </button>
+            @if (S.GithubManaged)
+            {
+                <button type="button" class="duty-chip @(S.AssignedIssues.Count > 0 ? "is-ok" : "is-wait")" @onclick="S.ShowTasks">
+                    我的任務 @S.AssignedIssues.Count
+                </button>
+            }
             @if (!string.IsNullOrEmpty(S.DutyAttention))
             {
                 <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
@@ -104,12 +118,19 @@
 
     <div class="split" id="split-view">
         <div class="pane">
-            <div class="tabs">
-                <div class="tab @(S.LeftTab == "svc" ? "active" : null)" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "svc")" @ondblclick="S.ToggleAllServiceGroups">
+            <div class="tabs" role="tablist" aria-label="服務、專案與任務">
+                <div class="tab @(S.LeftTab == "svc" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "svc")" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "svc")" @ondblclick="S.ToggleAllServiceGroups" @onkeydown="@(e => OnLeftTabKey(e, "svc"))">
                     服務 <span class="badge">@S.ReadyCount/@S.ServiceCount</span>
                 </div>
-                <div class="tab @(S.LeftTab == "prj" ? "active" : null)" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "prj")" @ondblclick="S.ToggleAllProjectGroups">
+                <div class="tab @(S.LeftTab == "prj" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "prj")" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "prj")" @ondblclick="S.ToggleAllProjectGroups" @onkeydown="@(e => OnLeftTabKey(e, "prj"))">
                     專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
+                </div>
+                <div class="tab @(S.LeftTab == "task" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "task")" title="指派給我的 GitHub Issue" @onclick="S.ShowTasks" @onkeydown="@(e => OnLeftTabKey(e, "task"))">
+                    任務
+                    @if (S.GithubLoggedIn && S.GithubManaged)
+                    {
+                        <span class="badge">@S.AssignedIssues.Count</span>
+                    }
                 </div>
             </div>
             <div class="pane-body">
@@ -167,7 +188,7 @@
                         }
                     }
                 }
-                else
+                else if (S.LeftTab == "prj")
                 {
                     <div class="row">
                         <label class="check"><input type="checkbox" checked="@S.StaleOnly" @onchange="e => { S.StaleOnly = (bool)(e.Value ?? false); }" /> 只看需重編</label>
@@ -202,6 +223,96 @@
                     @if (!S.VisibleProjects.Any())
                     {
                         <p class="hint">@(S.Catalog is null ? "請先選擇專案目錄。" : "沒有專案。")</p>
+                    }
+                }
+                else
+                {
+                    <div class="row task-toolbar">
+                        <span class="hint grow">@(S.GithubLoggedIn ? S.GithubAccount.Display() + " 的 Issue" : "GitHub 任務")</span>
+                        <button class="btn-sec" disabled="@(S.IssuesBusy || !S.GithubLoggedIn || !S.GithubManaged)" @onclick="S.RefreshIssuesAsync">刷新</button>
+                    </div>
+                    @if (S.Catalog is null)
+                    {
+                        <p class="hint">請先選擇專案目錄。GitHub 管理的專案會在登入後顯示指派給你的 Issue。</p>
+                    }
+                    else if (!S.GithubManaged)
+                    {
+                        <p class="hint">此專案尚未接上 GitHub，沒有 Issue 任務。</p>
+                    }
+                    else if (!S.GithubLoggedIn)
+                    {
+                        <div class="task-empty">
+                            <p class="hint">此專案由 GitHub 管理，請先登入才能看任務。</p>
+                            <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">登入 GitHub</button>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrEmpty(S.IssuesHint))
+                        {
+                            <p class="hint">@S.IssuesHint</p>
+                        }
+                        <section class="task-section" aria-label="我的任務">
+                            <h3 class="task-heading">我的任務 <span class="group-count">@S.AssignedIssues.Count</span></h3>
+                            @if (S.AssignedIssues.Count == 0)
+                            {
+                                <p class="hint">目前沒有指派給你的 Issue。可從下方未指派清單接手。</p>
+                            }
+                            @foreach (var issue in S.AssignedIssues)
+                            {
+                                <div class="task-row">
+                                    <span class="task-num">@issue.NumberText</span>
+                                    <div class="task-main">
+                                        <button type="button" class="task-title" title="在瀏覽器開啟" @onclick="@(() => S.OpenIssueUrl(issue))">@issue.Title</button>
+                                        <span class="task-meta">
+                                            @if (!string.IsNullOrEmpty(issue.LabelText))
+                                            {
+                                                <span>@issue.LabelText</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(issue.WhenText()))
+                                            {
+                                                <span>@issue.WhenText()</span>
+                                            }
+                                        </span>
+                                    </div>
+                                    <button class="btn-primary btn-compact" title="請後端 Agent 協助處理此 Issue" @onclick="@(() => S.OpenIssueHelp(issue))">請 Agent 協助</button>
+                                </div>
+                            }
+                        </section>
+                        <section class="task-section" aria-label="未指派">
+                            <button type="button" class="group-label @(S.UnassignedCollapsed ? "collapsed" : null)" title="展開／收合未指派清單" aria-expanded="@(!S.UnassignedCollapsed)" @onclick="S.ToggleUnassignedIssues">
+                                <span class="group-chevron" aria-hidden="true"></span>
+                                <span>未指派</span>
+                                <span class="group-count">@S.UnassignedIssues.Count</span>
+                            </button>
+                            @if (!S.UnassignedCollapsed)
+                            {
+                                @if (S.UnassignedIssues.Count == 0)
+                                {
+                                    <p class="hint">沒有未指派的 Issue。</p>
+                                }
+                                @foreach (var issue in S.UnassignedIssues)
+                                {
+                                    <div class="task-row task-open">
+                                        <span class="task-num">@issue.NumberText</span>
+                                        <div class="task-main">
+                                            <button type="button" class="task-title" title="在瀏覽器開啟" @onclick="@(() => S.OpenIssueUrl(issue))">@issue.Title</button>
+                                            <span class="task-meta">
+                                                @if (!string.IsNullOrEmpty(issue.LabelText))
+                                                {
+                                                    <span>@issue.LabelText</span>
+                                                }
+                                                @if (!string.IsNullOrEmpty(issue.WhenText()))
+                                                {
+                                                    <span>@issue.WhenText()</span>
+                                                }
+                                            </span>
+                                        </div>
+                                        <button class="btn-sec btn-compact" title="把這則 Issue 指派給自己" @onclick="@(() => S.AcceptIssueAsync(issue.Number))">接受</button>
+                                    </div>
+                                }
+                            }
+                        </section>
                     }
                 }
             </div>
@@ -421,6 +532,21 @@
     </div>
     <div class="foot">關閉控制台不會停止服務 · 狀態寫入選定專案的 .ai_project/</div>
 </div>
+
+@if (S.Dialog == "gh-login")
+{
+    <div class="overlay">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="gh-login-title" aria-modal="true">
+            <h2 id="gh-login-title">需要登入 GitHub</h2>
+            <p class="hint">@(string.IsNullOrEmpty(S.GithubAuthHint) ? "此專案由 GitHub 管理。請先登入，才能讀取指派給你的 Issue。" : S.GithubAuthHint)</p>
+            <p class="hint">登入會開啟瀏覽器，用 GitHub CLI（gh）完成授權。取消則不會開啟這個專案。</p>
+            <div class="dialog-actions">
+                <button class="btn-sec" disabled="@S.GithubAuthBusy" @onclick="S.CancelGithubLogin">取消並關閉專案</button>
+                <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">@(S.GithubAuthBusy ? "等待瀏覽器授權…" : "登入 GitHub")</button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (S.Dialog == "clone")
 {
@@ -774,6 +900,16 @@
     void OnChanged() => InvokeAsync(StateHasChanged);
 
     void Toggle(string key) => openMenu = openMenu == key ? null : key;
+
+    void OnLeftTabKey(KeyboardEventArgs e, string tab)
+    {
+        if (e.Key is not ("Enter" or " "))
+            return;
+        if (tab == "task")
+            S.ShowTasks();
+        else
+            S.LeftTab = tab;
+    }
 
     async Task OnRecent(ChangeEventArgs e)
     {

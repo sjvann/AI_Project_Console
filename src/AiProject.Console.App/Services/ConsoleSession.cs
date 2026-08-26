@@ -22,6 +22,9 @@ public sealed class ConsoleSession : IDisposable
     private readonly NativeUi _native;
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenSource? _askCts;
+    private CancellationTokenSource? _githubLoginCts;
+    private bool _pendingOpenCursor;
+    private bool _unassignedCollapseUserSet;
     private long _logOffset;
 
     public ConsoleSession(NativeUi native)
@@ -40,6 +43,7 @@ public sealed class ConsoleSession : IDisposable
         RefreshAgentDetect();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
+        _ = RefreshGithubAuthAsync();
         _ = RestoreLastProjectOnStartAsync();
     }
 
@@ -172,6 +176,16 @@ public sealed class ConsoleSession : IDisposable
     public GitBriefStatus? GitBrief { get; private set; }
     public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
     public AvailableUpdate? UpdateAvailable { get; private set; }
+    public GithubAccount GithubAccount { get; private set; } = GithubAccount.None;
+    public bool GithubLoggedIn => GithubAccount.LoggedIn;
+    public bool GithubManaged { get; private set; }
+    public bool GithubAuthBusy { get; private set; }
+    public string GithubAuthHint { get; private set; } = "";
+    public IReadOnlyList<GithubIssue> AssignedIssues { get; private set; } = [];
+    public IReadOnlyList<GithubIssue> UnassignedIssues { get; private set; } = [];
+    public string IssuesHint { get; private set; } = "";
+    public bool IssuesBusy { get; private set; }
+    public bool UnassignedCollapsed { get; private set; } = true;
 
     public IReadOnlyList<ConsoleAction> BuildActions => ActionCatalog.Load("build");
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
@@ -224,6 +238,13 @@ public sealed class ConsoleSession : IDisposable
     public void ToggleAllProjectGroups()
     {
         ToggleAllGroups(_collapsedProjectGroups, ProjectGroups.Select(g => g.Key));
+    }
+
+    public void ToggleUnassignedIssues()
+    {
+        _unassignedCollapseUserSet = true;
+        UnassignedCollapsed = !UnassignedCollapsed;
+        Notify();
     }
 
     private void ToggleAllGroups(HashSet<string> collapsed, IEnumerable<string> keys)
@@ -813,21 +834,13 @@ public sealed class ConsoleSession : IDisposable
             _collapsedProjectGroups.Clear();
             LogFilter = "";
             GitStatusText = "";
+            ClearIssueLists();
             ReloadLog();
             LoadAudit(reloadPolicy: true);
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             Notify();
             _ = RefreshBuildStatesAsync();
-            _ = RefreshGitStatusAsync();
-            if (openCursor)
-            {
-                var backend = CurrentAgent;
-                var err = backend.OpenWorkspace(catalog.Root, AgentBackendRegistry.CliOverrideFor(backend));
-                JobText = err is null
-                    ? (rememberErr is null ? $"已載入專案，並在 {backend.DisplayName} 開啟" : JobText)
-                    : $"已載入專案（{backend.DisplayName} 未開啟：{err}）";
-                Notify();
-            }
+            _ = AfterProjectLoadedAsync(openCursor, rememberErr);
         }
         catch (Exception ex)
         {
@@ -862,6 +875,288 @@ public sealed class ConsoleSession : IDisposable
                 return false;
         }
         return true;
+    }
+
+    private async Task AfterProjectLoadedAsync(bool openCursor, string? rememberErr)
+    {
+        try
+        {
+            await RefreshGitStatusAsync().ConfigureAwait(false);
+            await RefreshGithubAuthAsync().ConfigureAwait(false);
+            var catalog = Catalog;
+            GithubManaged = catalog is not null && await GitHubService.IsGithubManagedAsync(catalog).ConfigureAwait(false);
+            if (GithubManaged && !GithubLoggedIn)
+            {
+                _pendingOpenCursor = openCursor;
+                GithubAuthHint = GitHubService.GhAvailable()
+                    ? "此專案由 GitHub 管理。請先登入，才能讀取指派給你的 Issue。"
+                    : "此專案由 GitHub 管理，但尚未安裝 GitHub CLI（gh）。請先安裝 https://cli.github.com/ 再登入。";
+                Dialog = "gh-login";
+                Notify();
+                return;
+            }
+            FinishProjectOpen(openCursor, rememberErr);
+            if (GithubLoggedIn && GithubManaged)
+                await RefreshIssuesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            JobText = "已載入專案";
+            _native.Warn("GitHub", FirstLine(ex.Message));
+            Notify();
+        }
+    }
+
+    private void FinishProjectOpen(bool openCursor, string? rememberErr)
+    {
+        if (openCursor && Catalog is not null)
+        {
+            var backend = CurrentAgent;
+            var err = backend.OpenWorkspace(Catalog.Root, AgentBackendRegistry.CliOverrideFor(backend));
+            JobText = err is null
+                ? (rememberErr is null ? $"已載入專案，並在 {backend.DisplayName} 開啟" : JobText)
+                : $"已載入專案（{backend.DisplayName} 未開啟：{err}）";
+        }
+        Notify();
+    }
+
+    public async Task RefreshGithubAuthAsync()
+    {
+        try
+        {
+            GithubAccount = await GitHubAuth.CurrentAsync(Catalog?.Root, _cts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            GithubAccount = GitHubService.GhAvailable() ? new GithubAccount("", true) : GithubAccount.None;
+        }
+        Notify();
+    }
+
+    public async Task LoginGithubAsync()
+    {
+        if (GithubAuthBusy)
+            return;
+        if (!GitHubService.GhAvailable())
+        {
+            GithubAuthHint = "尚未安裝 GitHub CLI（gh）。請先安裝 https://cli.github.com/ 再登入。";
+            _native.Error("需要 GitHub CLI", GithubAuthHint);
+            Notify();
+            return;
+        }
+
+        _githubLoginCts?.Cancel();
+        _githubLoginCts = new CancellationTokenSource();
+        GithubAuthBusy = true;
+        GithubAuthHint = "正在開啟瀏覽器，請在 GitHub 完成授權…";
+        JobText = "等待 GitHub 登入…";
+        Notify();
+        try
+        {
+            var (ok, message) = await GitHubAuth.LoginWebAsync(Catalog?.Root, _githubLoginCts.Token).ConfigureAwait(false);
+            await RefreshGithubAuthAsync().ConfigureAwait(false);
+            if (ok && GithubLoggedIn)
+            {
+                GithubAuthHint = "";
+                JobText = $"已登入 GitHub（{GithubAccount.Display()}）";
+                if (Dialog == "gh-login")
+                    Dialog = null;
+                var openCursor = _pendingOpenCursor;
+                _pendingOpenCursor = false;
+                if (Catalog is not null)
+                    FinishProjectOpen(openCursor, rememberErr: null);
+                if (GithubManaged && Catalog is not null)
+                    await RefreshIssuesAsync().ConfigureAwait(false);
+                Notify();
+                return;
+            }
+            GithubAuthHint = GithubLoggedIn ? "" : (string.IsNullOrEmpty(message) ? "登入未完成。" : FirstLine(message));
+            JobText = "GitHub 尚未登入";
+            if (GithubManaged && Catalog is not null)
+            {
+                Dialog = "gh-login";
+                _native.Warn("GitHub 登入", GithubAuthHint);
+            }
+            else
+                _native.Warn("GitHub 登入", GithubAuthHint);
+        }
+        catch (OperationCanceledException)
+        {
+            GithubAuthHint = "已取消登入。";
+            JobText = "已取消 GitHub 登入";
+        }
+        finally
+        {
+            GithubAuthBusy = false;
+            Notify();
+        }
+    }
+
+    public async Task LogoutGithubAsync()
+    {
+        if (GithubAuthBusy || !GithubLoggedIn)
+            return;
+        if (!_native.Confirm("登出 GitHub", $"要登出 {GithubAccount.Display()} 嗎？\n登出後，GitHub 管理的專案需要重新登入。"))
+            return;
+
+        GithubAuthBusy = true;
+        JobText = "登出 GitHub…";
+        Notify();
+        try
+        {
+            var (ok, message) = await GitHubAuth.LogoutAsync(Catalog?.Root, _cts.Token).ConfigureAwait(false);
+            await RefreshGithubAuthAsync().ConfigureAwait(false);
+            ClearIssueLists();
+            if (!ok && GithubLoggedIn)
+            {
+                _native.Warn("登出 GitHub", string.IsNullOrEmpty(message) ? "登出失敗。" : message);
+                JobText = "GitHub 登出失敗";
+                return;
+            }
+            JobText = "已登出 GitHub";
+            if (GithubManaged && Catalog is not null)
+            {
+                GithubAuthHint = "此專案由 GitHub 管理。請重新登入，或關閉專案。";
+                Dialog = "gh-login";
+            }
+        }
+        finally
+        {
+            GithubAuthBusy = false;
+            Notify();
+        }
+    }
+
+    public void CancelGithubLogin()
+    {
+        _githubLoginCts?.Cancel();
+        GithubAuthBusy = false;
+        _pendingOpenCursor = false;
+        if (GithubManaged && Catalog is not null && !GithubLoggedIn)
+            DropProjectAfterLoginCancel();
+        else
+        {
+            Dialog = null;
+            Notify();
+        }
+    }
+
+    private void DropProjectAfterLoginCancel()
+    {
+        ResetToStartup();
+        try
+        {
+            ConsoleSettingsStore.ClearLastProject();
+        }
+        catch
+        {
+            // 未寫入還原標記不阻擋關閉
+        }
+        JobText = "已取消登入，專案未開啟";
+        Notify();
+    }
+
+    public async Task RefreshIssuesAsync()
+    {
+        if (Catalog is null || !GithubLoggedIn || !GithubManaged)
+        {
+            ClearIssueLists();
+            if (Catalog is not null && !GithubManaged)
+                IssuesHint = "此專案尚未接上 GitHub，沒有 Issue 任務。";
+            else if (Catalog is not null && !GithubLoggedIn)
+                IssuesHint = "登入 GitHub 後即可看到指派給你的任務。";
+            Notify();
+            return;
+        }
+        if (IssuesBusy)
+            return;
+        IssuesBusy = true;
+        IssuesHint = "載入任務中…";
+        Notify();
+        try
+        {
+            var all = await GitHubIssues.ListOpenAsync(Catalog, ct: _cts.Token).ConfigureAwait(false);
+            var (mine, open) = GitHubIssues.Split(all, GithubAccount.Login);
+            AssignedIssues = mine;
+            UnassignedIssues = open;
+            if (!_unassignedCollapseUserSet)
+                UnassignedCollapsed = mine.Count > 0;
+            IssuesHint = mine.Count == 0 && open.Count == 0
+                ? "目前沒有未關閉的 Issue。"
+                : "";
+        }
+        catch (Exception ex)
+        {
+            IssuesHint = FirstLine(ex.Message);
+        }
+        finally
+        {
+            IssuesBusy = false;
+            Notify();
+        }
+    }
+
+    public async Task AcceptIssueAsync(int number)
+    {
+        if (!RequireCatalog() || !GithubLoggedIn)
+            return;
+        var issue = UnassignedIssues.FirstOrDefault(i => i.Number == number)
+            ?? AssignedIssues.FirstOrDefault(i => i.Number == number);
+        var title = issue?.Title ?? $"#{number}";
+        if (!_native.Confirm("接受任務", $"要把 {issue?.NumberText ?? "#" + number}「{title}」指派給 {GithubAccount.Display()} 嗎？"))
+            return;
+        await RunJobAsync("接受任務…", async () =>
+        {
+            await GitHubIssues.AcceptAsync(Catalog!, number).ConfigureAwait(false);
+            return $"已接受 {issue?.NumberText ?? "#" + number}";
+        }).ConfigureAwait(false);
+        await RefreshIssuesAsync().ConfigureAwait(false);
+        LeftTab = "task";
+        Notify();
+    }
+
+    public void OpenIssueUrl(GithubIssue issue)
+    {
+        if (!string.IsNullOrEmpty(issue.Url))
+            CliUtil.OpenUrl(issue.Url);
+    }
+
+    public void OpenIssueHelp(GithubIssue issue)
+    {
+        if (!RequireCatalog())
+            return;
+        AgentPrompt = CursorLauncher.BuildIssueAgentPrompt(Catalog!.Root, issue);
+        AgentTitle = $"請 Agent 協助 · {issue.NumberText}";
+        AgentIntro = AgentLaunchIntro();
+        Dialog = "agent";
+        Notify();
+    }
+
+    public void ShowTasks()
+    {
+        LeftTab = "task";
+        if (GithubLoggedIn && GithubManaged)
+            _ = RefreshIssuesAsync();
+        else
+            Notify();
+    }
+
+    private void ClearIssueLists()
+    {
+        AssignedIssues = [];
+        UnassignedIssues = [];
+        IssuesHint = "";
+        IssuesBusy = false;
+        UnassignedCollapsed = true;
+        _unassignedCollapseUserSet = false;
+        GithubManaged = false;
+    }
+
+    private static string FirstLine(string text)
+    {
+        var t = (text ?? "").Trim();
+        var i = t.IndexOfAny(['\r', '\n']);
+        return i < 0 ? t : t[..i];
     }
 
     public void SelectService(string id)
@@ -1860,6 +2155,8 @@ public sealed class ConsoleSession : IDisposable
     {
         _askCts?.Cancel();
         _askCts?.Dispose();
+        _githubLoginCts?.Cancel();
+        _githubLoginCts?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
     }
@@ -1877,6 +2174,13 @@ public sealed class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return false;
+        if (GithubManaged && !GithubLoggedIn)
+        {
+            GithubAuthHint = "此專案由 GitHub 管理。請先登入。";
+            Dialog = "gh-login";
+            Notify();
+            return false;
+        }
         if ((await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false)).IsComplete())
             return true;
         await OpenGithubDialogAsync().ConfigureAwait(false);
@@ -2280,6 +2584,8 @@ public sealed class ConsoleSession : IDisposable
                     await RefreshGitStatusAsync().ConfigureAwait(false);
                 if (healthEvery % 5 == 0 && Catalog is not null)
                     LoadAudit(reloadPolicy: false);
+                if (healthEvery % 40 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
+                    await RefreshIssuesAsync().ConfigureAwait(false);
                 Notify();
             }
         }
@@ -2356,6 +2662,10 @@ public sealed class ConsoleSession : IDisposable
         ReleaseGenerateNotes = true;
         ReleaseMakeLatest = true;
         ReleaseAssets.Clear();
+        _pendingOpenCursor = false;
+        GithubAuthBusy = false;
+        GithubAuthHint = "";
+        ClearIssueLists();
     }
 
     private async Task RestoreLastProjectOnStartAsync()

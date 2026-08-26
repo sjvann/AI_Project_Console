@@ -22,7 +22,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | 所有人 | Win10／11 通常已內建；若視窗打不開再裝 |
 | [.NET SDK](https://dotnet.microsoft.com/download) | 要啟動／編譯 .NET 服務時 | 控制台本身已內含執行環境；**被管理的專案**仍需要 `dotnet` |
 | [Git](https://git-scm.com/) | 要用 GitHub 選單時 | 提交、同步、clone |
-| [GitHub CLI `gh`](https://cli.github.com/) | 發行 Release、建 PR、私人倉檢查更新 | 安裝後執行一次 `gh auth login` |
+| [GitHub CLI `gh`](https://cli.github.com/) | GitHub 管理的專案、任務 Issue、發行 Release、建 PR | 開啟這類專案時控制台會要求登入；也可先執行 `gh auth login` |
 | Cursor 或其他 Agent | 要用「求救」時 | 見 [Agent 後端](../agent/backends.md) |
 
 按工具列「環境體檢」可一次核對 `dotnet`、`git`、`gh` 與目前 Agent。
@@ -55,8 +55,9 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
    - **選擇專案目錄…** — 指向本機已有的倉根
    - **歷史專案** — 下拉選最近開過的
    - **從 GitHub 開啟…** — 輸入 `owner/repo` 或網址，clone 後開啟（見 [GitHub](github.md)）
-3. 勾選「啟動時還原上次專案」，下次會自動載入。
-4. 按「環境體檢」，確認 `dotnet`、`git` 為 OK。Agent 若顯示不可用，先到「設定 → Agent」換已安裝的後端，或暫時不求救也能啟動服務。
+3. 若目錄已接上 GitHub，會先請你登入（需已安裝 `gh`）。登入後標題列會顯示帳號，左側「任務」可看指派給你的 Issue。
+4. 勾選「啟動時還原上次專案」，下次會自動載入。
+5. 按「環境體檢」，確認 `dotnet`、`git` 為 OK。Agent 若顯示不可用，先到「設定 → Agent」換已安裝的後端，或暫時不求救也能啟動服務。
 
 標題列下方若出現新版本橫幅，見 [更新](#更新)。
 
@@ -74,6 +75,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 - 左側「服務」應出現可啟動項目
 - 左側「專案」列出 `.csproj` 與編譯狀態
+- 左側「任務」列出指派給你的 GitHub Issue（需登入）
 - 若服務是空的：確認有 `launchSettings.json` 的 `applicationUrl`，或請工作區負責人放 `ai-project.json`
 
 ## 第一次建議做的三件事

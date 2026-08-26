@@ -18,6 +18,13 @@ public sealed class GithubConfig
         (!string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repo))
         || !string.IsNullOrWhiteSpace(Url);
 
+    public bool LooksGithubHosted()
+    {
+        if (!string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repo))
+            return true;
+        return (Url ?? "").Contains("github.com", StringComparison.OrdinalIgnoreCase);
+    }
+
     public string Slug() => string.IsNullOrEmpty(Owner) || string.IsNullOrEmpty(Repo) ? "" : $"{Owner}/{Repo}";
 
     public string WebUrl()
@@ -240,6 +247,19 @@ public sealed record ReleaseRequest(
 public static class GitHubService
 {
     public static bool GhAvailable() => CliUtil.CommandExists("gh");
+
+    public static async Task<bool> IsGithubManagedAsync(ProjectCatalog? catalog)
+    {
+        if (catalog is null)
+            return false;
+        var cfg = await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        if (cfg.LooksGithubHosted())
+            return true;
+        if (!await IsGitRepoAsync(catalog.Root).ConfigureAwait(false))
+            return false;
+        var detected = await GithubConfigResolver.DetectFromGitAsync(catalog.Root).ConfigureAwait(false);
+        return detected.LooksGithubHosted();
+    }
 
     private static string CanonicalRemote(string url)
     {
