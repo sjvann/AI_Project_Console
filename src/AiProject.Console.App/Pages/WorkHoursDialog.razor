@@ -1,0 +1,192 @@
+@using AiProject.Console.Core.WorkHours
+
+<div class="overlay" @onclick="S.CloseDialog">
+    <div class="dialog dialog-lg hours-dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="hours-title" aria-modal="true">
+        <div class="hours-head">
+            <h2 id="hours-title">工時儀表板</h2>
+            <p class="hint">從開啟控制台到離開會記入時段。同一人用 GitHub 帳號歸檔；還沒登入時先記在本機使用者下，登入後會併回來。</p>
+        </div>
+        @{
+            var report = S.WorkHoursReport;
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var tone = S.WorkHoursTone;
+        }
+        <div class="hours-tabs" role="tablist" aria-label="工時視圖" @onkeydown="OnViewKey">
+            <button type="button" role="tab" class="hours-tab @(S.WorkHoursView == WorkHoursView.Week ? "active" : null)"
+                    aria-selected="@(S.WorkHoursView == WorkHoursView.Week)" @onclick="@(() => S.SetWorkHoursView(WorkHoursView.Week))">週</button>
+            <button type="button" role="tab" class="hours-tab @(S.WorkHoursView == WorkHoursView.Month ? "active" : null)"
+                    aria-selected="@(S.WorkHoursView == WorkHoursView.Month)" @onclick="@(() => S.SetWorkHoursView(WorkHoursView.Month))">月</button>
+            <button type="button" role="tab" class="hours-tab @(S.WorkHoursView == WorkHoursView.Quarter ? "active" : null)"
+                    aria-selected="@(S.WorkHoursView == WorkHoursView.Quarter)" @onclick="@(() => S.SetWorkHoursView(WorkHoursView.Quarter))">季</button>
+            <button type="button" role="tab" class="hours-tab @(S.WorkHoursView == WorkHoursView.Year ? "active" : null)"
+                    aria-selected="@(S.WorkHoursView == WorkHoursView.Year)" @onclick="@(() => S.SetWorkHoursView(WorkHoursView.Year))">年</button>
+        </div>
+        <div class="hours-body">
+            <div class="hours-nav">
+                <button type="button" class="btn-sec" @onclick="@(() => S.ShiftWorkHours(-1))">@PrevLabel(S.WorkHoursView)</button>
+                <strong>@report.Title</strong>
+                <button type="button" class="btn-sec" disabled="@(!report.CanGoNext(today))" @onclick="@(() => S.ShiftWorkHours(1))">@NextLabel(S.WorkHoursView)</button>
+            </div>
+
+            <div class="hours-live" role="status" aria-atomic="true">
+                <span>歸檔 <strong>@S.WorkHoursPersonLabel</strong></span>
+                <span>本次開啟 <strong>@S.SessionWorkText</strong></span>
+                <span>今日累計 <strong class="hours-tone-@tone">@S.TodayWorkText</strong></span>
+            </div>
+
+            @if (tone != "ok" && report.RangeStart <= today && today <= report.RangeEnd)
+            {
+                <div class="hours-alert hours-alert-@tone" role="status">
+                    @(tone == "over" ? "今日已超過 10 小時，請收工休息。" : "今日已滿 8 小時，注意別過勞。")
+                </div>
+            }
+
+            <div class="hours-stats">
+                <div class="hours-stat">
+                    <span>總時數</span>
+                    <strong>@WorkHoursFormat.Duration(report.Total)</strong>
+                </div>
+                <div class="hours-stat">
+                    <span>工作天</span>
+                    <strong>@report.WorkedDays 天</strong>
+                </div>
+                <div class="hours-stat">
+                    <span>工作日均</span>
+                    <strong>@WorkHoursFormat.Duration(report.AverageWorkedDay)</strong>
+                </div>
+                <div class="hours-stat">
+                    <span>最長一天</span>
+                    <strong>@WorkHoursFormat.Duration(report.LongestDay)</strong>
+                </div>
+            </div>
+
+            <div class="hours-chart" role="img" aria-label="@report.Title 工時圖">
+                <div class="hours-chart-plot">
+                    @if (S.WorkHoursView is WorkHoursView.Week or WorkHoursView.Month && report.ChartMax >= TimeSpan.FromHours(WorkHoursFormat.SoftHours))
+                    {
+                        <div class="hours-chart-line" style="bottom: @SoftLineBottom(report)" aria-hidden="true" title="8 小時"></div>
+                    }
+                    @foreach (var bar in report.Chart)
+                    {
+                        var height = BarHeight(bar.Duration, report.ChartMax);
+                        var barTone = DailyTone(S.WorkHoursView, bar.Duration);
+                        <button type="button" class="hours-bar-col @(bar.IsCurrent ? "is-today" : null)"
+                                title="@BarTitle(S.WorkHoursView, bar)"
+                                @onclick="@(() => S.OpenWorkHoursBucket(bar.Start))">
+                            <span class="hours-bar-val">@(bar.Duration > TimeSpan.Zero ? WorkHoursFormat.Hours(bar.Duration) : "")</span>
+                            <span class="hours-bar-track">
+                                <span class="hours-bar hours-bar-@barTone" style="height: @height%"></span>
+                            </span>
+                        </button>
+                    }
+                </div>
+                <div class="hours-chart-labels">
+                    @foreach (var bar in report.Chart)
+                    {
+                        <span class="hours-bar-label @(bar.IsCurrent ? "is-today" : null)">@bar.Label</span>
+                    }
+                </div>
+            </div>
+
+            <h3 class="hours-list-title">每日時段</h3>
+            @if (report.Days.All(d => !d.HasWork))
+            {
+                <p class="hint">這個期間還沒有工時紀錄。開啟控制台的時間會自動累計。</p>
+            }
+            else
+            {
+                <ul class="hours-days">
+                    @foreach (var day in report.Days)
+                    {
+                        <li class="hours-day @(day.Date == today ? "is-today" : null) @(!day.HasWork ? "is-empty" : null)">
+                            <div class="hours-day-head">
+                                <strong>@WorkHoursFormat.DayTitle(day.Date)</strong>
+                                <span class="hours-tone-@WorkHoursFormat.Tone(day.Duration)">@WorkHoursFormat.Duration(day.Duration)</span>
+                            </div>
+                            @if (day.HasWork)
+                            {
+                                <div class="hours-periods">
+                                    @foreach (var period in day.Periods)
+                                    {
+                                        <span>@period.ClockLabel</span>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="hint">休息</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+        <div class="dialog-actions hours-actions">
+            <span class="hint grow">同一人用 GitHub 帳號歸檔，寫在本機 work-hours.json。</span>
+            <button class="btn-primary" @onclick="S.CloseDialog">關閉</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+
+    static string PrevLabel(WorkHoursView view) => view switch
+    {
+        WorkHoursView.Week => "上一週",
+        WorkHoursView.Month => "上一月",
+        WorkHoursView.Quarter => "上一季",
+        _ => "上一年",
+    };
+
+    static string NextLabel(WorkHoursView view) => view switch
+    {
+        WorkHoursView.Week => "下一週",
+        WorkHoursView.Month => "下一月",
+        WorkHoursView.Quarter => "下一季",
+        _ => "下一年",
+    };
+
+    static string DailyTone(WorkHoursView view, TimeSpan duration) =>
+        view is WorkHoursView.Week or WorkHoursView.Month ? WorkHoursFormat.Tone(duration) : "ok";
+
+    static string BarTitle(WorkHoursView view, WorkHoursBucket bar) =>
+        view is WorkHoursView.Week or WorkHoursView.Month
+            ? $"{WorkHoursFormat.DayTitle(bar.Start)} · {WorkHoursFormat.Duration(bar.Duration)}"
+            : $"{bar.Start.Year}年{bar.Label} · {WorkHoursFormat.Duration(bar.Duration)}";
+
+    static int BarHeight(TimeSpan duration, TimeSpan max)
+    {
+        if (max <= TimeSpan.Zero || duration <= TimeSpan.Zero)
+            return 2;
+        var pct = (int)Math.Round(100 * duration.TotalMinutes / max.TotalMinutes);
+        return Math.Clamp(pct, 4, 100);
+    }
+
+    static string SoftLineBottom(WorkHoursReport report)
+    {
+        if (report.ChartMax <= TimeSpan.Zero)
+            return "0%";
+        var pct = 100 * WorkHoursFormat.SoftHours / report.ChartMax.TotalHours;
+        return Math.Clamp(pct, 0, 100).ToString("0.##") + "%";
+    }
+
+    void OnViewKey(KeyboardEventArgs e)
+    {
+        var tabs = new[] { WorkHoursView.Week, WorkHoursView.Month, WorkHoursView.Quarter, WorkHoursView.Year };
+        var i = Array.IndexOf(tabs, S.WorkHoursView);
+        if (i < 0)
+            return;
+        var next = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" => tabs[(i + 1) % tabs.Length],
+            "ArrowLeft" or "ArrowUp" => tabs[(i - 1 + tabs.Length) % tabs.Length],
+            "Home" => tabs[0],
+            "End" => tabs[^1],
+            _ => (WorkHoursView?)null
+        };
+        if (next is { } view)
+            S.SetWorkHoursView(view);
+    }
+}

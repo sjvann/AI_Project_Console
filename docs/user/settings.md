@@ -2,7 +2,7 @@
 
 標題列「設定」打開偏好設定。分五個分頁。多數項目按「儲存」才寫入；「啟動時還原上次專案」「同時開啟 Agent」在主畫面勾選也會立刻記住。
 
-設定檔位置（Windows）：`%LOCALAPPDATA%\AI_Project_Console\settings.json`。
+設定檔位置（Windows）：`%LOCALAPPDATA%\AI_Project_Console\settings.json`。工時紀錄在同一資料夾的 `work-hours.json`。
 
 ## 一般
 

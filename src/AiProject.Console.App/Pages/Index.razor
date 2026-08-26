@@ -9,6 +9,13 @@
         <h1>AI_Project 控制台</h1>
         <span class="hint">通用本機堆疊 · GitHub／部署 · v@(AppInfo.Version)</span>
         <span class="grow"></span>
+        <button type="button" class="hours-chip is-@S.WorkHoursTone" title="從開啟到現在的累計工時，點擊看週／月／季／年" @onclick="@(() => S.OpenWorkHours())">
+            <span class="hours-chip-k">本次</span>
+            <span class="hours-chip-v">@S.SessionWorkText</span>
+            <span class="hours-chip-div" aria-hidden="true"></span>
+            <span class="hours-chip-k">今日</span>
+            <span class="hours-chip-v">@S.TodayWorkText</span>
+        </button>
         <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
         @if (S.GithubLoggedIn)
@@ -1076,6 +1083,11 @@
 @if (S.Dialog == "doctor")
 {
     <DoctorDialog S="S" />
+}
+
+@if (S.Dialog == "hours")
+{
+    <WorkHoursDialog S="S" />
 }
 
 @code {

@@ -51,6 +51,11 @@ internal static class Program
             window.SetIconFile(iconFile);
 
         window.RegisterWindowCreatedHandler((_, _) => Win32WindowIcon.Apply(window, iconFile));
+        window.RegisterWindowClosingHandler((_, _) =>
+        {
+            app.Services.GetRequiredService<ConsoleSession>().CloseWorkSession();
+            return false;
+        });
 
         AppDomain.CurrentDomain.UnhandledException += (_, error) =>
         {

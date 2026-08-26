@@ -13,6 +13,7 @@ using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
+using AiProject.Console.Core.WorkHours;
 using Microsoft.JSInterop;
 using Photino.NET;
 
@@ -28,6 +29,7 @@ public sealed class ConsoleSession : IDisposable
     private bool _unassignedCollapseUserSet;
     private long _logOffset;
     private DocsServeHandle? _docsServe;
+    private readonly WorkHoursStore _workHours = new();
 
     public ConsoleSession(NativeUi native)
     {
@@ -43,6 +45,7 @@ public sealed class ConsoleSession : IDisposable
         AskApiKey = ConsoleSettingsStore.GetAskApiKey();
         AskModel = ConsoleSettingsStore.GetAskModel();
         RefreshAgentDetect();
+        _workHours.Start();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
         _ = RefreshGithubAuthAsync();
@@ -105,6 +108,16 @@ public sealed class ConsoleSession : IDisposable
     public string LeftTab { get; set; } = "svc";
     public string RightTab { get; set; } = "log";
     public string PrefsTab { get; set; } = "general";
+    public WorkHoursView WorkHoursView { get; private set; } = WorkHoursView.Week;
+    public DateOnly WorkHoursAnchor { get; private set; } = DateOnly.FromDateTime(DateTime.Now);
+    public TimeSpan SessionWorkDuration => _workHours.CurrentDuration();
+    public TimeSpan TodayWorkDuration => _workHours.TodayDuration();
+    public string SessionWorkText => WorkHoursFormat.Compact(SessionWorkDuration);
+    public string TodayWorkText => WorkHoursFormat.Duration(TodayWorkDuration);
+    public string WorkHoursTone => WorkHoursFormat.Tone(TodayWorkDuration);
+    public WorkHoursReport WorkHoursReport =>
+        WorkHoursAggregator.Build(_workHours.VisibleSessions, WorkHoursView, WorkHoursAnchor, DateTimeOffset.Now);
+    public string WorkHoursPersonLabel => _workHours.PersonLabel;
     public string? SelectedServiceId { get; private set; }
     public Dictionary<string, bool> Health { get; } = new();
     public IReadOnlyList<BuildState> Projects { get; private set; } = [];
@@ -382,6 +395,40 @@ public sealed class ConsoleSession : IDisposable
         PrefsTab = tab;
         Notify();
     }
+
+    public void OpenWorkHours(WorkHoursView? view = null)
+    {
+        WorkHoursView = view ?? WorkHoursView.Week;
+        WorkHoursAnchor = DateOnly.FromDateTime(DateTime.Now);
+        Dialog = "hours";
+        Notify();
+    }
+
+    public void SetWorkHoursView(WorkHoursView view)
+    {
+        WorkHoursView = view;
+        Notify();
+    }
+
+    public void ShiftWorkHours(int steps)
+    {
+        if (steps == 0)
+            return;
+        if (steps > 0 && !WorkHoursReport.CanGoNext(DateOnly.FromDateTime(DateTime.Now)))
+            return;
+        WorkHoursAnchor = WorkHoursAggregator.Shift(WorkHoursView, WorkHoursAnchor, steps);
+        Notify();
+    }
+
+    public void OpenWorkHoursBucket(DateOnly start)
+    {
+        if (WorkHoursView is WorkHoursView.Year or WorkHoursView.Quarter)
+            WorkHoursView = WorkHoursView.Month;
+        WorkHoursAnchor = start;
+        Notify();
+    }
+
+    public void CloseWorkSession() => _workHours.End();
 
     public void OnAgentProviderChanged(string id)
     {
@@ -1059,7 +1106,15 @@ public sealed class ConsoleSession : IDisposable
         {
             GithubAccount = GitHubService.GhAvailable() ? new GithubAccount("", true) : GithubAccount.None;
         }
+        AttachWorkHoursPerson();
         Notify();
+    }
+
+    void AttachWorkHoursPerson()
+    {
+        if (!GithubLoggedIn)
+            return;
+        _workHours.Identify(WorkHoursPerson.GithubKey(GithubAccount.Login), GithubAccount.Display());
     }
 
     public async Task LoginGithubAsync()
@@ -2789,6 +2844,7 @@ public sealed class ConsoleSession : IDisposable
             if (err is not null && !_native.Confirm($"關閉 {AgentDisplayName}", $"關閉 {AgentDisplayName} 時發生問題：\n{err}\n\n仍要離開控制台嗎？"))
                 return;
         }
+        CloseWorkSession();
         _native.Close();
         await Task.CompletedTask;
     }
@@ -2826,6 +2882,7 @@ public sealed class ConsoleSession : IDisposable
 
     public void Dispose()
     {
+        CloseWorkSession();
         StopDocsServe();
         _askCts?.Cancel();
         _askCts?.Dispose();
@@ -3260,6 +3317,8 @@ public sealed class ConsoleSession : IDisposable
                     LoadAudit(reloadPolicy: false);
                 if (healthEvery % 40 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
                     await RefreshIssuesAsync().ConfigureAwait(false);
+                if (healthEvery % 37 == 0)
+                    _workHours.Touch();
                 Notify();
             }
         }
