@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>AiProject.Console.Mcp</RootNamespace>
     <AssemblyName>AiProject.Console.Mcp</AssemblyName>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
