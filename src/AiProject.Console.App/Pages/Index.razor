@@ -222,6 +222,17 @@
                         <span class="badge">@S.AuditTotal</span>
                     }
                 </div>
+                <div class="tab @(S.RightTab == "ask" ? "active" : null)" @onclick="@(() => S.SetRightTab("ask"))">
+                    專案問答
+                    @if (S.AskBusy)
+                    {
+                        <span class="badge">…</span>
+                    }
+                    else if (S.AskMessages.Count > 0)
+                    {
+                        <span class="badge">@S.AskMessages.Count</span>
+                    }
+                </div>
             </div>
             @if (S.RightTab == "log")
             {
@@ -252,7 +263,7 @@
                 </div>
                 <pre class="log" id="build-view">@S.BuildText</pre>
             }
-            else
+            else if (S.RightTab == "audit")
             {
                 <div class="log-tools">
                     <strong>MCP 審計</strong>
@@ -329,6 +340,81 @@
                             }
                         </div>
                     }
+                </div>
+            }
+            else
+            {
+                <div class="log-tools">
+                    <strong>專案問答</strong>
+                    <span class="hint">@(S.AskBusy ? S.AskStatus : (S.AskConfigured ? "本機堆疊事實 · 不鎖控制台" : "尚未設定模型"))</span>
+                    <button class="btn-sec" disabled="@(!S.AskBusy)" @onclick="S.CancelAsk">取消</button>
+                </div>
+                <div class="ask-help">
+                    @if (!S.HasProject)
+                    {
+                        <p class="hint">請先選擇專案目錄。這頁只回答目前倉的值班、服務、編譯與 MCP 審計，不會外開 Cursor。</p>
+                    }
+                    else if (!S.AskConfigured)
+                    {
+                        <p class="hint">請到設定填寫專案問答的 Base URL 與模型。預設可接本機 Ollama（<code>http://127.0.0.1:11434/v1</code>）。</p>
+                        <button class="btn-link" type="button" @onclick="S.OpenPreferences">前往設定</button>
+                    }
+                    else
+                    {
+                        <p>用本機堆疊事實回答專案問題。點建議題或自己打字；等回覆時仍可切頁、看 Log、按啟動。</p>
+                    }
+                </div>
+                <div class="ask-chips" role="list">
+                    @foreach (var q in S.AskSuggestions)
+                    {
+                        <button type="button" class="ask-chip @(q.Highlighted ? "is-suggest" : null)" role="listitem"
+                                disabled="@(!S.CanAsk)" title="@q.Prompt"
+                                @onclick="@(() => S.SendAskSuggestionAsync(q.Prompt))">
+                            @if (q.Highlighted)
+                            {
+                                <span class="ask-chip-mark">建議</span>
+                            }
+                            @q.Title
+                        </button>
+                    }
+                </div>
+                <div class="ask-list" id="ask-view">
+                    @if (!S.AskMessages.Any())
+                    {
+                        <div class="ask-empty">
+                            <p class="hint">尚無對話。點上方建議題，或在下方輸入。</p>
+                        </div>
+                    }
+                    @foreach (var m in S.AskMessages)
+                    {
+                        <div class="ask-msg ask-@m.Role">
+                            @if (m.Role == "tool")
+                            {
+                                <span class="hint">已呼叫 @m.Text</span>
+                            }
+                            else if (m.Role == "user")
+                            {
+                                <strong>你</strong>
+                                <p>@m.Text</p>
+                            }
+                            else if (m.Role == "error")
+                            {
+                                <strong>錯誤</strong>
+                                <p>@m.Text</p>
+                            }
+                            else
+                            {
+                                <strong>控制台</strong>
+                                <p>@m.Text</p>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="ask-compose">
+                    <textarea value="@S.AskDraft" @oninput="OnAskDraft" placeholder="問這個專案：離線、需重編、Log、MCP 拒絕…"
+                              disabled="@(!S.HasProject || !S.AskConfigured || S.AskBusy)"></textarea>
+                    <button class="btn-primary" type="button" disabled="@(!S.CanAsk || string.IsNullOrWhiteSpace(S.AskDraft))"
+                            @onclick="@(() => S.SendAskAsync())">送出</button>
                 </div>
             }
         </div>
@@ -642,6 +728,8 @@
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "log-view");
         if (S.RightTab == "build")
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "build-view");
+        if (S.RightTab == "ask")
+            await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "ask-view");
     }
 
     void OnChanged() => InvokeAsync(StateHasChanged);
@@ -658,6 +746,8 @@
     void OnLogFilter(ChangeEventArgs e) => S.SetLogFilter(e.Value?.ToString() ?? "");
 
     void OnAuditFilter(ChangeEventArgs e) => S.SetAuditFilter(e.Value?.ToString() ?? "");
+
+    void OnAskDraft(ChangeEventArgs e) => S.SetAskDraft(e.Value?.ToString() ?? "");
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
 

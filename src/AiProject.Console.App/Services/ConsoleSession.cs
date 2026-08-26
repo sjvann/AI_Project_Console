@@ -21,6 +21,7 @@ public sealed class ConsoleSession : IDisposable
 {
     private readonly NativeUi _native;
     private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource? _askCts;
     private long _logOffset;
 
     public ConsoleSession(NativeUi native)
@@ -33,6 +34,9 @@ public sealed class ConsoleSession : IDisposable
         AgentCliPath = ConsoleSettingsStore.GetAgentCliPath();
         CustomAgentCommand = ConsoleSettingsStore.GetCustomAgentCommand();
         CustomAgentArgs = ConsoleSettingsStore.GetCustomAgentArgs();
+        AskBaseUrl = ConsoleSettingsStore.GetAskBaseUrl();
+        AskApiKey = ConsoleSettingsStore.GetAskApiKey();
+        AskModel = ConsoleSettingsStore.GetAskModel();
         RefreshAgentDetect();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
@@ -61,6 +65,18 @@ public sealed class ConsoleSession : IDisposable
     public bool ProjectHasMcpPolicy { get; private set; }
     public string AddToolName { get; set; } = "";
     public string AddMcpId { get; private set; } = McpLaunch.ServerId;
+    public string CustomMcpId { get; set; } = "";
+    public string CustomMcpKind { get; set; } = "command";
+    public string CustomMcpCommand { get; set; } = "npx";
+    public string CustomMcpArgs { get; set; } = "";
+    public string CustomMcpUrl { get; set; } = "";
+    public string AskBaseUrl { get; set; } = ProjectAskService.DefaultBaseUrl;
+    public string AskApiKey { get; set; } = "";
+    public string AskModel { get; set; } = ProjectAskService.DefaultModel;
+    public string AskDraft { get; set; } = "";
+    public bool AskBusy { get; private set; }
+    public string AskStatus { get; private set; } = "";
+    public IReadOnlyList<ProjectAskChatItem> AskMessages { get; private set; } = [];
     public string AgentDetectSummary { get; private set; } = "";
     public bool AgentAvailable { get; private set; }
     public string ReadyText { get; private set; } = "就緒 0 / 0";
@@ -234,6 +250,10 @@ public sealed class ConsoleSession : IDisposable
             ? ""
             : DutySummary.Attention(OfflineCount, StaleProjectCount, AuditFailCount, LastAuditFailTool);
     public bool DutyOk => Catalog is not null && DutySummary.IsClear(OfflineCount, StaleProjectCount, AuditFailCount);
+    public bool AskConfigured => ProjectAskService.IsConfigured(AskBaseUrl, AskModel);
+    public bool CanAsk => HasProject && AskConfigured && !AskBusy;
+    public IReadOnlyList<ProjectAskSuggestionView> AskSuggestions =>
+        ProjectAskPrompts.Rank(OfflineCount, StaleProjectCount, AuditFailCount);
 
     public bool RuntimeHelpEnabled
     {
@@ -261,6 +281,9 @@ public sealed class ConsoleSession : IDisposable
         AgentCliPath = ConsoleSettingsStore.GetAgentCliPath();
         CustomAgentCommand = ConsoleSettingsStore.GetCustomAgentCommand();
         CustomAgentArgs = ConsoleSettingsStore.GetCustomAgentArgs();
+        AskBaseUrl = ConsoleSettingsStore.GetAskBaseUrl();
+        AskApiKey = ConsoleSettingsStore.GetAskApiKey();
+        AskModel = ConsoleSettingsStore.GetAskModel();
         Theme = ConsoleSettingsStore.GetTheme();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
@@ -293,6 +316,9 @@ public sealed class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetAgentCliPath(AgentCliPath);
         ConsoleSettingsStore.SetCustomAgentCommand(CustomAgentCommand);
         ConsoleSettingsStore.SetCustomAgentArgs(CustomAgentArgs);
+        ConsoleSettingsStore.SetAskBaseUrl(AskBaseUrl);
+        ConsoleSettingsStore.SetAskApiKey(AskApiKey);
+        ConsoleSettingsStore.SetAskModel(AskModel);
         ConsoleSettingsStore.SetTheme(Theme);
         ConsoleSettingsStore.SetRestoreLastProject(RestoreLastProject);
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
@@ -339,25 +365,41 @@ public sealed class ConsoleSession : IDisposable
 
     public bool ConsoleMcpLinked => ProjectMcpServers.Any(s => s.Ours && s.Linked);
 
-    public bool SelectedMcpIsOurs =>
-        string.Equals(AddMcpId, McpLaunch.ServerId, StringComparison.OrdinalIgnoreCase);
+    public bool SelectedMcpIsCustom =>
+        string.Equals(AddMcpId, McpLaunch.CustomPickerId, StringComparison.OrdinalIgnoreCase);
 
-    public bool CanWriteSelectedMcp => HasProject && SelectedMcpIsOurs && !ConsoleMcpLinked;
+    public bool CustomMcpReady =>
+        McpLaunch.IsValidServerId(CustomMcpId)
+        && (CustomMcpKind == "url"
+            ? !string.IsNullOrWhiteSpace(CustomMcpUrl)
+            : !string.IsNullOrWhiteSpace(CustomMcpCommand));
+
+    public bool SelectedMcpAlreadyLinked =>
+        !SelectedMcpIsCustom
+        && ProjectMcpServers.Any(s =>
+            s.Linked && string.Equals(s.Id, AddMcpId, StringComparison.OrdinalIgnoreCase));
+
+    public bool CanAddSelectedMcp =>
+        HasProject && (SelectedMcpIsCustom ? CustomMcpReady : !SelectedMcpAlreadyLinked);
 
     public string AddMcpButtonLabel =>
         !HasProject ? "加入到專案" :
-        SelectedMcpIsOurs
-            ? (ConsoleMcpLinked ? "已加入" : "加入到專案")
-            : "說明";
+        SelectedMcpIsCustom ? "加入自訂" :
+        SelectedMcpAlreadyLinked ? "已加入" :
+        "加入到專案";
 
     public IEnumerable<ProjectMcpServer> AddableMcpServers
     {
         get
         {
-            var list = ProjectMcpServers.Where(s => s.Ours || !s.Linked).ToList();
-            if (list.Count == 0)
-                return McpLaunch.ListReferenced(null);
-            return list;
+            var unlinked = ProjectMcpServers.Where(s => !s.Linked);
+            return unlinked.Append(new ProjectMcpServer(
+                McpLaunch.CustomPickerId,
+                "自訂…",
+                "命令或遠端 URL",
+                Linked: false,
+                Ours: false,
+                Suggested: false));
         }
     }
 
@@ -382,28 +424,128 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
+    public void SetCustomMcpKind(string kind)
+    {
+        CustomMcpKind = kind == "url" ? "url" : "command";
+        Notify();
+    }
+
+    public void SetCustomMcpId(string value)
+    {
+        CustomMcpId = value ?? "";
+        Notify();
+    }
+
+    public void SetCustomMcpCommand(string value)
+    {
+        CustomMcpCommand = value ?? "";
+        Notify();
+    }
+
+    public void SetCustomMcpArgs(string value)
+    {
+        CustomMcpArgs = value ?? "";
+        Notify();
+    }
+
+    public void SetCustomMcpUrl(string value)
+    {
+        CustomMcpUrl = value ?? "";
+        Notify();
+    }
+
+    public void WriteMcpServer(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)
+            || string.Equals(id, McpLaunch.CustomPickerId, StringComparison.OrdinalIgnoreCase))
+            return;
+        SetAddMcpId(id);
+        WriteMcpConfigToProject();
+    }
+
     public void WriteMcpConfigToProject()
     {
-        if (!SelectedMcpIsOurs)
-        {
-            _native.Info(
-                "請在 Cursor 加入",
-                $"{AddMcpId} 是建議並排的 MCP，請到 Cursor 設定加入。本控制台只能寫入 {McpLaunch.ServerId}。");
-            return;
-        }
         if (!RequireCatalog())
             return;
         try
         {
-            var path = McpLaunch.WriteCursorConfig(Catalog!.Root);
+            string path;
+            string hint;
+            if (SelectedMcpIsCustom)
+            {
+                if (!CustomMcpReady)
+                {
+                    _native.Info("資料不完整", "請填識別名稱，以及命令或遠端 URL。");
+                    return;
+                }
+
+                path = McpLaunch.WriteCustomServer(
+                    Catalog!.Root,
+                    CustomMcpId.Trim(),
+                    CustomMcpKind == "url" ? null : CustomMcpCommand,
+                    CustomMcpKind == "url" ? null : CustomMcpArgs,
+                    CustomMcpKind == "url" ? CustomMcpUrl : null);
+                hint = "已加入自訂 MCP " + CustomMcpId.Trim();
+                CustomMcpId = "";
+                CustomMcpArgs = "";
+                CustomMcpUrl = "";
+            }
+            else
+            {
+                path = McpLaunch.WriteCatalogServer(Catalog!.Root, AddMcpId);
+                hint = McpLaunch.FindCatalog(AddMcpId)?.AfterAddHint
+                    ?? ("已加入 " + AddMcpId);
+            }
+
             RefreshMcpPrefsUi();
-            JobText = "已加入本控制台到 " + path + "（重新載入 Cursor 後即可呼叫）";
+            SelectNextAddable();
+            JobText = hint + " → " + path + "（重新載入 Cursor 後生效）";
         }
         catch (Exception ex)
         {
             _native.Error("寫入 MCP 設定失敗", ex.Message);
         }
         Notify();
+    }
+
+    public void RemoveMcpFromProject(string id)
+    {
+        if (!RequireCatalog() || string.IsNullOrWhiteSpace(id))
+            return;
+        if (!_native.Confirm(
+                "移除 MCP",
+                $"從專案 .cursor/mcp.json 移除「{id}」？\n不會解除安裝套件，只拿掉這份專案設定。"))
+            return;
+        try
+        {
+            var path = McpLaunch.RemoveServer(Catalog!.Root, id);
+            RefreshMcpPrefsUi();
+            SetAddMcpId(id);
+            JobText = "已從 " + path + " 移除 " + id;
+        }
+        catch (Exception ex)
+        {
+            _native.Error("移除 MCP 失敗", ex.Message);
+        }
+        Notify();
+    }
+
+    public void OpenMcpConfig()
+    {
+        if (!RequireCatalog())
+            return;
+        var path = McpLaunch.CursorConfigPath(Catalog!.Root);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (!File.Exists(path))
+            File.WriteAllText(path, "{\n  \"mcpServers\": {}\n}\n");
+        CliUtil.OpenPath(path);
+    }
+
+    void SelectNextAddable()
+    {
+        var next = AddableMcpServers.FirstOrDefault(s =>
+            !string.Equals(s.Id, McpLaunch.CustomPickerId, StringComparison.OrdinalIgnoreCase));
+        AddMcpId = next?.Id ?? McpLaunch.CustomPickerId;
     }
 
     public void WriteMcpPolicyToProject()
@@ -779,6 +921,85 @@ public sealed class ConsoleSession : IDisposable
         Runtime.Ensure();
         var path = McpAuditLog.FilePath(Runtime);
         CliUtil.OpenPath(File.Exists(path) ? path : Runtime.Base);
+    }
+
+    public void SetAskDraft(string value)
+    {
+        AskDraft = value ?? "";
+        Notify();
+    }
+
+    public Task SendAskSuggestionAsync(string prompt) => SendAskAsync(prompt);
+
+    public async Task SendAskAsync(string? text = null)
+    {
+        var question = (text ?? AskDraft ?? "").Trim();
+        if (string.IsNullOrEmpty(question) || AskBusy)
+            return;
+        if (!HasProject)
+        {
+            _native.Info("專案問答", "請先選擇專案目錄。");
+            return;
+        }
+        if (!AskConfigured)
+        {
+            _native.Info("專案問答", "請先在設定填寫 Base URL 與模型（預設可用本機 Ollama）。");
+            return;
+        }
+
+        if (text is null)
+            AskDraft = "";
+        var history = AskMessages.ToList();
+        AskMessages = history.Append(new ProjectAskChatItem("user", question)).ToList();
+        AskBusy = true;
+        AskStatus = "思考中…";
+        Notify();
+
+        _askCts?.Cancel();
+        _askCts?.Dispose();
+        _askCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        var ct = _askCts.Token;
+        var options = new ProjectAskOptions(AskBaseUrl.Trim(), AskModel.Trim(), AskApiKey);
+        try
+        {
+            var workspace = StackWorkspace.Open(Catalog!.Root);
+            var reply = await ProjectAskService.AskAsync(
+                workspace,
+                question,
+                history,
+                options,
+                onStatus: status =>
+                {
+                    AskStatus = status;
+                    Notify();
+                },
+                onTool: name =>
+                {
+                    AskMessages = AskMessages.Append(new ProjectAskChatItem("tool", StackToolRouter.DisplayTitle(name), name)).ToList();
+                    Notify();
+                },
+                ct: ct).ConfigureAwait(false);
+            AskMessages = AskMessages.Append(new ProjectAskChatItem("assistant", reply)).ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            AskMessages = AskMessages.Append(new ProjectAskChatItem("assistant", "已取消。")).ToList();
+        }
+        catch (Exception ex)
+        {
+            AskMessages = AskMessages.Append(new ProjectAskChatItem("error", ex.Message)).ToList();
+        }
+        finally
+        {
+            AskBusy = false;
+            AskStatus = "";
+            Notify();
+        }
+    }
+
+    public void CancelAsk()
+    {
+        _askCts?.Cancel();
     }
 
     public async Task StartAllAsync()
@@ -1628,6 +1849,8 @@ public sealed class ConsoleSession : IDisposable
 
     public void Dispose()
     {
+        _askCts?.Cancel();
+        _askCts?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
     }
@@ -2085,6 +2308,11 @@ public sealed class ConsoleSession : IDisposable
         AuditTotal = 0;
         AuditPolicyText = "";
         AuditFilter = "";
+        CancelAsk();
+        AskDraft = "";
+        AskBusy = false;
+        AskStatus = "";
+        AskMessages = [];
         ResetBuildProgress();
         ReadyText = "就緒 0 / 0";
         JobText = "待命";

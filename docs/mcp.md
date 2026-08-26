@@ -26,8 +26,8 @@
 
 ## 接上 Cursor
 
-1. 控制台「設定」→ Agentic／MCP：從下拉選「本控制台」再按「加入到專案」；或「複製設定」貼到使用者級 `mcp.json`。已引用清單會顯示專案 `.cursor/mcp.json` 裡的伺服器。
-2. 重新載入視窗後，Agent 應能看到工具：`stack_status`、`build`、`get_log`…
+1. 控制台「設定」→ Agentic／MCP：加入「本控制台」（本機堆疊）。也可加入建議範本（GitHub、Context7）或「自訂」填命令／URL，寫進專案 `.cursor/mcp.json`。
+2. 重新載入 Cursor 後，Agent 應能看到本控制台工具：`stack_status`、`build`、`get_log`…；其他 MCP 的工具一併出現。
 3. 求救提示已附驗證步驟，要求 Agent 用這些工具，而不是只改檔。
 
 手動指令（開發）：
@@ -43,13 +43,18 @@ stdio 模式（給 IDE 用）不要加 `--invoke`：
 dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 ```
 
-## 建議並排的其他 MCP（不內建、不鎖死）
+## 建議並排的其他 MCP（可一直加，不鎖死三個）
 
-本伺服器**不取代**下列能力，管理者在 IDE 裡一起開即可：
+設定裡的清單**不是**「只能這三個」。本控制台只內建 `ai-project-console`；GitHub、Context7 是一鍵範本，公司內部閘道用「自訂」。全部寫進專案 `.cursor/mcp.json`，讓 Agent 並排呼叫。
 
-- **GitHub MCP**：Issue／PR／Actions，對齊控制台的 GitHub 選單
-- **Context7**：套件文件，避免 Agent 用過期 API
-- 公司內部閘道／監控 MCP：把事故與本機 `get_log` 對讀
+| 加入方式 | 寫入內容 | 之後要做的事 |
+|----------|----------|----------------|
+| 本控制台 | `dotnet`／exe + `--root` | 重新載入 Cursor |
+| GitHub | `https://api.githubcopilot.com/mcp/` | 在 Cursor 或 mcp.json 補 Personal Access Token |
+| Context7 | `npx -y @upstash/context7-mcp` | 重新載入後即可查套件文件 |
+| 自訂 | 你填的 `command`＋參數，或遠端 `url` | 依該服務補權杖／環境變數 |
+
+也可按「開啟 mcp.json」直接編輯，或「複製本控制台設定」貼到使用者全域 `~/.cursor/mcp.json`。清單只顯示**目前專案**檔，不含全域。
 
 原則：遠端與文件用別人的 MCP；**本機堆疊只走 ai-project-console**。
 
@@ -111,3 +116,15 @@ dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --a
 上方政策列對應設定或 `mcp-policy.json`：**可寫／唯讀**＝能否編譯與啟停；**允許**空白＝全部已知工具；**禁止**一律擋下；**需確認**必須帶 `confirm=true`（預設 `stop_all`）。
 
 尚無紀錄通常表示 Agent 還沒呼叫堆疊工具，或控制台尚未加入 Cursor 的 MCP——不是故障。
+
+## 專案問答（控制台內對談）
+
+右側第四個頁籤。用設定裡的 **OpenAI 相容**端點（預設本機 Ollama `http://127.0.0.1:11434/v1`、模型 `llama3.2`）在控制台內回答，並本機呼叫唯讀堆疊工具（`duty_summary`、`stack_status`、`get_log`、`doctor`、`git_status`、`list_audit`…）。**不會**外開 Cursor，也**不會**佔用啟動／編譯的忙碌鎖。
+
+**怎麼用**
+
+1. 設定 → Agentic／MCP →「專案問答」確認 Base URL 與模型。本機 Ollama 的 API key 可空白；OpenAI／Groq 填 key 並改 URL。
+2. 點右側「專案問答」。可點建議題（離線／需重編／MCP 拒絕有數字時會置頂並標「建議」），或自己打字送出。
+3. 等回覆時可切到 Log／審計、按啟動。要中斷按「取消」。
+
+這頁只談目前開啟的專案。編譯與啟停仍用控制台按鈕或既有「求救」。

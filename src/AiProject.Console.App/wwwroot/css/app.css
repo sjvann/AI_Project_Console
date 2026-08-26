@@ -163,7 +163,26 @@ button:disabled { opacity: .45; cursor: default; }
 .mcp-badge { font: 600 11px "Segoe UI", "Noto Sans TC", sans-serif; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
 .mcp-badge.on { color: var(--ok); border-color: var(--ok); }
 .mcp-badge.muted { color: var(--muted); }
+.mcp-ref-actions { display: flex; align-items: center; gap: 8px; }
 .mcp-add { margin-top: 10px; }
+.mcp-custom { margin-top: 4px; }
+.ask-help { margin: 0 10px 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.ask-help p { margin: 0 0 6px; }
+.ask-help p:last-child { margin-bottom: 0; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 10px 8px; }
+.ask-chip { font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; background: var(--panel); color: var(--text); cursor: pointer; }
+.ask-chip:hover:not(:disabled) { border-color: var(--accent); }
+.ask-chip.is-suggest { border-color: var(--wait); color: var(--wait); background: var(--panel); }
+.ask-chip-mark { font-size: 11px; margin-right: 6px; }
+.ask-list { flex: 1; overflow: auto; margin: 0 8px; min-height: 0; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); }
+.ask-empty { padding: 16px 14px; }
+.ask-msg { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.ask-msg p { margin: 4px 0 0; white-space: pre-wrap; }
+.ask-msg.ask-user { background: var(--sel); }
+.ask-msg.ask-error { color: var(--danger); }
+.ask-msg.ask-tool { background: var(--row-alt); }
+.ask-compose { display: flex; gap: 8px; align-items: flex-end; padding: 8px 10px; }
+.ask-compose textarea { flex: 1; min-height: 52px; resize: vertical; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); }
 .mcp-tool-actions { display: flex; align-items: center; gap: 8px; }
 .mcp-tool-actions select { min-width: 108px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); }
 .mcp-tool-row code { font-size: 12px; }

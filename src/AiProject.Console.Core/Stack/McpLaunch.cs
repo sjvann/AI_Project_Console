@@ -12,16 +12,82 @@ public sealed record ProjectMcpServer(
     bool Ours,
     bool Suggested);
 
+public sealed record McpCatalogEntry(
+    string Id,
+    string Title,
+    string Hint,
+    string Kind,
+    string? Command = null,
+    IReadOnlyList<string>? Args = null,
+    string? Url = null,
+    string? AfterAddHint = null)
+{
+    public bool Ours => string.Equals(Id, McpLaunch.ServerId, StringComparison.OrdinalIgnoreCase);
+
+    public JsonObject? DefaultConfig()
+    {
+        if (Ours)
+            return null;
+        if (string.Equals(Kind, "url", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(Url))
+            return new JsonObject { ["url"] = Url };
+        if (string.IsNullOrWhiteSpace(Command))
+            return null;
+        var obj = new JsonObject { ["command"] = Command };
+        if (Args is { Count: > 0 })
+        {
+            var arr = new JsonArray();
+            foreach (var a in Args)
+                arr.Add(a);
+            obj["args"] = arr;
+        }
+        return obj;
+    }
+}
+
 public static class McpLaunch
 {
     public const string ServerId = "ai-project-console";
+    public const string CustomPickerId = "__custom__";
 
-    public static readonly IReadOnlyList<(string Id, string Title, string Hint)> SuggestedServers =
+    public static readonly IReadOnlyList<McpCatalogEntry> Catalog =
     [
-        (ServerId, "本控制台", "堆疊、編譯、啟停、Log"),
-        ("github", "GitHub", "PR／Issue／Actions"),
-        ("context7", "Context7", "套件文件"),
+        new(ServerId, "本控制台", "堆疊、編譯、啟停、Log", "ours"),
+        new("github", "GitHub", "PR／Issue／Actions", "url",
+            Url: "https://api.githubcopilot.com/mcp/",
+            AfterAddHint: "已寫入遠端 GitHub MCP。請到 Cursor 設定或編輯 mcp.json，補上 Personal Access Token。"),
+        new("context7", "Context7", "套件文件", "command",
+            Command: "npx",
+            Args: ["-y", "@upstash/context7-mcp"],
+            AfterAddHint: "已加入 Context7（npx）。重新載入 Cursor 後即可查套件文件。"),
     ];
+
+    public static IReadOnlyList<(string Id, string Title, string Hint)> SuggestedServers =>
+        Catalog.Select(c => (c.Id, c.Title, c.Hint)).ToArray();
+
+    public static McpCatalogEntry? FindCatalog(string? id) =>
+        Catalog.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    public static bool IsValidServerId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return false;
+        id = id.Trim();
+        if (string.Equals(id, CustomPickerId, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!char.IsAsciiLetterOrDigit(id[0]))
+            return false;
+        foreach (var ch in id)
+        {
+            if (!(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '-'))
+                return false;
+        }
+        return true;
+    }
+
+    public static IReadOnlyList<string> SplitArgs(string? raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? []
+            : raw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     public static string CursorConfigPath(string projectRoot) =>
         Path.Combine(Path.GetFullPath(projectRoot), ".cursor", "mcp.json");
@@ -158,18 +224,84 @@ public static class McpLaunch
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var incoming = JsonNode.Parse(snippet ?? CursorSnippet(projectRoot)) as JsonObject ?? new JsonObject();
         var existing = JsonUtil.LoadObject(path);
-        if (existing["mcpServers"] is JsonObject have && incoming["mcpServers"] is JsonObject add)
+        if (existing["mcpServers"] is JsonObject have)
         {
-            foreach (var kv in add)
-                have[kv.Key] = kv.Value?.DeepClone();
-            incoming["mcpServers"] = have;
+            if (incoming["mcpServers"] is JsonObject add)
+            {
+                foreach (var kv in add)
+                    have[kv.Key] = kv.Value?.DeepClone();
+            }
+            File.WriteAllText(path, existing.ToJsonString(JsonUtil.Options));
+            return path;
         }
-        else if (existing.Count > 0 && incoming["mcpServers"] is not null)
+        if (existing.Count > 0 && incoming["mcpServers"] is not null)
         {
             existing["mcpServers"] = incoming["mcpServers"]?.DeepClone();
-            incoming = existing;
+            File.WriteAllText(path, existing.ToJsonString(JsonUtil.Options));
+            return path;
         }
         File.WriteAllText(path, incoming.ToJsonString(JsonUtil.Options));
+        return path;
+    }
+
+    public static string ServerSnippet(string serverId, string? workspaceRoot = null)
+    {
+        if (string.Equals(serverId, ServerId, StringComparison.OrdinalIgnoreCase))
+            return CursorSnippet(workspaceRoot);
+        var entry = FindCatalog(serverId)
+            ?? throw new ArgumentException("未知的 MCP 範本：" + serverId);
+        var config = entry.DefaultConfig()
+            ?? throw new InvalidOperationException("此範本沒有可寫入的設定。");
+        return new JsonObject
+        {
+            ["mcpServers"] = new JsonObject { [serverId] = config },
+        }.ToJsonString(JsonUtil.Options);
+    }
+
+    public static string WriteCatalogServer(string projectRoot, string serverId) =>
+        WriteCursorConfig(projectRoot, ServerSnippet(serverId, projectRoot));
+
+    public static string WriteCustomServer(string projectRoot, string serverId, string? command, string? args, string? url)
+    {
+        if (!IsValidServerId(serverId))
+            throw new ArgumentException("伺服器識別名稱只能用英數開頭，並含英數、點、底線、連字號。");
+        JsonObject config;
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            config = new JsonObject { ["url"] = url.Trim() };
+        }
+        else if (!string.IsNullOrWhiteSpace(command))
+        {
+            config = new JsonObject { ["command"] = command.Trim() };
+            var list = SplitArgs(args);
+            if (list.Count > 0)
+            {
+                var arr = new JsonArray();
+                foreach (var a in list)
+                    arr.Add(a);
+                config["args"] = arr;
+            }
+        }
+        else
+        {
+            throw new ArgumentException("請填命令，或填遠端 URL。");
+        }
+
+        var snippet = new JsonObject
+        {
+            ["mcpServers"] = new JsonObject { [serverId.Trim()] = config },
+        }.ToJsonString(JsonUtil.Options);
+        return WriteCursorConfig(projectRoot, snippet);
+    }
+
+    public static string RemoveServer(string projectRoot, string serverId)
+    {
+        projectRoot = Path.GetFullPath(projectRoot);
+        var path = CursorConfigPath(projectRoot);
+        var existing = JsonUtil.LoadObject(path);
+        if (existing["mcpServers"] is JsonObject have)
+            have.Remove(serverId);
+        File.WriteAllText(path, existing.ToJsonString(JsonUtil.Options));
         return path;
     }
 

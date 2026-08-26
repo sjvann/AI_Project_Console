@@ -109,6 +109,40 @@ public class StackWorkspaceTests
     }
 
     [Fact]
+    public void WriteCatalogAndCustom_ThenRemove()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-mcp-add-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            McpLaunch.WriteCursorConfig(root);
+            var github = File.ReadAllText(McpLaunch.WriteCatalogServer(root, "github"));
+            Assert.Contains("api.githubcopilot.com/mcp", github);
+            Assert.Contains(McpLaunch.ServerId, github);
+
+            var custom = File.ReadAllText(McpLaunch.WriteCustomServer(root, "sentry", "npx", "-y @sentry/mcp-server", null));
+            Assert.Contains("sentry", custom);
+            Assert.Contains("@sentry/mcp-server", custom);
+
+            var remote = File.ReadAllText(McpLaunch.WriteCustomServer(root, "company-monitor", null, null, "https://mcp.example.internal"));
+            Assert.Contains("company-monitor", remote);
+            Assert.Contains("https://mcp.example.internal", remote);
+
+            Assert.True(McpLaunch.IsLinked(root, "github"));
+            Assert.True(McpLaunch.IsLinked(root, "sentry"));
+            McpLaunch.RemoveServer(root, "sentry");
+            Assert.False(McpLaunch.IsLinked(root, "sentry"));
+            Assert.True(McpLaunch.IsLinked(root, McpLaunch.ServerId));
+            Assert.True(McpLaunch.IsValidServerId("company-monitor"));
+            Assert.False(McpLaunch.IsValidServerId(McpLaunch.CustomPickerId));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void DisplayTitle_CoversKnownTools()
     {
         foreach (var tool in StackToolRouter.Tools)

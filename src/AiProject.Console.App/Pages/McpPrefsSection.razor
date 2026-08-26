@@ -2,7 +2,7 @@
 
 <div class="mcp-prefs">
     <h3 class="prefs-sub">Agentic／MCP</h3>
-    <p class="hint">讓 Cursor／Claude Code 呼叫本控制台看堆疊、編譯、啟停。先加入本控制台，再決定工具權限。Agent 每次呼叫（含被拒）會出現在右側「MCP 審計」。</p>
+    <p class="hint">本控制台負責本機堆疊（狀態、編譯、啟停、Log）。這裡把其他 MCP 寫進專案 <code>.cursor/mcp.json</code>，讓 Agent 並排使用 GitHub、套件文件或公司內部閘道。不是只能三個：選建議範本，或選「自訂」填命令／URL。Agent 呼叫本控制台（含被拒）會出現在右側「MCP 審計」。</p>
 
     <section class="mcp-block" aria-labelledby="mcp-refs-title">
         <div class="mcp-block-head">
@@ -19,25 +19,25 @@
                         <span class="mcp-ref-title">@mcp.Title</span>
                         <span class="hint">@mcp.Id · @mcp.Hint</span>
                     </div>
-                    @if (mcp.Linked)
-                    {
-                        <span class="mcp-badge on">已加入</span>
-                    }
-                    else if (mcp.Ours)
-                    {
-                        <span class="mcp-badge">未加入</span>
-                    }
-                    else
-                    {
-                        <span class="mcp-badge muted">建議</span>
-                    }
+                    <div class="mcp-ref-actions">
+                        @if (mcp.Linked)
+                        {
+                            <span class="mcp-badge on">已加入</span>
+                            <button class="btn-link" type="button" disabled="@(!S.HasProject)" @onclick="() => S.RemoveMcpFromProject(mcp.Id)">移除</button>
+                        }
+                        else
+                        {
+                            <span class="mcp-badge @(mcp.Ours ? null : "muted")">@(mcp.Ours ? "未加入" : "建議")</span>
+                            <button class="btn-link" type="button" disabled="@(!S.HasProject)" @onclick="() => S.WriteMcpServer(mcp.Id)">加入</button>
+                        }
+                    </div>
                 </li>
             }
         </ul>
         <p class="hint">
             @(S.HasProject
-                ? "此清單只看目前專案的 .cursor/mcp.json；使用者全域的 MCP 不會列在這裡。"
-                : "尚未開啟專案。開啟後會讀取 .cursor/mcp.json；也可先複製設定貼到使用者全域 mcp.json。")
+                ? "此清單讀專案 .cursor/mcp.json（含你自訂加入的）。使用者全域 mcp.json 不會列在這裡。"
+                : "尚未開啟專案。開啟後會讀取並寫入專案 .cursor/mcp.json；也可先複製本控制台設定貼到使用者全域。")
         </p>
 
         <div class="field mcp-add">
@@ -46,16 +46,51 @@
                 <select aria-label="選擇要加入的 MCP" value="@S.AddMcpId" @onchange="OnAddMcp">
                     @foreach (var mcp in S.AddableMcpServers)
                     {
-                        <option value="@mcp.Id">@mcp.Title（@mcp.Id）</option>
+                        <option value="@mcp.Id">@(mcp.Id == McpLaunch.CustomPickerId ? mcp.Title : $"{mcp.Title}（{mcp.Id}）")</option>
                     }
                 </select>
-                <button class="btn-primary" type="button" disabled="@(S.SelectedMcpIsOurs && !S.CanWriteSelectedMcp)" @onclick="S.WriteMcpConfigToProject">
+                <button class="btn-primary" type="button" disabled="@(!S.CanAddSelectedMcp)" @onclick="S.WriteMcpConfigToProject">
                     @S.AddMcpButtonLabel
                 </button>
             </div>
         </div>
+        @if (S.SelectedMcpIsCustom)
+        {
+            <div class="mcp-custom">
+                <div class="field">
+                    <span>識別名稱</span>
+                    <input value="@S.CustomMcpId" @oninput="OnCustomId" placeholder="例如 sentry 或 company-monitor" />
+                </div>
+                <div class="field">
+                    <span>啟動方式</span>
+                    <select aria-label="自訂 MCP 啟動方式" value="@S.CustomMcpKind" @onchange="OnCustomKind">
+                        <option value="command">本機命令（stdio）</option>
+                        <option value="url">遠端 URL</option>
+                    </select>
+                </div>
+                @if (S.CustomMcpKind == "url")
+                {
+                    <div class="field">
+                        <span>URL</span>
+                        <input value="@S.CustomMcpUrl" @oninput="OnCustomUrl" placeholder="https://…" />
+                    </div>
+                }
+                else
+                {
+                    <div class="field">
+                        <span>命令</span>
+                        <input value="@S.CustomMcpCommand" @oninput="OnCustomCommand" placeholder="npx 或 docker 或完整路徑" />
+                    </div>
+                    <div class="field">
+                        <span>參數</span>
+                        <input value="@S.CustomMcpArgs" @oninput="OnCustomArgs" placeholder="例如 -y @@upstash/context7-mcp" />
+                    </div>
+                }
+            </div>
+        }
         <div class="row">
-            <button class="btn-sec" type="button" @onclick="S.CopyMcpConfigAsync">複製設定</button>
+            <button class="btn-sec" type="button" @onclick="S.CopyMcpConfigAsync">複製本控制台設定</button>
+            <button class="btn-sec" type="button" disabled="@(!S.HasProject)" @onclick="S.OpenMcpConfig">開啟 mcp.json</button>
         </div>
     </section>
 
@@ -139,6 +174,26 @@
             <button class="btn-link" type="button" disabled="@(!S.HasProject)" @onclick="S.WriteMcpPolicyToProject">寫入專案政策範本</button>
         </div>
     </section>
+
+    <section class="mcp-block" aria-labelledby="ask-title">
+        <div class="mcp-block-head">
+            <strong id="ask-title">專案問答</strong>
+            <span class="hint">控制台內對談 · OpenAI 相容</span>
+        </div>
+        <p class="hint">右側「專案問答」頁籤用這裡的端點回答目前專案問題，並本機呼叫值班／Log／審計工具。預設本機 Ollama；也可改成 OpenAI、Groq 或其他相容端點。</p>
+        <div class="field">
+            <span>Base URL</span>
+            <input value="@S.AskBaseUrl" @oninput="OnAskUrl" placeholder="http://127.0.0.1:11434/v1" />
+        </div>
+        <div class="field">
+            <span>API key</span>
+            <input value="@S.AskApiKey" @oninput="OnAskKey" placeholder="本機 Ollama 可空白" />
+        </div>
+        <div class="field">
+            <span>模型</span>
+            <input value="@S.AskModel" @oninput="OnAskModel" placeholder="llama3.2" />
+        </div>
+    </section>
 </div>
 
 @code {
@@ -148,8 +203,24 @@
 
     void OnAddMcp(ChangeEventArgs e) => S.SetAddMcpId(e.Value?.ToString());
 
+    void OnCustomKind(ChangeEventArgs e) => S.SetCustomMcpKind(e.Value?.ToString() ?? "command");
+
+    void OnCustomId(ChangeEventArgs e) => S.SetCustomMcpId(e.Value?.ToString() ?? "");
+
+    void OnCustomCommand(ChangeEventArgs e) => S.SetCustomMcpCommand(e.Value?.ToString() ?? "");
+
+    void OnCustomArgs(ChangeEventArgs e) => S.SetCustomMcpArgs(e.Value?.ToString() ?? "");
+
+    void OnCustomUrl(ChangeEventArgs e) => S.SetCustomMcpUrl(e.Value?.ToString() ?? "");
+
     void OnAddToolName(ChangeEventArgs e) => S.AddToolName = e.Value?.ToString() ?? "";
 
     void OnToolAccess(string name, ChangeEventArgs e) =>
         S.SetMcpToolAccess(name, e.Value?.ToString() ?? "allow");
+
+    void OnAskUrl(ChangeEventArgs e) => S.AskBaseUrl = e.Value?.ToString() ?? "";
+
+    void OnAskKey(ChangeEventArgs e) => S.AskApiKey = e.Value?.ToString() ?? "";
+
+    void OnAskModel(ChangeEventArgs e) => S.AskModel = e.Value?.ToString() ?? "";
 }

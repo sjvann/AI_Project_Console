@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Runtime;
@@ -218,6 +219,26 @@ public static class ConsoleSettingsStore
         data["mcpConfirm"] = (value ?? "").Trim();
         Save(data);
     }
+
+    public static string GetAskBaseUrl()
+    {
+        var raw = JsonUtil.Str(Load()["askBaseUrl"]);
+        return string.IsNullOrWhiteSpace(raw) ? ProjectAskService.DefaultBaseUrl : raw.Trim();
+    }
+
+    public static void SetAskBaseUrl(string? value) => SetOptionalString("askBaseUrl", value);
+
+    public static string GetAskApiKey() => JsonUtil.Str(Load()["askApiKey"]);
+
+    public static void SetAskApiKey(string? value) => SetOptionalString("askApiKey", value);
+
+    public static string GetAskModel()
+    {
+        var raw = JsonUtil.Str(Load()["askModel"]);
+        return string.IsNullOrWhiteSpace(raw) ? ProjectAskService.DefaultModel : raw.Trim();
+    }
+
+    public static void SetAskModel(string? value) => SetOptionalString("askModel", value);
 
     static void SetOptionalString(string key, string? value)
     {
