@@ -3629,7 +3629,7 @@ public sealed class ConsoleSession : IDisposable
                     await RefreshActionsAsync().ConfigureAwait(false);
                     await RefreshPullRequestAsync().ConfigureAwait(false);
                 }
-                else if (healthEvery % 45 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
+                else if (!watchingCi && healthEvery % 45 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
                 {
                     await RefreshActionsAsync().ConfigureAwait(false);
                     await RefreshPullRequestAsync().ConfigureAwait(false);
