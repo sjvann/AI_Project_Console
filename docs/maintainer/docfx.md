@@ -31,9 +31,10 @@ dotnet docfx docfx.json
 | `toc.yml` | 頂列：使用文件／API |
 | `docs/toc.yml` | 使用文件側欄 |
 | `index.md` | 網站首頁 |
+| `templates/public/` | 自訂樣式與頂列 GitHub 圖示 |
 | `.config/dotnet-tools.json` | 鎖定 DocFX 2.78.5 |
 
-API 來自 `AiProject.Console.Core` 與 `AiProject.Console.Mcp`（不含桌面 UI 專案）。Core 已開 `GenerateDocumentationFile`，有 XML 註解的公開成員會出現在 API 頁。
+API 來自 `AiProject.Console.Core` 與 `AiProject.Console.Mcp`（不含桌面 UI 專案）。兩個專案都已開 `GenerateDocumentationFile`，有 XML 註解的公開成員會出現在 API 頁。
 
 ## 發佈
 

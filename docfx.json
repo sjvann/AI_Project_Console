@@ -64,11 +64,11 @@
       }
     ],
     "output": "_site",
-    "template": [ "default", "modern" ],
+    "template": [ "default", "modern", "templates" ],
     "globalMetadata": {
       "_appName": "AI_Project 控制台",
       "_appTitle": "AI_Project 控制台",
-      "_appFooter": "AI_Project 控制台",
+      "_appFooter": "<span>AI_Project 控制台 · <a href=\"https://sjvann.github.io/AI_Project_Console/\">使用文件</a></span>",
       "_appLogoPath": "images/logo.svg",
       "_appFaviconPath": "images/favicon.ico",
       "_enableSearch": true,
