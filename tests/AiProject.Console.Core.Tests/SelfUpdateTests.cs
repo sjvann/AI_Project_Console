@@ -59,7 +59,7 @@ public class SelfUpdateTests
     public void DetectInstallKind_RecognizesDevBinFolder()
     {
         var root = Path.Combine(Path.GetTempPath(), "ai-console-upd-" + Guid.NewGuid().ToString("N"));
-        var dir = Path.Combine(root, "bin", "Release", "net8.0", "win-x64");
+        var dir = Path.Combine(root, "bin", "Release", "net10.0", "win-x64");
         Directory.CreateDirectory(dir);
         try
         {

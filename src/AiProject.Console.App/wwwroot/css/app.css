@@ -139,6 +139,18 @@ button:disabled { opacity: .45; cursor: default; }
 .dialog { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 18px; width: min(520px, 92vw); max-height: 88vh; overflow: auto; }
 .dialog-lg { width: min(720px, 94vw); }
 .dialog h2 { margin: 0 0 10px; font-size: 16px; }
+.prefs-dialog { display: flex; flex-direction: column; width: min(760px, 94vw); height: min(640px, 88vh); padding: 16px 0 0; overflow: hidden; }
+.prefs-head { padding: 0 18px; }
+.prefs-dialog h2 { margin: 0; }
+.prefs-tabs { display: flex; flex-wrap: wrap; gap: 0; margin: 12px 18px 0; border-bottom: 1px solid var(--border); }
+.prefs-tab { appearance: none; background: none; border: none; border-bottom: 3px solid transparent; color: var(--muted); font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; padding: 10px 12px 8px; margin-bottom: -1px; cursor: pointer; border-radius: 0; }
+.prefs-tab:hover { color: var(--text); }
+.prefs-tab.active { color: var(--text); font-weight: 700; border-bottom-color: var(--accent); }
+.prefs-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prefs-body { flex: 1; overflow: auto; padding: 14px 18px; min-height: 0; }
+.prefs-body .check { margin: 10px 0; }
+.prefs-body > .hint:first-child, .prefs-body .mcp-block:first-child, .prefs-body .mcp-prefs > .hint:first-child, .prefs-body .mcp-prefs > .mcp-block:first-child { margin-top: 0; }
+.prefs-dialog .dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); }
 .prefs-sub { margin: 16px 0 6px; font-size: 13px; color: var(--text); }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
 .field-inline { display: flex; gap: 8px; align-items: center; }
@@ -150,7 +162,7 @@ button:disabled { opacity: .45; cursor: default; }
 .mcp-block-head strong { font-size: 13px; }
 .mcp-empty { margin: 4px 0 8px; }
 .mcp-ref-list, .mcp-tool-list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); overflow: hidden; }
-.mcp-tool-list { max-height: 240px; overflow: auto; }
+.mcp-tool-list { max-height: 280px; overflow: auto; }
 .mcp-ref-list li, .mcp-tool-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .mcp-tool-row { grid-template-columns: minmax(0, 1fr) auto; }
 .mcp-ref-list li:last-child, .mcp-tool-row:last-child { border-bottom: none; }

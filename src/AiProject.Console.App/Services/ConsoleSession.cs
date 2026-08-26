@@ -98,6 +98,7 @@ public sealed class ConsoleSession : IDisposable
     public bool JobBusy { get; private set; }
     public string LeftTab { get; set; } = "svc";
     public string RightTab { get; set; } = "log";
+    public string PrefsTab { get; set; } = "general";
     public string? SelectedServiceId { get; private set; }
     public Dictionary<string, bool> Health { get; } = new();
     public IReadOnlyList<BuildState> Projects { get; private set; } = [];
@@ -275,7 +276,7 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
-    public void OpenPreferences()
+    public void OpenPreferences(string? tab = null)
     {
         AgentProvider = ConsoleSettingsStore.GetAgentProvider();
         AgentCliPath = ConsoleSettingsStore.GetAgentCliPath();
@@ -293,7 +294,15 @@ public sealed class ConsoleSession : IDisposable
         McpConfirm = ConsoleSettingsStore.GetMcpConfirm();
         RefreshMcpPrefsUi();
         RefreshAgentDetect();
+        if (!string.IsNullOrEmpty(tab))
+            PrefsTab = tab;
         Dialog = "prefs";
+        Notify();
+    }
+
+    public void SetPrefsTab(string tab)
+    {
+        PrefsTab = tab;
         Notify();
     }
 

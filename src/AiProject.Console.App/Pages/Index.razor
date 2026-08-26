@@ -9,7 +9,7 @@
         <h1>AI_Project 控制台</h1>
         <span class="hint">通用本機堆疊 · GitHub／部署 · v@(AppInfo.Version)</span>
         <span class="grow"></span>
-        <button class="btn-sec" @onclick="S.OpenPreferences">設定</button>
+        <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
@@ -277,11 +277,11 @@
                     @if (S.AuditTotal == 0)
                     {
                         <ol>
-                            <li>設定 → Agentic／MCP，把「本控制台」加入專案，並重新載入 Cursor。</li>
+                            <li>設定 → MCP，把「本控制台」加入專案，並重新載入 Cursor。</li>
                             <li>請 Agent 呼叫 <code>stack_status</code>、<code>build</code>、<code>get_log</code> 等工具（或問「用 duty_summary 看現在能不能交班」）。</li>
                             <li>回到這頁按「重新載入」。有拒絕時，上方摘要「MCP 拒絕」會變黃，點一下也會打開這裡。</li>
                         </ol>
-                        <button class="btn-link" type="button" @onclick="S.OpenPreferences">前往 Agentic／MCP 設定</button>
+                        <button class="btn-link" type="button" @onclick="@(() => S.OpenPreferences("mcp"))">前往 MCP 設定</button>
                     }
                     else
                     {
@@ -291,7 +291,7 @@
                     {
                         <p class="hint">@S.AuditPolicyText</p>
                     }
-                    <p class="hint">可寫／唯讀＝Agent 能否編譯與啟停。允許＝白名單（空白＝全部）。禁止＝一律擋下。需確認＝必須帶 <code>confirm=true</code>（預設 <code>stop_all</code>）。改權限請到設定。</p>
+                    <p class="hint">可寫／唯讀＝Agent 能否編譯與啟停。允許＝白名單（空白＝全部）。禁止＝一律擋下。需確認＝必須帶 <code>confirm=true</code>（預設 <code>stop_all</code>）。改權限請到設定 → 權限。</p>
                 </div>
                 <div class="audit-list">
                     @if (S.VisibleAuditEntries.Any())
@@ -357,7 +357,7 @@
                     else if (!S.AskConfigured)
                     {
                         <p class="hint">請到設定填寫專案問答的 Base URL 與模型。預設可接本機 Ollama（<code>http://127.0.0.1:11434/v1</code>）。</p>
-                        <button class="btn-link" type="button" @onclick="S.OpenPreferences">前往設定</button>
+                        <button class="btn-link" type="button" @onclick="@(() => S.OpenPreferences("ask"))">前往問答設定</button>
                     }
                     else
                     {
@@ -634,42 +634,81 @@
 @if (S.Dialog == "prefs")
 {
     <div class="overlay" @onclick="S.CloseDialog">
-        <div class="dialog dialog-lg" @onclick:stopPropagation="true">
-            <h2>偏好設定</h2>
-            <p class="hint">控制台擁有何時求救與帶什麼上下文；後端只負責在哪裡跑 Agent。</p>
-            <div class="field">
-                <span>Agent 後端</span>
-                <select value="@S.AgentProvider" @onchange="OnAgentProvider">
-                    @foreach (var b in S.AgentBackends)
-                    {
-                        <option value="@b.Id">@b.DisplayName</option>
-                    }
-                </select>
+        <div class="dialog dialog-lg prefs-dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="prefs-title">
+            <div class="prefs-head">
+                <h2 id="prefs-title">偏好設定</h2>
             </div>
-            <p class="hint @(S.AgentAvailable ? "status-on" : "status-off")">@S.AgentDetectSummary</p>
-            <div class="field"><span>CLI 路徑覆寫</span><input value="@S.AgentCliPath" @oninput="OnAgentCli" placeholder="空白＝自動偵測" /></div>
-            @if (S.AgentProvider == "custom")
-            {
-                <div class="field"><span>自訂命令</span><input value="@S.CustomAgentCommand" @oninput="OnCustomCmd" placeholder="例如 aider 或 my-agent" /></div>
-                <div class="field"><span>參數範本</span><input value="@S.CustomAgentArgs" @oninput="OnCustomArgs" placeholder="{root} {promptFile}" /></div>
-                <p class="hint">可用變數：{root}、{promptFile}、{prompt}</p>
-            }
-            <label class="check">
-                <input type="checkbox" checked="@S.RestoreLastProject" @onchange="e => S.SetRestoreLastProject((bool)(e.Value ?? false))" />
-                啟動時還原上次專案
-            </label>
-            <label class="check">
-                <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
-                載入專案時開啟 @S.AgentDisplayName
-            </label>
-            <div class="field">
-                <span>外觀</span>
-                <select value="@S.Theme" @onchange="OnTheme">
-                    <option value="light">淺色</option>
-                    <option value="dark">深色</option>
-                </select>
+            <div class="prefs-tabs" role="tablist" aria-label="設定分類" @onkeydown="OnPrefsTabKey">
+                <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "general" ? "active" : null)"
+                        id="prefs-tab-general" aria-selected="@(S.PrefsTab == "general" ? "true" : "false")"
+                        aria-controls="prefs-panel-general" @onclick="@(() => S.SetPrefsTab("general"))">一般</button>
+                <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "agent" ? "active" : null)"
+                        id="prefs-tab-agent" aria-selected="@(S.PrefsTab == "agent" ? "true" : "false")"
+                        aria-controls="prefs-panel-agent" @onclick="@(() => S.SetPrefsTab("agent"))">Agent</button>
+                <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "mcp" ? "active" : null)"
+                        id="prefs-tab-mcp" aria-selected="@(S.PrefsTab == "mcp" ? "true" : "false")"
+                        aria-controls="prefs-panel-mcp" @onclick="@(() => S.SetPrefsTab("mcp"))">MCP</button>
+                <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "tools" ? "active" : null)"
+                        id="prefs-tab-tools"
+                        aria-selected="@(S.PrefsTab == "tools" ? "true" : "false")"
+                        aria-controls="prefs-panel-tools" @onclick="@(() => S.SetPrefsTab("tools"))">工具權限</button>
+                <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "ask" ? "active" : null)"
+                        id="prefs-tab-ask"
+                        aria-selected="@(S.PrefsTab == "ask" ? "true" : "false")"
+                        aria-controls="prefs-panel-ask" @onclick="@(() => S.SetPrefsTab("ask"))">專案問答</button>
             </div>
-            <McpPrefsSection S="S" />
+            <div class="prefs-body">
+                @if (S.PrefsTab == "general")
+                {
+                    <div id="prefs-panel-general" role="tabpanel" aria-labelledby="prefs-tab-general">
+                        <p class="hint">控制台外觀與啟動時要不要還原專案。</p>
+                        <div class="field">
+                            <span>外觀</span>
+                            <select value="@S.Theme" @onchange="OnTheme">
+                                <option value="light">淺色</option>
+                                <option value="dark">深色</option>
+                            </select>
+                        </div>
+                        <label class="check">
+                            <input type="checkbox" checked="@S.RestoreLastProject" @onchange="e => S.SetRestoreLastProject((bool)(e.Value ?? false))" />
+                            啟動時還原上次專案
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@S.OpenWithCursor" @onchange="e => S.SetOpenWithCursor((bool)(e.Value ?? false))" />
+                            載入專案時開啟 @S.AgentDisplayName
+                        </label>
+                    </div>
+                }
+                else if (S.PrefsTab == "agent")
+                {
+                    <div id="prefs-panel-agent" role="tabpanel" aria-labelledby="prefs-tab-agent">
+                        <p class="hint">控制台擁有何時求救與帶什麼上下文；後端只負責在哪裡跑 Agent。</p>
+                        <div class="field">
+                            <span>Agent 後端</span>
+                            <select value="@S.AgentProvider" @onchange="OnAgentProvider">
+                                @foreach (var b in S.AgentBackends)
+                                {
+                                    <option value="@b.Id">@b.DisplayName</option>
+                                }
+                            </select>
+                        </div>
+                        <p class="hint @(S.AgentAvailable ? "status-on" : "status-off")">@S.AgentDetectSummary</p>
+                        <div class="field"><span>CLI 路徑覆寫</span><input value="@S.AgentCliPath" @oninput="OnAgentCli" placeholder="空白＝自動偵測" /></div>
+                        @if (S.AgentProvider == "custom")
+                        {
+                            <div class="field"><span>自訂命令</span><input value="@S.CustomAgentCommand" @oninput="OnCustomCmd" placeholder="例如 aider 或 my-agent" /></div>
+                            <div class="field"><span>參數範本</span><input value="@S.CustomAgentArgs" @oninput="OnCustomArgs" placeholder="{root} {promptFile}" /></div>
+                            <p class="hint">可用變數：{root}、{promptFile}、{prompt}</p>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div id="prefs-panel-@S.PrefsTab" role="tabpanel" aria-labelledby="prefs-tab-@S.PrefsTab">
+                        <McpPrefsSection S="S" Section="@S.PrefsTab" />
+                    </div>
+                }
+            </div>
             <div class="dialog-actions">
                 <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
                 <button class="btn-primary" @onclick="S.SavePreferences">儲存</button>
@@ -773,6 +812,24 @@
     {
         S.Theme = e.Value?.ToString() is "dark" ? "dark" : "light";
         _ = Js.InvokeVoidAsync("aiConsole.setTheme", S.Theme);
+    }
+
+    void OnPrefsTabKey(KeyboardEventArgs e)
+    {
+        var tabs = new[] { "general", "agent", "mcp", "tools", "ask" };
+        var i = Array.IndexOf(tabs, S.PrefsTab);
+        if (i < 0)
+            return;
+        var next = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" => tabs[(i + 1) % tabs.Length],
+            "ArrowLeft" or "ArrowUp" => tabs[(i - 1 + tabs.Length) % tabs.Length],
+            "Home" => tabs[0],
+            "End" => tabs[^1],
+            _ => null
+        };
+        if (next is not null)
+            S.SetPrefsTab(next);
     }
 
     public void Dispose() => S.Changed -= OnChanged;

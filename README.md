@@ -6,7 +6,7 @@
 
 ## 啟動（C#）
 
-需要 [.NET 8 SDK](https://dotnet.microsoft.com/download)（或更新，可編譯 net8.0）。Windows 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（Win10／11 通常已內建）。
+需要 [.NET 10 SDK](https://dotnet.microsoft.com/download)（可編譯 net10.0）。Windows 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（Win10／11 通常已內建）。
 
 ```powershell
 dotnet run --project src/AiProject.Console.App

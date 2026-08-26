@@ -26,7 +26,7 @@
 
 ## 接上 Cursor
 
-1. 控制台「設定」→ Agentic／MCP：加入「本控制台」（本機堆疊）。也可加入建議範本（GitHub、Context7）或「自訂」填命令／URL，寫進專案 `.cursor/mcp.json`。
+1. 控制台「設定」→ MCP：加入「本控制台」（本機堆疊）。也可加入建議範本（GitHub、Context7）或「自訂」填命令／URL，寫進專案 `.cursor/mcp.json`。
 2. 重新載入 Cursor 後，Agent 應能看到本控制台工具：`stack_status`、`build`、`get_log`…；其他 MCP 的工具一併出現。
 3. 求救提示已附驗證步驟，要求 Agent 用這些工具，而不是只改檔。
 
@@ -66,7 +66,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 ## 企業政策（白名單／確認／審計）
 
-控制台設定「Agentic／MCP」或專案檔 `{root}/.ai_project/mcp-policy.json`：
+控制台設定「工具權限」或專案檔 `{root}/.ai_project/mcp-policy.json`：
 
 ```json
 {
@@ -98,7 +98,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --a
 
 **怎麼用**
 
-1. 設定 → Agentic／MCP，把「本控制台」加入專案，並重新載入 Cursor。
+1. 設定 → MCP，把「本控制台」加入專案，並重新載入 Cursor。
 2. 請 Agent 呼叫 `stack_status`、`build`、`get_log` 等（或問「用 `duty_summary` 看現在能不能交班」）。
 3. 打開右側「MCP 審計」，按「重新載入」。摘要列「MCP 拒絕」有數字時點一下也會打開這頁。
 4. 搜尋可過濾工具名／參數／拒絕原因；「開啟檔案」用系統編輯器看完整 jsonl。Agent 也可用 `list_audit`。
@@ -123,7 +123,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --a
 
 **怎麼用**
 
-1. 設定 → Agentic／MCP →「專案問答」確認 Base URL 與模型。本機 Ollama 的 API key 可空白；OpenAI／Groq 填 key 並改 URL。
+1. 設定 → 專案問答，確認 Base URL 與模型。本機 Ollama 的 API key 可空白；OpenAI／Groq 填 key 並改 URL。
 2. 點右側「專案問答」。可點建議題（離線／需重編／MCP 拒絕有數字時會置頂並標「建議」），或自己打字送出。
 3. 等回覆時可切到 Log／審計、按啟動。要中斷按「取消」。
 

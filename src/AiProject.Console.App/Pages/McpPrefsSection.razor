@@ -1,7 +1,8 @@
 @using AiProject.Console.Core.Stack
 
 <div class="mcp-prefs">
-    <h3 class="prefs-sub">Agentic／MCP</h3>
+    @if (Section == "mcp")
+    {
     <p class="hint">本控制台負責本機堆疊（狀態、編譯、啟停、Log）。這裡把其他 MCP 寫進專案 <code>.cursor/mcp.json</code>，讓 Agent 並排使用 GitHub、套件文件或公司內部閘道。不是只能三個：選建議範本，或選「自訂」填命令／URL。Agent 呼叫本控制台（含被拒）會出現在右側「MCP 審計」。</p>
 
     <section class="mcp-block" aria-labelledby="mcp-refs-title">
@@ -93,7 +94,10 @@
             <button class="btn-sec" type="button" disabled="@(!S.HasProject)" @onclick="S.OpenMcpConfig">開啟 mcp.json</button>
         </div>
     </section>
+    }
 
+    @if (Section == "tools")
+    {
     <section class="mcp-block" aria-labelledby="mcp-tools-title">
         <div class="mcp-block-head">
             <strong id="mcp-tools-title">工具權限</strong>
@@ -174,7 +178,10 @@
             <button class="btn-link" type="button" disabled="@(!S.HasProject)" @onclick="S.WriteMcpPolicyToProject">寫入專案政策範本</button>
         </div>
     </section>
+    }
 
+    @if (Section == "ask")
+    {
     <section class="mcp-block" aria-labelledby="ask-title">
         <div class="mcp-block-head">
             <strong id="ask-title">專案問答</strong>
@@ -194,10 +201,13 @@
             <input value="@S.AskModel" @oninput="OnAskModel" placeholder="llama3.2" />
         </div>
     </section>
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public ConsoleSession S { get; set; } = default!;
+
+    [Parameter] public string Section { get; set; } = "mcp";
 
     void OnMode(ChangeEventArgs e) => S.SetMcpToolMode(e.Value?.ToString() ?? "all");
 

@@ -6,7 +6,7 @@
 
 ## 前置需求
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，用於 `*-setup.exe`）
 - [GitHub CLI](https://cli.github.com/) 已登入：`gh auth login`
 - 在倉庫根目錄執行下列指令
