@@ -107,7 +107,7 @@
             <button type="button" class="duty-chip @(S.StaleProjectCount > 0 ? "is-warn" : "is-ok")" @onclick="S.ShowStaleProjects">
                 需重編 @S.StaleProjectCount
             </button>
-            <button type="button" class="duty-chip @(S.AuditFailCount > 0 ? "is-warn" : "is-ok")" @onclick="@(() => S.SetRightTab("audit"))">
+            <button type="button" class="duty-chip @(S.AuditIncidentCount > 0 ? "is-warn" : "is-ok")" title="對帳單。政策擋下或未知工具不是故障；點一下看原因。" @onclick="@(() => S.SetRightTab("audit"))">
                 MCP 拒絕 @S.AuditFailCount
             </button>
             @if (S.GithubManaged)
@@ -121,7 +121,7 @@
             </button>
             @if (S.ShowCiChip)
             {
-                <button type="button" class="duty-chip is-@S.CiChipTone" title="遠端 GitHub Actions 最近狀態，點一下看清單" @onclick="S.OpenCiDialogAsync">
+                <button type="button" class="duty-chip is-@S.CiChipTone" title="遠端已經跑完。控制台不能修 CI；點一下到 GitHub 看 log。" @onclick="S.OpenCiDialogAsync">
                     @S.CiChipText
                 </button>
             }
@@ -439,9 +439,9 @@
                 <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.SetRightTab("build"))">建置／測試</div>
                 <div class="tab @(S.RightTab == "audit" ? "active" : null)" @onclick="@(() => S.SetRightTab("audit"))">
                     MCP 審計
-                    @if (S.AuditFailCount > 0)
+                    @if (S.AuditIncidentCount > 0)
                     {
-                        <span class="badge badge-failed">@S.AuditFailCount</span>
+                        <span class="badge badge-failed">@S.AuditIncidentCount</span>
                     }
                     else if (S.AuditTotal > 0)
                     {
@@ -512,7 +512,7 @@
                         <ol>
                             <li>設定 → MCP，把「本控制台」加入專案，並重新載入 Cursor。</li>
                             <li>請 Agent 呼叫 <code>stack_status</code>、<code>build</code>、<code>get_log</code> 等工具（或問「用 duty_summary 看現在能不能交班」）。</li>
-                            <li>回到這頁按「重新載入」。有拒絕時，上方摘要「MCP 拒絕」會變黃，點一下也會打開這裡。</li>
+                            <li>回到這頁按「重新載入」。摘要「MCP 拒絕」是對帳單；政策擋下或未知工具不會變黃。點一下也會打開這裡。</li>
                         </ol>
                         <button class="btn-link" type="button" @onclick="@(() => S.OpenPreferences("mcp"))">前往 MCP 設定</button>
                     }
@@ -769,7 +769,7 @@
     <div class="overlay" @onclick="S.CloseDialog">
         <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="ci-title" aria-modal="true">
             <h2 id="ci-title">Actions 狀態</h2>
-            <p class="hint">遠端 GitHub Actions 最近執行。控制台只告訴你過了沒有；詳細 log 請在 GitHub 開，不要把這裡當成第二個 CI 畫面。</p>
+            <p class="hint">遠端已經跑完。控制台不能修 CI；下一步：點一列或「開啟最新」到 GitHub 看 log。</p>
             @if (S.CanScaffoldCi)
             {
                 <p class="hint">這個倉庫還沒有建置／測試 workflow。可寫入骨架，審查後再提交。</p>

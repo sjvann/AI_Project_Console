@@ -136,6 +136,7 @@ public sealed class ConsoleSession : IDisposable
     public string AuditPolicyText { get; private set; } = "";
     public string AuditFilter { get; private set; } = "";
     public int AuditFailCount => AuditEntries.Count(e => !e.Ok);
+    public int AuditIncidentCount => AuditEntries.Count(e => e.IsIncident);
     public IEnumerable<McpAuditEntry> VisibleAuditEntries
     {
         get
@@ -206,7 +207,8 @@ public sealed class ConsoleSession : IDisposable
     public ActionsSnapshot? Actions { get; private set; }
     public bool ShowCiChip => HasProject && GithubManaged && GithubLoggedIn;
     public string CiChipText => Actions?.ChipText() ?? "CI …";
-    public string CiChipTone => Actions?.ChipTone() ?? "wait";
+    public bool WatchingCi => _ciWatchUntil is { } until && DateTimeOffset.UtcNow < until;
+    public string CiChipTone => ActionsSnapshot.ConsoleChipTone(Actions?.ChipTone() ?? "wait", WatchingCi);
     public bool CanScaffoldCi => Catalog is not null && !CiWorkflow.HasBuildTest(Catalog.Root);
     public PullRequestStatus? PullRequest { get; private set; }
     public bool ShowPrChip =>
@@ -355,15 +357,16 @@ public sealed class ConsoleSession : IDisposable
     public int OfflineCount => Math.Max(0, ServiceCount - ReadyCount);
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
     public string? LastAuditFailTool => AuditEntries.LastOrDefault(e => !e.Ok)?.Tool;
+    public string? LastAuditIncidentTool => AuditEntries.LastOrDefault(e => e.IsIncident)?.Tool;
     public string DutyAttention =>
         Catalog is null
             ? ""
-            : DutySummary.Attention(OfflineCount, StaleProjectCount, AuditFailCount, LastAuditFailTool);
-    public bool DutyOk => Catalog is not null && DutySummary.IsClear(OfflineCount, StaleProjectCount, AuditFailCount);
+            : DutySummary.Attention(OfflineCount, StaleProjectCount, AuditIncidentCount, LastAuditIncidentTool);
+    public bool DutyOk => Catalog is not null && DutySummary.IsClear(OfflineCount, StaleProjectCount, AuditIncidentCount);
     public bool AskConfigured => ProjectAskService.IsConfigured(AskBaseUrl, AskModel);
     public bool CanAsk => HasProject && AskConfigured && !AskBusy;
     public IReadOnlyList<ProjectAskSuggestionView> AskSuggestions =>
-        ProjectAskPrompts.Rank(OfflineCount, StaleProjectCount, AuditFailCount);
+        ProjectAskPrompts.Rank(OfflineCount, StaleProjectCount, AuditIncidentCount);
 
     public bool RuntimeHelpEnabled
     {
@@ -3623,7 +3626,7 @@ public sealed class ConsoleSession : IDisposable
                     LoadAudit(reloadPolicy: false);
                 if (healthEvery % 40 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
                     await RefreshIssuesAsync().ConfigureAwait(false);
-                var watchingCi = _ciWatchUntil is { } until && DateTimeOffset.UtcNow < until;
+                var watchingCi = WatchingCi;
                 if (watchingCi && healthEvery % 6 == 0 && Catalog is not null && GithubLoggedIn && GithubManaged)
                 {
                     await RefreshActionsAsync().ConfigureAwait(false);

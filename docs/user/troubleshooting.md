@@ -76,7 +76,7 @@
 
 ## MCP 審計是空的
 
-不是故障。代表 Agent 還沒呼叫堆疊工具，或控制台尚未寫入專案 `.cursor/mcp.json`。步驟見 [MCP](../agent/mcp.md)。摘要「MCP 拒絕」有數字時，點一下會打開審計並可看到原因（例如 `stop_all` 缺少 `confirm=true`）。
+不是故障。代表 Agent 還沒呼叫堆疊工具，或控制台尚未寫入專案 `.cursor/mcp.json`。步驟見 [MCP](../agent/mcp.md)。摘要「MCP 拒絕」是對帳單；政策擋下（例如 `stop_all` 缺少 `confirm=true`）不會變黃。點一下可看原因。
 
 ## 專案問答沒有回覆
 

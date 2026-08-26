@@ -94,6 +94,16 @@ public sealed record ActionsSnapshot(
         return Latest?.Tone ?? "wait";
     }
 
+    /// <summary>
+    /// 摘要列用。歷史失敗是事實，不亮警報；剛推送後監看中的失敗才黃。
+    /// </summary>
+    public static string ConsoleChipTone(string snapshotTone, bool watchingAfterPush)
+    {
+        if (snapshotTone == "warn" && !watchingAfterPush)
+            return "wait";
+        return string.IsNullOrEmpty(snapshotTone) ? "wait" : snapshotTone;
+    }
+
     public string FormatReport()
     {
         if (!string.IsNullOrEmpty(Error))

@@ -70,7 +70,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 文件工具只讀 `docs/`：看狀態、列檔、讀一頁。寫檔請用控制台編輯或 Agent 在工作區改，沒有 `write_doc`。
 
-晨會／值班先呼叫 `duty_summary`（就緒、離線、需重編、最近 MCP 拒絕）。遠端 CI 再用 `ci_status`，PR 檢查用 `pr_status`。控制台摘要列：點「需重編」切到專案頁，點「MCP 拒絕」打開審計，點「CI／PR」看遠端過了沒有。
+晨會／值班先呼叫 `duty_summary`（就緒、離線、需重編；政策擋下不列入警報）。遠端 CI 再用 `ci_status`，PR 檢查用 `pr_status`。控制台摘要列：點「需重編」切到專案頁，點「MCP 拒絕」打開對帳單，點「CI／PR」到 GitHub 看 log。
 
 ## 企業政策（白名單／確認／審計）
 
@@ -106,7 +106,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --a
 
 1. 設定 → MCP，把「本控制台」加入專案，並重新載入 Cursor。
 2. 請 Agent 呼叫工具，或問「用 `duty_summary` 看現在能不能交班」。
-3. 打開「MCP 審計」，按「重新載入」。摘要「MCP 拒絕」有數字時點一下也會打開。
+3. 打開「MCP 審計」，按「重新載入」。摘要「MCP 拒絕」點一下也會打開；政策擋下不會變黃。
 4. 搜尋可過濾；「開啟檔案」看完整 jsonl。Agent 可用 `list_audit`。
 
 | 欄 | 意義 |

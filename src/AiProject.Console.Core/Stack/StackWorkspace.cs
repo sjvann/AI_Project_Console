@@ -70,8 +70,10 @@ public sealed class StackWorkspace
         var stalePrj = BuildFreshness.AllProjectBuildStates(Catalog).Count(p => p.Status is "stale" or "unbuilt");
         var (_, audit) = McpAuditLog.ReadRecent(Runtime, 80);
         var fails = audit.Where(e => !e.Ok).ToList();
+        var incidents = fails.Where(e => e.IsIncident).ToList();
         var last = fails.Count > 0 ? fails[^1] : null;
-        var attention = DutySummary.Attention(offline, stalePrj, fails.Count, last?.Tool);
+        var lastIncident = incidents.Count > 0 ? incidents[^1] : null;
+        var attention = DutySummary.Attention(offline, stalePrj, incidents.Count, lastIncident?.Tool);
         return Json(new
         {
             root = Root,
@@ -81,11 +83,12 @@ public sealed class StackWorkspace
             staleServices = staleSvc,
             staleProjects = stalePrj,
             auditFails = fails.Count,
+            auditIncidents = incidents.Count,
             lastAuditFail = last is null
                 ? null
                 : new { tool = last.Tool, error = last.Error, utc = last.Utc.ToString("o") },
             attention,
-            ok = DutySummary.IsClear(offline, stalePrj, fails.Count),
+            ok = DutySummary.IsClear(offline, stalePrj, incidents.Count),
         });
     }
 

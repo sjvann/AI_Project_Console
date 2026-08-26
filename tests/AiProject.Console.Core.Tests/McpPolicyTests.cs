@@ -124,13 +124,31 @@ public class McpPolicyTests
     }
 
     [Fact]
+    public void AuditEntry_ExpectedDenial_VsIncident()
+    {
+        var confirm = new McpAuditEntry(DateTimeOffset.UtcNow, "stop_all", false, 1, "",
+            "stop_all 是破壞性操作，需要確認。請先向使用者確認，再以 confirm=true 重試。");
+        var unknown = new McpAuditEntry(DateTimeOffset.UtcNow, "duty_summary", false, 1, "",
+            "未知工具：duty_summary。請先 stack_status 或看 tools 清單。");
+        var boom = new McpAuditEntry(DateTimeOffset.UtcNow, "build", false, 1, "", "編譯失敗：exit 1");
+        Assert.True(confirm.IsExpectedDenial);
+        Assert.False(confirm.IsIncident);
+        Assert.True(unknown.IsExpectedDenial);
+        Assert.False(unknown.IsIncident);
+        Assert.False(boom.IsExpectedDenial);
+        Assert.True(boom.IsIncident);
+    }
+
+    [Fact]
     public void DutySummary_Attention_ClearAndProblems()
     {
         Assert.Equal("堆疊正常", DutySummary.Attention(0, 0, 0, null));
         Assert.True(DutySummary.IsClear(0, 0, 0));
-        Assert.Equal("離線 2 · 需重編 1 · MCP 拒絕 3（最近 stop_all）",
-            DutySummary.Attention(2, 1, 3, "stop_all"));
+        Assert.Equal("離線 2 · 需重編 1", DutySummary.Attention(2, 1, 0, "stop_all"));
+        Assert.Equal("離線 2 · 需重編 1 · MCP 失敗 1（最近 build）",
+            DutySummary.Attention(2, 1, 1, "build"));
         Assert.False(DutySummary.IsClear(1, 0, 0));
+        Assert.True(DutySummary.IsClear(0, 0, 0));
     }
 
     [Fact]
@@ -145,6 +163,32 @@ public class McpPolicyTests
             Assert.Contains("offline", text);
             Assert.Contains("staleProjects", text);
             Assert.Contains("auditFails", text);
+            Assert.Contains("auditIncidents", text);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DutySummary_ExpectedDenials_DoNotFailOk()
+    {
+        var root = CreateMini();
+        try
+        {
+            var ws = StackWorkspace.Open(root);
+            var path = McpAuditLog.FilePath(ws.Runtime);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, """
+                {"utc":"2026-08-25T01:01:00Z","tool":"stop_all","ok":false,"ms":3,"error":"需要確認"}
+                {"utc":"2026-08-25T01:02:00Z","tool":"duty_summary","ok":false,"ms":2,"error":"未知工具：duty_summary"}
+                """);
+            var text = await Invoke(ws, "duty_summary");
+            var compact = text.Replace(" ", "");
+            Assert.Contains("\"auditFails\":2", compact);
+            Assert.Contains("\"auditIncidents\":0", compact);
+            Assert.DoesNotContain("MCP 失敗", text);
         }
         finally
         {
@@ -175,6 +219,8 @@ public class McpPolicyTests
             Assert.Contains("confirm=false", entries[1].ArgsText);
             Assert.Equal("需要確認", entries[1].Error);
             Assert.Equal("拒絕／失敗", entries[1].StatusText);
+            Assert.True(entries[1].IsExpectedDenial);
+            Assert.False(entries[1].IsIncident);
         }
         finally
         {

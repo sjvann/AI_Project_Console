@@ -13,7 +13,7 @@ public static class StackToolRouter
 {
     public static readonly IReadOnlyList<StackToolSpec> Tools =
     [
-        new("duty_summary", "值班一眼摘要：就緒、離線、需重編、最近 MCP 拒絕。晨會第一個工具。", ""),
+        new("duty_summary", "值班一眼摘要：就緒、離線、需重編。政策擋下的 MCP 呼叫不列入警報。晨會第一個工具。", ""),
         new("stack_status", "堆疊總覽：就緒數、需重編、各服務線上／離線。開發管理者晨會或值班第一個工具。", ""),
         new("list_services", "列出 ai-project 服務 id、port、宿主。", ""),
         new("list_projects", "列出各專案編譯徽章（最新／需重編／未建置）。needsRebuild=0 或 badge=最新 表示無需重編；不要把「已與 DLL 一致」理解成要重編。", ""),

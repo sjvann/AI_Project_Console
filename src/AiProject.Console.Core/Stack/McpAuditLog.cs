@@ -26,6 +26,26 @@ public sealed record McpAuditEntry(
     }
 
     public string StatusText => Ok ? "成功" : "拒絕／失敗";
+
+    /// <summary>
+    /// 政策擋下、需確認、未知工具：對帳單，不是這扇窗要修的事故。
+    /// </summary>
+    public bool IsExpectedDenial
+    {
+        get
+        {
+            if (Ok || string.IsNullOrEmpty(Error))
+                return false;
+            return Error.Contains("需要確認", StringComparison.Ordinal)
+                || Error.Contains("未知工具", StringComparison.Ordinal)
+                || Error.Contains("政策禁止", StringComparison.Ordinal)
+                || Error.Contains("唯讀模式", StringComparison.Ordinal)
+                || Error.Contains("不在允許清單", StringComparison.Ordinal)
+                || Error.Contains("needConfirm", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    public bool IsIncident => !Ok && !IsExpectedDenial;
 }
 
 /// <summary>

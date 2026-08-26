@@ -69,6 +69,15 @@ public class ActionsStatusTests
     }
 
     [Fact]
+    public void ConsoleChipTone_MutesHistoricalFailure()
+    {
+        Assert.Equal("wait", ActionsSnapshot.ConsoleChipTone("warn", watchingAfterPush: false));
+        Assert.Equal("warn", ActionsSnapshot.ConsoleChipTone("warn", watchingAfterPush: true));
+        Assert.Equal("ok", ActionsSnapshot.ConsoleChipTone("ok", watchingAfterPush: false));
+        Assert.Equal("busy", ActionsSnapshot.ConsoleChipTone("busy", watchingAfterPush: true));
+    }
+
+    [Fact]
     public void ParseRuns_EmptyOrInvalid_ReturnsEmpty()
     {
         Assert.Empty(ActionsStatus.ParseRuns(""));
