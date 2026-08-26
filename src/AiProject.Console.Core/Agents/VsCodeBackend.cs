@@ -9,7 +9,7 @@ public sealed class VsCodeBackend : IAgentBackend
     public AgentBackendKind Kind => AgentBackendKind.Ide;
     public bool CanOpenWorkspace => true;
     public bool CanLaunchAgent => true;
-    public bool CanCloseIde => false;
+    public bool CanCloseIde => true;
 
     public AgentDetectResult Detect(string? cliOverride = null)
     {
@@ -33,7 +33,12 @@ public sealed class VsCodeBackend : IAgentBackend
         return Task.FromResult(OpenWorkspace(root, cliOverride));
     }
 
-    public string? CloseIde() => null;
+    public string? CloseIde() => LocalAppCloser.Close(
+        DisplayName,
+        ["Code", "code"],
+        windowsImages: ["Code.exe"],
+        macAppNames: ["Visual Studio Code"],
+        unixPattern: "code");
 
     static string? OpenFolder(string cli, string root)
     {

@@ -69,4 +69,4 @@ Log 顯示被你「清空」只影響畫面，檔案還在。
 1. 有未提交變更：摘要列「提交…」或 GitHub 選單。見 [GitHub](github.md)。
 2. 有尚未發布的提交：GitHub → **發布（push）**。新分支也要先發布。
 3. 不需要服務繼續跑：按「停止全部」。
-4. 工作區乾淨、與遠端一致後，才能「關閉專案」或「離開」。設定存在本機 `%LOCALAPPDATA%\AI_Project_Console\settings.json`，專案執行期檔在該倉的 `.ai_project/`。
+4. 工作區乾淨、與遠端一致後，才能「關閉專案」或「離開」。本機 Agent（IDE／終端機）會再問是否一併關閉該應用程式；雲端後端不會問。設定存在本機 `%LOCALAPPDATA%\AI_Project_Console\settings.json`，專案執行期檔在該倉的 `.ai_project/`。

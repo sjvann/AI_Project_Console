@@ -12,7 +12,7 @@ public sealed class ClaudeCodeBackend : IAgentBackend
     public AgentBackendKind Kind => AgentBackendKind.Cli;
     public bool CanOpenWorkspace => true;
     public bool CanLaunchAgent => true;
-    public bool CanCloseIde => false;
+    public bool CanCloseIde => true;
 
     public AgentDetectResult Detect(string? cliOverride = null)
     {
@@ -50,7 +50,16 @@ public sealed class ClaudeCodeBackend : IAgentBackend
         return TerminalSession.OpenUri(url);
     }
 
-    public string? CloseIde() => null;
+    public string? CloseIde()
+    {
+        TerminalSession.CloseStarted();
+        return LocalAppCloser.Close(
+            DisplayName,
+            ["claude", "Claude"],
+            windowsImages: ["claude.exe"],
+            unixPattern: "claude",
+            windowTitlePrefix: "Claude Code");
+    }
 
     static string? Resolve(string? cliOverride)
     {

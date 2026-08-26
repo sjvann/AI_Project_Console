@@ -9,7 +9,7 @@ public sealed class CodexCliBackend : IAgentBackend
     public AgentBackendKind Kind => AgentBackendKind.Cli;
     public bool CanOpenWorkspace => true;
     public bool CanLaunchAgent => true;
-    public bool CanCloseIde => false;
+    public bool CanCloseIde => true;
 
     public AgentDetectResult Detect(string? cliOverride = null)
     {
@@ -44,7 +44,16 @@ public sealed class CodexCliBackend : IAgentBackend
         return TerminalSession.Start(detect.CliPath, ["exec", text], root, "Codex");
     }
 
-    public string? CloseIde() => null;
+    public string? CloseIde()
+    {
+        TerminalSession.CloseStarted();
+        return LocalAppCloser.Close(
+            DisplayName,
+            ["codex"],
+            windowsImages: ["codex.exe"],
+            unixPattern: "codex",
+            windowTitlePrefix: "Codex");
+    }
 
     static string? Resolve(string? cliOverride)
     {

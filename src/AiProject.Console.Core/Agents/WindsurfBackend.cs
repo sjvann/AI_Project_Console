@@ -9,7 +9,7 @@ public sealed class WindsurfBackend : IAgentBackend
     public AgentBackendKind Kind => AgentBackendKind.Ide;
     public bool CanOpenWorkspace => true;
     public bool CanLaunchAgent => true;
-    public bool CanCloseIde => false;
+    public bool CanCloseIde => true;
 
     public AgentDetectResult Detect(string? cliOverride = null)
     {
@@ -33,7 +33,12 @@ public sealed class WindsurfBackend : IAgentBackend
         return Task.FromResult(OpenWorkspace(root, cliOverride));
     }
 
-    public string? CloseIde() => null;
+    public string? CloseIde() => LocalAppCloser.Close(
+        DisplayName,
+        ["Windsurf", "windsurf", "Devin"],
+        windowsImages: ["Windsurf.exe", "Devin.exe"],
+        macAppNames: ["Windsurf", "Devin"],
+        unixPattern: "windsurf");
 
     static string? OpenFolder(string cli, string root)
     {

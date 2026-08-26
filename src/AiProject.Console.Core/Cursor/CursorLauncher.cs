@@ -37,27 +37,7 @@ public static class CursorLauncher
         return null;
     }
 
-    public static bool IsCursorRunning()
-    {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-                return Process.GetProcessesByName("Cursor").Length > 0 || Process.GetProcessesByName("cursor").Length > 0;
-            if (OperatingSystem.IsMacOS())
-            {
-                var p = Process.Start(new ProcessStartInfo("pgrep", "-x Cursor") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true });
-                p?.WaitForExit(10_000);
-                return p?.ExitCode == 0;
-            }
-            var proc = Process.Start(new ProcessStartInfo("pgrep", "-f cursor") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true });
-            proc?.WaitForExit(10_000);
-            return proc?.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    public static bool IsCursorRunning() => LocalAppCloser.IsRunning("Cursor", "cursor");
 
     public static int NewAgentLaunchDelayMs() => IsCursorRunning() ? 400 : 2200;
 
@@ -98,85 +78,12 @@ public static class CursorLauncher
         return null;
     }
 
-    public static string? CloseCursor()
-    {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                CloseCursorWindowsGracefully();
-                return null;
-            }
-            if (OperatingSystem.IsMacOS())
-            {
-                Process.Start(new ProcessStartInfo("osascript", "-e \"tell application \\\"Cursor\\\" to quit\"") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(30_000);
-                return null;
-            }
-            Process.Start(new ProcessStartInfo("pkill", "-f cursor") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(15_000);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return $"關閉 Cursor 失敗：{ex.Message}";
-        }
-    }
-
-    /// <summary>
-    /// 對 Cursor 視窗送 WM_CLOSE。不可 Process.Kill／taskkill /F：強制結束渲染行程時，
-    /// 主行程會跳出「The window terminated unexpectedly (reason: 'crashed', code: '-1')」。
-    /// </summary>
-    private static void CloseCursorWindowsGracefully()
-    {
-        var closedAny = false;
-        foreach (var p in Process.GetProcessesByName("Cursor"))
-        {
-            using (p)
-            {
-                try
-                {
-                    if (!p.HasExited && p.MainWindowHandle != IntPtr.Zero)
-                        closedAny |= p.CloseMainWindow();
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-        }
-
-        if (closedAny && WaitUntilCursorExits(TimeSpan.FromSeconds(8)))
-            return;
-
-        try
-        {
-            using var tk = Process.Start(new ProcessStartInfo("taskkill", "/IM Cursor.exe")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-            tk?.WaitForExit(8_000);
-        }
-        catch
-        {
-            // ignore
-        }
-
-        WaitUntilCursorExits(TimeSpan.FromSeconds(5));
-    }
-
-    private static bool WaitUntilCursorExits(TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (!IsCursorRunning())
-                return true;
-            Thread.Sleep(250);
-        }
-        return !IsCursorRunning();
-    }
+    public static string? CloseCursor() => LocalAppCloser.Close(
+        "Cursor",
+        ["Cursor", "cursor"],
+        windowsImages: ["Cursor.exe"],
+        macAppNames: ["Cursor"],
+        unixPattern: "cursor");
 
     public static IReadOnlyList<string> ExtractBuildErrors(string logText)
     {

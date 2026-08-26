@@ -826,8 +826,7 @@ public sealed class ConsoleSession : IDisposable
         if (!_native.Confirm("關閉專案", body))
             return;
 
-        var closeIde = CurrentAgent.CanCloseIde
-            && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
+        var closeIde = ConfirmCloseLocalAgent();
         if (Catalog is not null && Runtime is not null)
         {
             try
@@ -2643,6 +2642,14 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
+    /// <summary>
+    /// 雲端後端不詢問。本機 IDE／終端機會用目前 Agent 名稱詢問是否一併關閉。
+    /// </summary>
+    bool ConfirmCloseLocalAgent() =>
+        CurrentAgent.CanCloseIde
+        && CurrentAgent.Kind != AgentBackendKind.Cloud
+        && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
+
     public async Task ExitAsync()
     {
         if (!await EnsureClearToLeaveAsync("離開").ConfigureAwait(false))
@@ -2663,8 +2670,7 @@ public sealed class ConsoleSession : IDisposable
         else if (!_native.Confirm("離開", "確定離開控制台？"))
             return;
 
-        var closeIde = CurrentAgent.CanCloseIde
-            && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
+        var closeIde = ConfirmCloseLocalAgent();
         if (stopServices && Catalog is not null && Runtime is not null)
         {
             try

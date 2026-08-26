@@ -5,6 +5,63 @@ namespace AiProject.Console.Core.Agents;
 
 public static class TerminalSession
 {
+    static readonly List<Process> Started = [];
+
+    public static string? CloseStarted()
+    {
+        List<Process> copy;
+        lock (Started)
+        {
+            copy = [.. Started];
+            Started.Clear();
+        }
+
+        foreach (var p in copy)
+        {
+            try
+            {
+                if (p.HasExited)
+                    continue;
+                if (p.MainWindowHandle != IntPtr.Zero)
+                    p.CloseMainWindow();
+                else
+                    p.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // ignore
+            }
+            finally
+            {
+                p.Dispose();
+            }
+        }
+
+        return null;
+    }
+
+    static void Remember(Process? process)
+    {
+        if (process is null)
+            return;
+        try
+        {
+            if (process.HasExited)
+            {
+                process.Dispose();
+                return;
+            }
+        }
+        catch
+        {
+            process.Dispose();
+            return;
+        }
+
+        lock (Started)
+            Started.Add(process);
+    }
+
     public static string? OpenUri(string url)
     {
         try
@@ -39,12 +96,12 @@ public static class TerminalSession
                     sb.Append(' ').Append(QuoteWin(a));
                 sb.AppendLine();
                 File.WriteAllText(script, sb.ToString(), Encoding.Default);
-                Process.Start(new ProcessStartInfo
+                Remember(Process.Start(new ProcessStartInfo
                 {
                     FileName = "cmd.exe",
                     Arguments = "/c start \"" + title.Replace("\"", "") + "\" \"" + script + "\"",
                     UseShellExecute = true,
-                });
+                }));
                 return null;
             }
 
@@ -52,20 +109,20 @@ public static class TerminalSession
             {
                 var cmd = string.Join(" ", new[] { fileName }.Concat(args).Select(QuoteSh));
                 var script = $"cd {QuoteSh(cwd)} && {cmd}";
-                Process.Start(new ProcessStartInfo("osascript",
+                Remember(Process.Start(new ProcessStartInfo("osascript",
                     "-e \"tell application \\\"Terminal\\\" to do script " + QuoteApple(script) + "\"")
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                });
+                }));
                 return null;
             }
 
             var linuxCmd = string.Join(" ", new[] { fileName }.Concat(args).Select(QuoteSh));
-            Process.Start(new ProcessStartInfo("x-terminal-emulator", $"-e bash -lc {QuoteSh("cd " + QuoteSh(cwd) + " && " + linuxCmd)}")
+            Remember(Process.Start(new ProcessStartInfo("x-terminal-emulator", $"-e bash -lc {QuoteSh("cd " + QuoteSh(cwd) + " && " + linuxCmd)}")
             {
                 UseShellExecute = false,
-            });
+            }));
             return null;
         }
         catch (Exception ex)

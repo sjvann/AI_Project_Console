@@ -20,6 +20,23 @@ public class AgentBackendTests
     }
 
     [Fact]
+    public void LocalBackends_OfferCloseOnLeave()
+    {
+        foreach (var backend in AgentBackendRegistry.All)
+        {
+            Assert.NotEqual(AgentBackendKind.Cloud, backend.Kind);
+            Assert.True(backend.CanCloseIde, backend.Id + " 會開本機應用程式，離開時應詢問關閉");
+        }
+    }
+
+    [Fact]
+    public void LocalAppCloser_UnknownProcess_IsNotRunning()
+    {
+        Assert.False(LocalAppCloser.IsRunning("this-process-should-not-exist-ai-console-xyz"));
+        Assert.False(LocalAppCloser.HasWindowTitle("___ai-console-no-such-window___"));
+    }
+
+    [Fact]
     public void CustomCommand_SplitsQuotedArgs()
     {
         var parts = CustomCommandBackend.SplitCommand("my-agent --workspace \"C:\\proj dir\" --file x.md");

@@ -9,7 +9,7 @@ public sealed class AiderBackend : IAgentBackend
     public AgentBackendKind Kind => AgentBackendKind.Cli;
     public bool CanOpenWorkspace => true;
     public bool CanLaunchAgent => true;
-    public bool CanCloseIde => false;
+    public bool CanCloseIde => true;
 
     public AgentDetectResult Detect(string? cliOverride = null)
     {
@@ -44,7 +44,16 @@ public sealed class AiderBackend : IAgentBackend
         return TerminalSession.Start(detect.CliPath, ["--message", text], root, "Aider");
     }
 
-    public string? CloseIde() => null;
+    public string? CloseIde()
+    {
+        TerminalSession.CloseStarted();
+        return LocalAppCloser.Close(
+            DisplayName,
+            ["aider"],
+            windowsImages: ["aider.exe"],
+            unixPattern: "aider",
+            windowTitlePrefix: "Aider");
+    }
 
     static string? Resolve(string? cliOverride)
     {

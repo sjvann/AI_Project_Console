@@ -7,7 +7,7 @@ public sealed class CustomCommandBackend : IAgentBackend
     public AgentBackendKind Kind => AgentBackendKind.Custom;
     public bool CanOpenWorkspace => true;
     public bool CanLaunchAgent => true;
-    public bool CanCloseIde => false;
+    public bool CanCloseIde => true;
 
     public AgentDetectResult Detect(string? cliOverride = null)
     {
@@ -33,7 +33,14 @@ public sealed class CustomCommandBackend : IAgentBackend
         return Task.FromResult(RunTemplate(detect.CliPath!, root, prompt ?? "", launch: true));
     }
 
-    public string? CloseIde() => null;
+    public string? CloseIde()
+    {
+        TerminalSession.CloseStarted();
+        return LocalAppCloser.Close(
+            DisplayName,
+            [],
+            windowTitlePrefix: "自訂 Agent");
+    }
 
     public static string[] SplitCommand(string expanded)
     {
