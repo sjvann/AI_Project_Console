@@ -175,6 +175,9 @@ public sealed class ConsoleSession : IDisposable
     public string CommitSuggestHint { get; private set; } = "";
     public GitBriefStatus? GitBrief { get; private set; }
     public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
+    public IReadOnlyList<GitBranchInfo> BranchList { get; private set; } = [];
+    public string NewBranchName { get; set; } = "";
+    public string BranchDialogHint { get; private set; } = "";
     public AvailableUpdate? UpdateAvailable { get; private set; }
     public GithubAccount GithubAccount { get; private set; } = GithubAccount.None;
     public bool GithubLoggedIn => GithubAccount.LoggedIn;
@@ -759,6 +762,15 @@ public sealed class ConsoleSession : IDisposable
             _native.Info("忙碌中", "請等待目前工作完成。");
             return Task.CompletedTask;
         }
+        return CloseProjectCoreAsync();
+    }
+
+    private async Task CloseProjectCoreAsync()
+    {
+        if (Catalog is null)
+            return;
+        if (!await EnsureClearToLeaveAsync("關閉專案").ConfigureAwait(false))
+            return;
 
         var name = Catalog.Name;
         var running = Catalog.Services.Where(s => Health.GetValueOrDefault(s.Id)).Select(s => s.Label).ToList();
@@ -766,7 +778,7 @@ public sealed class ConsoleSession : IDisposable
             ? $"確定關閉「{name}」？\n目前有 {running.Count} 個服務在執行，關閉時會一併停止，並回到尚未選擇專案的狀態。"
             : $"確定關閉「{name}」？\n會回到尚未選擇專案的狀態。";
         if (!_native.Confirm("關閉專案", body))
-            return Task.CompletedTask;
+            return;
 
         var closeIde = CurrentAgent.CanCloseIde
             && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
@@ -779,7 +791,7 @@ public sealed class ConsoleSession : IDisposable
             catch (Exception ex)
             {
                 if (!_native.Confirm("停止服務失敗", $"停止服務時發生問題：\n{ex.Message}\n\n仍要關閉專案嗎？"))
-                    return Task.CompletedTask;
+                    return;
             }
         }
 
@@ -801,16 +813,15 @@ public sealed class ConsoleSession : IDisposable
         }
         JobText = closeIde ? $"已關閉專案，並關閉 {AgentDisplayName}" : "已關閉專案";
         Notify();
-        return Task.CompletedTask;
     }
 
-    public Task LoadProjectAsync(string root, bool openCursor = false)
+    public async Task LoadProjectAsync(string root, bool openCursor = false)
     {
         try
         {
             root = Path.GetFullPath(root);
-            if (!TryStopCurrentProjectForSwitch(root))
-                return Task.CompletedTask;
+            if (!await TryStopCurrentProjectForSwitchAsync(root).ConfigureAwait(false))
+                return;
 
             var catalog = ServiceCatalogBuilder.Build(root);
             Catalog = catalog;
@@ -840,21 +851,22 @@ public sealed class ConsoleSession : IDisposable
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             Notify();
             _ = RefreshBuildStatesAsync();
-            _ = AfterProjectLoadedAsync(openCursor, rememberErr);
+            await AfterProjectLoadedAsync(openCursor, rememberErr).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _native.Error("開啟專案失敗", ex.Message);
         }
-        return Task.CompletedTask;
     }
 
-    private bool TryStopCurrentProjectForSwitch(string nextRoot)
+    private async Task<bool> TryStopCurrentProjectForSwitchAsync(string nextRoot)
     {
         if (Catalog is null || Runtime is null)
             return true;
         if (string.Equals(Catalog.Root, nextRoot, StringComparison.OrdinalIgnoreCase))
             return true;
+        if (!await EnsureClearToLeaveAsync("切換專案").ConfigureAwait(false))
+            return false;
 
         var running = Catalog.Services.Where(s => Health.GetValueOrDefault(s.Id)).Select(s => s.Label).ToList();
         if (running.Count > 0)
@@ -895,7 +907,7 @@ public sealed class ConsoleSession : IDisposable
                 Notify();
                 return;
             }
-            FinishProjectOpen(openCursor, rememberErr);
+            await FinishProjectOpenAsync(openCursor, rememberErr).ConfigureAwait(false);
             if (GithubLoggedIn && GithubManaged)
                 await RefreshIssuesAsync().ConfigureAwait(false);
         }
@@ -907,17 +919,75 @@ public sealed class ConsoleSession : IDisposable
         }
     }
 
-    private void FinishProjectOpen(bool openCursor, string? rememberErr)
+    private async Task FinishProjectOpenAsync(bool openCursor, string? rememberErr)
     {
+        await AutoSyncOnOpenAsync().ConfigureAwait(false);
         if (openCursor && Catalog is not null)
         {
             var backend = CurrentAgent;
             var err = backend.OpenWorkspace(Catalog.Root, AgentBackendRegistry.CliOverrideFor(backend));
             JobText = err is null
-                ? (rememberErr is null ? $"已載入專案，並在 {backend.DisplayName} 開啟" : JobText)
+                ? (rememberErr is null
+                    ? (string.IsNullOrEmpty(JobText) || JobText == "已載入專案" ? $"已載入專案，並在 {backend.DisplayName} 開啟" : JobText)
+                    : JobText)
                 : $"已載入專案（{backend.DisplayName} 未開啟：{err}）";
         }
         Notify();
+    }
+
+    private async Task AutoSyncOnOpenAsync()
+    {
+        if (Catalog is null)
+            return;
+        if (!await GitHubService.IsGitRepoAsync(Catalog.Root).ConfigureAwait(false))
+            return;
+        if (!await GitHubService.HasRemoteAsync(Catalog.Root).ConfigureAwait(false))
+            return;
+
+        JobBusy = true;
+        JobText = "正在從遠端同步…";
+        Notify();
+        try
+        {
+            var dirty = await GitHubService.DirtyCountAsync(Catalog.Root).ConfigureAwait(false);
+            if (dirty > 0)
+            {
+                JobText = "工作區不乾淨，已略過自動同步";
+                _native.Warn(
+                    "無法自動同步",
+                    $"工作區有 {dirty} 筆未提交變更。請先提交或還原後再同步，避免本機與遠端不一致。");
+                return;
+            }
+            await GitHubService.SyncFromRemoteAsync(Catalog).ConfigureAwait(false);
+            JobText = "已從遠端同步";
+        }
+        catch (Exception ex)
+        {
+            JobText = "自動同步失敗";
+            _native.Warn("自動同步失敗", FirstLine(ex.Message));
+        }
+        finally
+        {
+            JobBusy = false;
+            await RefreshGitStatusAsync().ConfigureAwait(false);
+            Notify();
+        }
+    }
+
+    private async Task<bool> EnsureClearToLeaveAsync(string action)
+    {
+        if (Catalog is null)
+            return true;
+        if (!await GitHubService.IsGitRepoAsync(Catalog.Root).ConfigureAwait(false))
+            return true;
+        await RefreshGitStatusAsync().ConfigureAwait(false);
+        var reason = GitBrief?.LeaveBlockReason();
+        if (reason is null)
+            return true;
+        _native.Warn(
+            $"還不能{action}",
+            reason + "\n\n請先在摘要列提交，或用 GitHub 選單發布。專案列的「分支」可確認目前分支。");
+        return false;
     }
 
     public async Task RefreshGithubAuthAsync()
@@ -964,7 +1034,7 @@ public sealed class ConsoleSession : IDisposable
                 var openCursor = _pendingOpenCursor;
                 _pendingOpenCursor = false;
                 if (Catalog is not null)
-                    FinishProjectOpen(openCursor, rememberErr: null);
+                    await FinishProjectOpenAsync(openCursor, rememberErr: null).ConfigureAwait(false);
                 if (GithubManaged && Catalog is not null)
                     await RefreshIssuesAsync().ConfigureAwait(false);
                 Notify();
@@ -1607,6 +1677,9 @@ public sealed class ConsoleSession : IDisposable
             case "github_status":
                 _native.Info("GitHub 狀態", await GitHubService.StatusReportAsync(Catalog).ConfigureAwait(false));
                 return;
+            case "github_switch_branch":
+                await OpenBranchDialogAsync().ConfigureAwait(false);
+                return;
             case "github_commit":
                 await OpenCommitDialogAsync().ConfigureAwait(false);
                 return;
@@ -1627,6 +1700,7 @@ public sealed class ConsoleSession : IDisposable
             }
             case "github_publish":
                 await RunJobAsync("發布中…", async () => await GitHubService.PublishBranchAsync(Catalog!)).ConfigureAwait(false);
+                await RefreshGitStatusAsync().ConfigureAwait(false);
                 return;
             case "github_pr":
                 await RunJobAsync("PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!)).ConfigureAwait(false);
@@ -1680,6 +1754,98 @@ public sealed class ConsoleSession : IDisposable
             return (string?)null;
         }, refreshBuilds: false).ConfigureAwait(false);
         await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
+    }
+
+    public async Task OpenBranchDialogAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return;
+        }
+        NewBranchName = "";
+        BranchDialogHint = "";
+        Dialog = "branch";
+        Notify();
+        await RefreshBranchListAsync().ConfigureAwait(false);
+    }
+
+    public async Task SwitchToBranchAsync(GitBranchInfo branch)
+    {
+        if (Catalog is null || branch.IsCurrent)
+            return;
+        await RunBranchChangeAsync(
+            $"切換到 {branch.LocalName}…",
+            () => GitHubService.SwitchBranchAsync(Catalog.Root, branch.Name)).ConfigureAwait(false);
+    }
+
+    public async Task CreateBranchAsync()
+    {
+        if (Catalog is null)
+            return;
+        var name = NewBranchName.Trim();
+        if (!GitHubService.IsValidBranchName(name))
+        {
+            BranchDialogHint = "請填寫有效的分支名稱，例如 feat/login。";
+            Notify();
+            return;
+        }
+        await RunBranchChangeAsync(
+            $"建立 {name}…",
+            () => GitHubService.CreateBranchAsync(Catalog.Root, name)).ConfigureAwait(false);
+    }
+
+    private async Task RunBranchChangeAsync(string title, Func<Task<string>> action)
+    {
+        if (Catalog is null)
+            return;
+        await RunJobAsync(title, async () =>
+        {
+            var msg = await action().ConfigureAwait(false);
+            try
+            {
+                var brief = await GitHubService.TryBriefStatusAsync(Catalog.Root).ConfigureAwait(false);
+                if (brief is { HasUpstream: true } && await GitHubService.HasRemoteAsync(Catalog.Root).ConfigureAwait(false))
+                    return msg + "\n\n" + await GitHubService.SyncFromRemoteAsync(Catalog).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                return msg + "\n\n已切換，但同步失敗：\n" + FirstLine(ex.Message);
+            }
+            return msg;
+        }).ConfigureAwait(false);
+        await RefreshGitStatusAsync().ConfigureAwait(false);
+        await RefreshBuildStatesAsync().ConfigureAwait(false);
+        NewBranchName = "";
+        CloseDialog();
+    }
+
+    private async Task RefreshBranchListAsync()
+    {
+        if (Catalog is null)
+        {
+            BranchList = [];
+            return;
+        }
+        try
+        {
+            BranchDialogHint = "讀取分支…";
+            Notify();
+            BranchList = await GitHubService.ListBranchesAsync(Catalog.Root).ConfigureAwait(false);
+            BranchDialogHint = BranchList.Count == 0
+                ? "找不到分支。"
+                : HasUncommitted
+                    ? "工作區有未提交變更，必須先提交或還原才能切換。"
+                    : "點選分支即可切換。遠端才有的分支會自動建立本機追蹤。";
+        }
+        catch (Exception ex)
+        {
+            BranchList = [];
+            BranchDialogHint = FirstLine(ex.Message);
+        }
+        Notify();
     }
 
     public void OpenCloneDialog()
@@ -2080,6 +2246,8 @@ public sealed class ConsoleSession : IDisposable
 
     public async Task ExitAsync()
     {
+        if (!await EnsureClearToLeaveAsync("離開").ConfigureAwait(false))
+            return;
         var running = Catalog is null ? [] : Catalog.Services.Where(s => Health.GetValueOrDefault(s.Id)).Select(s => s.Label).ToList();
         var stopServices = false;
         if (running.Count > 0)
@@ -2610,6 +2778,9 @@ public sealed class ConsoleSession : IDisposable
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
+        BranchList = [];
+        NewBranchName = "";
+        BranchDialogHint = "";
         CommitMessage = "";
         CommitHint = "";
         CommitSuggestHint = "";

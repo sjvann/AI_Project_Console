@@ -241,6 +241,8 @@ public sealed class StackWorkspace
             dirty = brief?.DirtyCount,
             ahead = brief?.Ahead,
             behind = brief?.Behind,
+            hasUpstream = brief?.HasUpstream,
+            leaveBlock = brief?.LeaveBlockReason(),
         });
     }
 

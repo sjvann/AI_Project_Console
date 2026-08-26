@@ -36,6 +36,18 @@
     <div class="card">
         <div class="row">
             <strong>@(S.Catalog?.Name ?? "尚未選擇專案")</strong>
+            @if (S.HasProject && S.GitBrief is not null)
+            {
+                <button type="button"
+                        class="branch-chip @(S.GitBrief.IsClearToLeave ? "is-ok" : "is-warn")"
+                        disabled="@S.JobBusy"
+                        title="目前分支，點擊切換"
+                        @onclick="S.OpenBranchDialogAsync">
+                    <span class="branch-chip-label">分支</span>
+                    <span class="branch-chip-name">@S.GitBrief.Branch</span>
+                    <span class="branch-chip-caret" aria-hidden="true"></span>
+                </button>
+            }
             <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄、從歷史載入，或從 GitHub 開啟。")</span>
             <select class="history" @key="HistorySelectValue" value="@HistorySelectValue" @onchange="OnRecent">
                 <option value="">歷史專案</option>
@@ -103,7 +115,7 @@
         }
         @if (!string.IsNullOrEmpty(S.GitStatusText))
         {
-            <span class="git">@S.GitStatusText</span>
+            <button type="button" class="git git-btn" disabled="@S.JobBusy" title="切換分支" @onclick="S.OpenBranchDialogAsync">@S.GitStatusText</button>
             @if (S.HasUncommitted)
             {
                 <button class="btn-link" disabled="@S.JobBusy" @onclick="S.OpenCommitDialogAsync">提交…</button>
@@ -543,6 +555,55 @@
             <div class="dialog-actions">
                 <button class="btn-sec" disabled="@S.GithubAuthBusy" @onclick="S.CancelGithubLogin">取消並關閉專案</button>
                 <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">@(S.GithubAuthBusy ? "等待瀏覽器授權…" : "登入 GitHub")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (S.Dialog == "branch")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="branch-title" aria-modal="true">
+            <h2 id="branch-title">切換分支</h2>
+            <p class="hint">目前：@(S.GitBrief?.Branch ?? "（未知）")。工作區必須乾淨才能切換；切換後會立刻從遠端同步。</p>
+            @if (!string.IsNullOrEmpty(S.BranchDialogHint))
+            {
+                <p class="hint">@S.BranchDialogHint</p>
+            }
+            <div class="branch-list" role="listbox" aria-label="分支清單">
+                @if (S.BranchList.Count == 0)
+                {
+                    <p class="hint">尚無分支可選。</p>
+                }
+                else
+                {
+                    @foreach (var b in S.BranchList)
+                    {
+                        <button type="button"
+                                class="branch-row @(b.IsCurrent ? "is-current" : null)"
+                                disabled="@(S.JobBusy || b.IsCurrent || S.HasUncommitted)"
+                                role="option"
+                                aria-selected="@b.IsCurrent"
+                                @onclick="@(() => S.SwitchToBranchAsync(b))">
+                            <span class="branch-row-name">@b.Name</span>
+                            <span class="hint">@b.Meta()</span>
+                            @if (b.IsCurrent)
+                            {
+                                <span class="branch-now">目前</span>
+                            }
+                        </button>
+                    }
+                }
+            </div>
+            <div class="field">
+                <span>新分支</span>
+                <div class="field-inline">
+                    <input @bind="S.NewBranchName" placeholder="例如 feat/login" disabled="@S.JobBusy" />
+                    <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CreateBranchAsync">建立並切換</button>
+                </div>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.CloseDialog">關閉</button>
             </div>
         </div>
     </div>

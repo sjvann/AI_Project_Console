@@ -76,8 +76,26 @@ public sealed record ConsoleAction(
 
 public sealed record BuildFailure(string Target, int ExitCode, string Log);
 
-public sealed record GitBriefStatus(string Branch, int DirtyCount, int? Ahead, int? Behind)
+public sealed record GitBriefStatus(
+    string Branch,
+    int DirtyCount,
+    int? Ahead,
+    int? Behind,
+    bool HasUpstream = true)
 {
+    public bool IsClearToLeave => LeaveBlockReason() is null;
+
+    public string? LeaveBlockReason()
+    {
+        if (DirtyCount > 0)
+            return $"工作區有 {DirtyCount} 筆未提交變更。請先提交或還原，工作區乾淨後才能離開。";
+        if (!HasUpstream)
+            return $"目前分支「{Branch}」尚未設定遠端追蹤。請先發布（push）此分支，本機與遠端一致後才能離開。";
+        if (Ahead is > 0)
+            return $"目前分支「{Branch}」有 {Ahead} 個尚未發布的提交。請先發布（push），本機與遠端一致後才能離開。";
+        return null;
+    }
+
     public string Format()
     {
         var parts = new List<string> { Branch };
@@ -87,8 +105,39 @@ public sealed record GitBriefStatus(string Branch, int DirtyCount, int? Ahead, i
             parts.Add($"↑{Ahead}");
         if (Behind is > 0)
             parts.Add($"↓{Behind}");
-        if (DirtyCount == 0 && Ahead is not > 0 && Behind is not > 0)
+        if (!HasUpstream)
+            parts.Add("無遠端追蹤");
+        else if (DirtyCount == 0 && Ahead is not > 0 && Behind is not > 0)
             parts.Add("乾淨");
         return string.Join(" · ", parts);
+    }
+}
+
+public sealed record GitBranchInfo(
+    string Name,
+    bool IsCurrent,
+    bool IsRemote,
+    string? Tracking,
+    string ShortSha)
+{
+    public string LocalName => IsRemote ? StripRemotePrefix(Name) : Name;
+
+    public string Meta()
+    {
+        var parts = new List<string>();
+        if (IsRemote)
+            parts.Add("遠端");
+        if (!string.IsNullOrEmpty(Tracking))
+            parts.Add(Tracking);
+        if (!string.IsNullOrEmpty(ShortSha))
+            parts.Add(ShortSha);
+        return string.Join(" · ", parts);
+    }
+
+    public static string StripRemotePrefix(string name)
+    {
+        var text = (name ?? "").Trim();
+        var slash = text.IndexOf('/');
+        return slash > 0 ? text[(slash + 1)..] : text;
     }
 }

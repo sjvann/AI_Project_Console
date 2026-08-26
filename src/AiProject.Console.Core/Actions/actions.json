@@ -46,6 +46,13 @@
       "handler": "github_status"
     },
     {
+      "id": "github_switch_branch",
+      "label": "切換分支…",
+      "group": "github",
+      "kind": "internal",
+      "handler": "github_switch_branch"
+    },
+    {
       "id": "github_commit",
       "label": "提交…",
       "group": "github",

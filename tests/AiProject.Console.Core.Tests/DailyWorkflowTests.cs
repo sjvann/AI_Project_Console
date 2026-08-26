@@ -14,6 +14,18 @@ public class DailyWorkflowTests
         Assert.Equal("feat · 3 未提交 · ↑2 · ↓1", new GitBriefStatus("feat", 3, 2, 1).Format());
         Assert.Equal("dev · 乾淨", new GitBriefStatus("dev", 0, null, null).Format());
         Assert.Equal("main · ↑1", new GitBriefStatus("main", 0, 1, 0).Format());
+        Assert.Equal("feat · 無遠端追蹤", new GitBriefStatus("feat", 0, null, null, false).Format());
+    }
+
+    [Fact]
+    public void GitBriefStatus_LeaveBlockReason_RequiresCleanAndPublished()
+    {
+        Assert.Null(new GitBriefStatus("main", 0, 0, 0).LeaveBlockReason());
+        Assert.Contains("未提交", new GitBriefStatus("main", 2, 0, 0).LeaveBlockReason());
+        Assert.Contains("尚未發布", new GitBriefStatus("main", 0, 1, 0).LeaveBlockReason());
+        Assert.Contains("遠端追蹤", new GitBriefStatus("feat", 0, null, null, false).LeaveBlockReason());
+        Assert.False(new GitBriefStatus("main", 1, 0, 0).IsClearToLeave);
+        Assert.True(new GitBriefStatus("main", 0, 0, 1).IsClearToLeave);
     }
 
     [Fact]
@@ -23,6 +35,9 @@ public class DailyWorkflowTests
         Assert.Equal("提交…", commit.Label);
         Assert.Equal("github_commit", commit.Handler);
         Assert.False(commit.RequiresGithub);
+        var switchBranch = ActionCatalog.Load("github").Single(a => a.Id == "github_switch_branch");
+        Assert.Equal("切換分支…", switchBranch.Label);
+        Assert.False(switchBranch.RequiresGithub);
     }
 
     [Fact]
@@ -229,6 +244,61 @@ public class DailyWorkflowTests
             Assert.Equal(0, await GitHubService.DirtyCountAsync(root));
             await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.CommitAsync(root, "   "));
             await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.CommitAsync(root, "nothing left"));
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void IsValidBranchName_RejectsUnsafe()
+    {
+        Assert.True(GitHubService.IsValidBranchName("feat/login"));
+        Assert.True(GitHubService.IsValidBranchName("main"));
+        Assert.False(GitHubService.IsValidBranchName(""));
+        Assert.False(GitHubService.IsValidBranchName("HEAD"));
+        Assert.False(GitHubService.IsValidBranchName("feat login"));
+        Assert.False(GitHubService.IsValidBranchName("feat..x"));
+        Assert.False(GitHubService.IsValidBranchName("-bad"));
+        Assert.Equal("feat/login", GitBranchInfo.StripRemotePrefix("origin/feat/login"));
+    }
+
+    [Fact]
+    public async Task ListAndSwitchBranch_RequiresCleanWorkspace()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-branch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+            await GitHubService.CommitAsync(root, "seed");
+            await CliUtil.RunAsync("git", ["branch", "-M", "main"], root);
+
+            var created = await GitHubService.CreateBranchAsync(root, "feat/switch");
+            Assert.Contains("feat/switch", created);
+            var brief = await GitHubService.TryBriefStatusAsync(root);
+            Assert.Equal("feat/switch", brief?.Branch);
+            Assert.False(brief!.HasUpstream);
+
+            var listed = await GitHubService.ListBranchesAsync(root, fetchRemote: false);
+            Assert.Contains(listed, b => b.Name == "main");
+            Assert.Contains(listed, b => b.Name == "feat/switch" && b.IsCurrent);
+
+            File.WriteAllText(Path.Combine(root, "a.txt"), "dirty");
+            var dirty = await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.SwitchBranchAsync(root, "main"));
+            Assert.Contains("未提交", dirty.Message);
+
+            File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+            var switched = await GitHubService.SwitchBranchAsync(root, "main");
+            Assert.Contains("main", switched);
+            brief = await GitHubService.TryBriefStatusAsync(root);
+            Assert.Equal("main", brief?.Branch);
         }
         finally
         {

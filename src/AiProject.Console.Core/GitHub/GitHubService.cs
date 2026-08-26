@@ -376,6 +376,7 @@ public static class GitHubService
         int? ahead = null;
         int? behind = null;
         var (c4, counts) = await CliUtil.RunAsync("git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"], root).ConfigureAwait(false);
+        var hasUpstream = false;
         if (c4 == 0 && !string.IsNullOrEmpty(counts))
         {
             var parts = counts.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
@@ -383,9 +384,133 @@ public static class GitHubService
             {
                 behind = b;
                 ahead = a;
+                hasUpstream = true;
             }
         }
-        return new GitBriefStatus(branch.Trim(), dirtyN, ahead, behind);
+        return new GitBriefStatus(branch.Trim(), dirtyN, ahead, behind, hasUpstream);
+    }
+
+    public static async Task<bool> HasRemoteAsync(string root, string? remote = null)
+    {
+        if (!string.IsNullOrWhiteSpace(remote))
+        {
+            var (code, _) = await CliUtil.RunAsync("git", ["remote", "get-url", remote], root).ConfigureAwait(false);
+            return code == 0;
+        }
+        var (c2, names) = await CliUtil.RunAsync("git", ["remote"], root).ConfigureAwait(false);
+        return c2 == 0 && names.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length > 0;
+    }
+
+    public static bool IsValidBranchName(string? name)
+    {
+        var n = (name ?? "").Trim();
+        if (n.Length is 0 or > 200)
+            return false;
+        if (n is "HEAD" or "." or "..")
+            return false;
+        if (n.StartsWith('-') || n.StartsWith('/') || n.EndsWith('/') || n.EndsWith(".lock", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (n.Contains("..", StringComparison.Ordinal) || n.Contains("//", StringComparison.Ordinal)
+            || n.Contains("@{", StringComparison.Ordinal) || n.Contains('\\'))
+            return false;
+        foreach (var c in n)
+        {
+            if (char.IsControl(c) || c is ' ' or '~' or '^' or ':' or '?' or '*' or '[' or ']')
+                return false;
+        }
+        return true;
+    }
+
+    public static async Task<IReadOnlyList<GitBranchInfo>> ListBranchesAsync(string root, bool fetchRemote = true)
+    {
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+        if (fetchRemote && await HasRemoteAsync(root).ConfigureAwait(false))
+            await CliUtil.RunAsync("git", ["fetch", "--prune"], root, 60_000).ConfigureAwait(false);
+
+        var locals = await ReadRefsAsync(root, "refs/heads", remote: false).ConfigureAwait(false);
+        var remotes = await ReadRefsAsync(root, "refs/remotes", remote: true).ConfigureAwait(false);
+        var localNames = new HashSet<string>(locals.Select(b => b.Name), StringComparer.Ordinal);
+        var list = new List<GitBranchInfo>(locals);
+        foreach (var remote in remotes)
+        {
+            var shortName = GitBranchInfo.StripRemotePrefix(remote.Name);
+            if (string.IsNullOrEmpty(shortName) || shortName == "HEAD" || localNames.Contains(shortName))
+                continue;
+            list.Add(remote);
+        }
+        return list;
+    }
+
+    public static async Task<string> SwitchBranchAsync(string root, string name)
+    {
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+        var target = GitBranchInfo.StripRemotePrefix((name ?? "").Trim());
+        if (!IsValidBranchName(target))
+            throw new InvalidOperationException("分支名稱無效。");
+        var dirty = await DirtyCountAsync(root).ConfigureAwait(false);
+        if (dirty > 0)
+            throw new InvalidOperationException($"工作區有 {dirty} 筆未提交變更。請先提交或還原，才能切換分支。");
+
+        var (cCur, current) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).ConfigureAwait(false);
+        if (cCur == 0 && string.Equals(current, target, StringComparison.Ordinal))
+            return $"已在 {target}。";
+
+        var (code, output) = await CliUtil.RunAsync("git", ["switch", "--guess", target], root).ConfigureAwait(false);
+        if (code != 0)
+        {
+            var (code2, out2) = await CliUtil.RunAsync("git", ["checkout", target], root).ConfigureAwait(false);
+            if (code2 != 0)
+                throw new InvalidOperationException(string.IsNullOrEmpty(output) ? (string.IsNullOrEmpty(out2) ? $"無法切換到 {target}。" : out2) : output);
+        }
+        return $"已切換到 {target}";
+    }
+
+    public static async Task<string> CreateBranchAsync(string root, string name)
+    {
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+        var target = (name ?? "").Trim();
+        if (!IsValidBranchName(target))
+            throw new InvalidOperationException("請填寫有效的分支名稱，例如 feat/login。");
+        var dirty = await DirtyCountAsync(root).ConfigureAwait(false);
+        if (dirty > 0)
+            throw new InvalidOperationException($"工作區有 {dirty} 筆未提交變更。請先提交或還原，才能建立並切換分支。");
+
+        var (code, output) = await CliUtil.RunAsync("git", ["switch", "-c", target], root).ConfigureAwait(false);
+        if (code != 0)
+        {
+            var (code2, out2) = await CliUtil.RunAsync("git", ["checkout", "-b", target], root).ConfigureAwait(false);
+            if (code2 != 0)
+                throw new InvalidOperationException(string.IsNullOrEmpty(output) ? (string.IsNullOrEmpty(out2) ? $"無法建立分支 {target}。" : out2) : output);
+        }
+        return $"已建立並切換到 {target}";
+    }
+
+    private static async Task<List<GitBranchInfo>> ReadRefsAsync(string root, string pattern, bool remote)
+    {
+        var format = remote
+            ? "%(refname:short)\t%(objectname:short)"
+            : "%(refname:short)\t%(objectname:short)\t%(HEAD)\t%(upstream:short)";
+        var (code, output) = await CliUtil.RunAsync("git", ["for-each-ref", $"--format={format}", pattern], root).ConfigureAwait(false);
+        var list = new List<GitBranchInfo>();
+        if (code != 0 || string.IsNullOrWhiteSpace(output))
+            return list;
+        foreach (var raw in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var cols = raw.Split('\t');
+            if (cols.Length < 2 || string.IsNullOrWhiteSpace(cols[0]))
+                continue;
+            var name = cols[0].Trim();
+            if (remote && (name.EndsWith("/HEAD", StringComparison.Ordinal) || name.Equals("HEAD", StringComparison.Ordinal)))
+                continue;
+            var sha = cols[1].Trim();
+            var isCurrent = !remote && cols.Length > 2 && cols[2].Trim() == "*";
+            var tracking = !remote && cols.Length > 3 && !string.IsNullOrWhiteSpace(cols[3]) ? cols[3].Trim() : null;
+            list.Add(new GitBranchInfo(name, isCurrent, remote, tracking, sha));
+        }
+        return list;
     }
 
     public static async Task<string> GhAuthStatusAsync(string root)
