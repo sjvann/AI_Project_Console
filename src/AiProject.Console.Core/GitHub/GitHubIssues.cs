@@ -12,13 +12,27 @@ public sealed record GithubIssue(
     string Body,
     string UpdatedAt,
     IReadOnlyList<string> Labels,
-    IReadOnlyList<string> Assignees)
+    IReadOnlyList<string> Assignees,
+    string ClosedAt = "",
+    string CiTone = "",
+    string CiHint = "",
+    string PrUrl = "",
+    string PrState = "")
 {
     public bool IsAssigned => Assignees.Count > 0;
 
     public string NumberText => "#" + Number;
 
     public string LabelText => Labels.Count == 0 ? "" : string.Join(" · ", Labels.Take(3));
+
+    public string AssigneeText => Assignees.Count == 0 ? "未指派" : string.Join(" · ", Assignees);
+
+    public string TraceChipTone => string.IsNullOrEmpty(CiTone) ? (string.IsNullOrEmpty(PrUrl) ? "" : "wait") : CiTone;
+
+    public string TraceChipText =>
+        !string.IsNullOrEmpty(CiHint) ? CiHint
+        : !string.IsNullOrEmpty(PrState) ? "PR " + PrState
+        : "";
 
     public bool AssignedTo(string login) =>
         !string.IsNullOrEmpty(login)
@@ -61,7 +75,8 @@ public static class GitHubIssues
                     JsonUtil.Str(obj["body"]),
                     JsonUtil.Str(obj["updatedAt"]),
                     ReadNames(obj["labels"], "name"),
-                    ReadNames(obj["assignees"], "login")));
+                    ReadNames(obj["assignees"], "login"),
+                    JsonUtil.Pick(JsonUtil.Str(obj["closedAt"]), JsonUtil.Str(obj["closed_at"]))));
             }
             return list;
         }
@@ -95,18 +110,29 @@ public static class GitHubIssues
         if (!GitHubService.GhAvailable())
             throw new InvalidOperationException("尚未安裝 GitHub CLI（gh）。");
         cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
-        var args = new List<string> { "issue", "list", "--state", "open", "--limit", "50", "--json", "number,title,state,labels,url,assignees,updatedAt,body" };
-        var slug = cfg.Slug();
-        if (!string.IsNullOrEmpty(slug))
+        return await ListAsync(catalog.Root, cfg, "open", 50, ct).ConfigureAwait(false);
+    }
+
+    public static async Task<IReadOnlyList<GithubIssue>> ListAsync(
+        string cwd,
+        GithubConfig cfg,
+        string state = "open",
+        int limit = 100,
+        CancellationToken ct = default)
+    {
+        if (!GitHubService.GhAvailable())
+            throw new InvalidOperationException("尚未安裝 GitHub CLI（gh）。");
+        var args = new List<string>
         {
-            args.Add("--repo");
-            args.Add(slug);
-        }
-        var (code, stdout, stderr) = await CliUtil.RunCaptureAsync("gh", args, catalog.Root, 60_000, ct).ConfigureAwait(false);
+            "issue", "list", "--state", state, "--limit", limit.ToString(),
+            "--json", "number,title,state,labels,url,assignees,updatedAt,body,closedAt",
+        };
+        GhCli.AddRepo(args, cfg);
+        var (code, stdout, stderr) = await GhCli.RunCaptureAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
         if (code != 0)
         {
             var err = string.IsNullOrEmpty(stderr) ? stdout : stderr;
-            throw new InvalidOperationException(string.IsNullOrEmpty(err) ? "無法讀取 GitHub Issue。" : err);
+            throw new InvalidOperationException(string.IsNullOrEmpty(err) ? "無法讀取遠端 Issue。" : err);
         }
         return ParseIssues(stdout);
     }
@@ -117,21 +143,106 @@ public static class GitHubIssues
         GithubConfig? cfg = null,
         CancellationToken ct = default)
     {
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        await AssignAsync(catalog.Root, cfg, number, "@me", ct).ConfigureAwait(false);
+    }
+
+    public static async Task AssignAsync(
+        string cwd,
+        GithubConfig cfg,
+        int number,
+        string login,
+        CancellationToken ct = default)
+    {
         if (number <= 0)
             throw new InvalidOperationException("Issue 編號無效。");
         if (!GitHubService.GhAvailable())
             throw new InvalidOperationException("尚未安裝 GitHub CLI（gh）。");
-        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
-        var args = new List<string> { "issue", "edit", number.ToString(), "--add-assignee", "@me" };
-        var slug = cfg.Slug();
-        if (!string.IsNullOrEmpty(slug))
-        {
-            args.Add("--repo");
-            args.Add(slug);
-        }
-        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 60_000, ct).ConfigureAwait(false);
+        var who = string.IsNullOrWhiteSpace(login) ? "@me" : login.Trim().TrimStart('@');
+        if (who == "me")
+            who = "@me";
+        var args = new List<string> { "issue", "edit", number.ToString(), "--add-assignee", who };
+        GhCli.AddRepo(args, cfg);
+        var (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
         if (code != 0)
-            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法接受 Issue #{number}。" : output);
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法指派 Issue #{number}。" : output);
+    }
+
+    public static async Task<(int Number, string Url)> CreateAsync(
+        string cwd,
+        GithubConfig cfg,
+        string title,
+        string body,
+        IEnumerable<string>? labels = null,
+        string? assignee = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new InvalidOperationException("Issue 標題不能空白。");
+        if (!GitHubService.GhAvailable())
+            throw new InvalidOperationException("尚未安裝 GitHub CLI（gh）。");
+        var args = new List<string> { "issue", "create", "--title", title.Trim(), "--body", body ?? "" };
+        foreach (var label in (labels ?? []).Where(l => !string.IsNullOrWhiteSpace(l)))
+        {
+            args.Add("--label");
+            args.Add(label.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(assignee))
+        {
+            args.Add("--assignee");
+            args.Add(assignee.Trim().TrimStart('@'));
+        }
+        GhCli.AddRepo(args, cfg);
+        var (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "無法建立 Issue。" : output);
+        return ParseCreated(output, cfg);
+    }
+
+    public static async Task CloseAsync(
+        string cwd,
+        GithubConfig cfg,
+        int number,
+        CancellationToken ct = default)
+    {
+        if (number <= 0)
+            throw new InvalidOperationException("Issue 編號無效。");
+        var args = new List<string> { "issue", "close", number.ToString() };
+        GhCli.AddRepo(args, cfg);
+        var (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法關閉 Issue #{number}。" : output);
+    }
+
+    public static async Task<IReadOnlyList<string>> ListCollaboratorsAsync(
+        string cwd,
+        GithubConfig cfg,
+        CancellationToken ct = default)
+    {
+        var slug = cfg.Slug();
+        if (string.IsNullOrEmpty(slug))
+            return [];
+        var args = new List<string> { "api", $"repos/{slug}/collaborators", "--jq", ".[].login" };
+        var (code, stdout, _) = await GhCli.RunCaptureAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0 || string.IsNullOrWhiteSpace(stdout))
+            return [];
+        return stdout.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static (int Number, string Url) ParseCreated(string output, GithubConfig? cfg = null)
+    {
+        var text = (output ?? "").Trim();
+        var url = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .LastOrDefault(l => l.Contains("/issues/", StringComparison.OrdinalIgnoreCase))
+            ?? text;
+        var hash = url.LastIndexOf('/');
+        if (hash >= 0 && int.TryParse(url[(hash + 1)..].Trim(), out var number) && number > 0)
+            return (number, url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? url : (cfg?.WebUrl() + "/issues/" + number));
+        throw new InvalidOperationException("已建立 Issue，但無法解析編號：\n" + text);
     }
 
     private static IReadOnlyList<string> ReadNames(JsonNode? node, string key)

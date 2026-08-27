@@ -41,6 +41,98 @@ public static class WorkHoursAggregator
             BuildClock(listed));
     }
 
+    public static string RangeTitle(WorkHoursView view, DateOnly start, DateOnly end) => Title(view, start, end);
+
+    public static IReadOnlyList<WorkSession> FilterProject(IEnumerable<WorkSession> sessions, string? projectKey)
+    {
+        if (string.IsNullOrEmpty(projectKey))
+            return sessions.ToList();
+        return sessions.Where(s => string.Equals(s.ProjectKey, projectKey, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    public static IReadOnlyList<WorkHoursProjectSummary> SummarizeProjects(
+        IEnumerable<WorkSession> sessions,
+        DateOnly start,
+        DateOnly end,
+        DateTimeOffset now)
+    {
+        var groups = sessions
+            .GroupBy(s => s.ProjectKey, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var list = g.ToList();
+                var first = list[0];
+                var days = SplitDays(list, now).Where(d => d.Date >= start && d.Date <= end && d.HasWork).ToList();
+                var duration = Sum(days.Select(d => d.Duration));
+                var unallocated = string.IsNullOrEmpty(g.Key);
+                var inRange = list.Count(s => Overlaps(s, start, end, now));
+                return new WorkHoursProjectSummary(
+                    g.Key,
+                    unallocated ? WorkHoursProject.UnallocatedName : first.DisplayName,
+                    first.ProjectRoot,
+                    first.GithubSlug,
+                    duration,
+                    days.Count,
+                    inRange,
+                    unallocated);
+            })
+            .Where(p => p.Duration > TimeSpan.Zero)
+            .OrderBy(p => p.IsUnallocated)
+            .ThenByDescending(p => p.Duration)
+            .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return groups;
+    }
+
+    public static WorkTimesheet BuildTimesheet(
+        IEnumerable<WorkSession> sessions,
+        WorkHoursView view,
+        DateOnly anchor,
+        DateTimeOffset now,
+        string personKey,
+        string personLabel)
+    {
+        var (start, end) = Range(view, anchor);
+        var all = sessions.ToList();
+        var billable = all.Where(s => s.HasProject).ToList();
+        var leftover = all.Where(s => !s.HasProject).ToList();
+        var unallocatedDays = SplitDays(leftover, now).Where(d => d.Date >= start && d.Date <= end);
+        var projects = billable
+            .GroupBy(s => s.ProjectKey, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var list = g.ToList();
+                var first = list[0];
+                var days = SplitDays(list, now)
+                    .Where(d => d.Date >= start && d.Date <= end && d.HasWork)
+                    .ToList();
+                return new TimesheetProject(
+                    g.Key,
+                    first.DisplayName,
+                    first.ProjectRoot,
+                    first.GithubSlug,
+                    Sum(days.Select(d => d.Duration)),
+                    days,
+                    [],
+                    [],
+                    string.IsNullOrWhiteSpace(first.GithubSlug) ? "未接 GitHub" : null);
+            })
+            .Where(p => p.Duration > TimeSpan.Zero)
+            .OrderByDescending(p => p.Duration)
+            .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new WorkTimesheet(
+            personKey,
+            personLabel,
+            start,
+            end,
+            Title(view, start, end),
+            Sum(projects.Select(p => p.Duration)),
+            Sum(unallocatedDays.Select(d => d.Duration)),
+            projects,
+            []);
+    }
+
     public static (DateOnly Start, DateOnly End) Range(WorkHoursView view, DateOnly anchor) =>
         view switch
         {
@@ -281,6 +373,13 @@ public static class WorkHoursAggregator
                 hours[cursor.Hour] += sliceEnd - cursor;
             cursor = sliceEnd;
         }
+    }
+
+    static bool Overlaps(in WorkSession session, DateOnly start, DateOnly end, DateTimeOffset now)
+    {
+        var from = DateOnly.FromDateTime(session.StartedAt.DateTime);
+        var to = DateOnly.FromDateTime(session.CloseAt(now).DateTime);
+        return from <= end && to >= start;
     }
 
     static TimeSpan Sum(IEnumerable<TimeSpan> values)

@@ -30,6 +30,7 @@ public static class DocsService
         "user/troubleshooting.md",
         "product/overview.md",
         "product/glossary.md",
+        "product/intake.md",
         "engineering/architecture.md",
         "engineering/develop.md",
         "operations/deploy.md",
@@ -198,6 +199,18 @@ public static class DocsService
             extra.Add(ToolsManifestRelPath);
         if (EnsureWorkflow(root))
             extra.Add(WorkflowRelPath);
+        var intakePath = Path.Combine(docs, "product", "intake.json");
+        if (!File.Exists(intakePath) || new FileInfo(intakePath).Length == 0)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(intakePath)!);
+            File.WriteAllText(intakePath, """
+                {
+                  "version": "1",
+                  "intakes": []
+                }
+                """, new UTF8Encoding(false));
+            extra.Add("product/intake.json");
+        }
         created.AddRange(extra);
 
         var msg = created.Count == 0
@@ -333,17 +346,17 @@ public static class DocsService
         EnsureToolsManifest(catalog.Root);
 
         var slug = cfg.Slug();
-        var (code, output) = await CliUtil.RunAsync(
-            "gh",
+        var (code, output) = await GhCli.RunAsync(
             ["api", "--method", "POST", $"/repos/{slug}/pages", "-f", "build_type=workflow"],
             catalog.Root,
+            cfg,
             60_000).ConfigureAwait(false);
         if (code != 0)
         {
-            var (c2, out2) = await CliUtil.RunAsync(
-                "gh",
+            var (c2, out2) = await GhCli.RunAsync(
                 ["api", "--method", "PUT", $"/repos/{slug}/pages", "-f", "build_type=workflow"],
                 catalog.Root,
+                cfg,
                 60_000).ConfigureAwait(false);
             if (c2 != 0)
             {
@@ -365,10 +378,10 @@ public static class DocsService
         var guessed = PagesUrl(cfg);
         if (!GitHubService.GhAvailable() || string.IsNullOrEmpty(cfg.Slug()))
             return string.IsNullOrEmpty(guessed) ? "尚未設定 GitHub，無法判斷 Pages。" : "推測網址：" + guessed;
-        var (code, output) = await CliUtil.RunAsync(
-            "gh",
+        var (code, output) = await GhCli.RunAsync(
             ["api", $"/repos/{cfg.Slug()}/pages"],
             catalog.Root,
+            cfg,
             60_000).ConfigureAwait(false);
         if (code != 0)
             return string.IsNullOrEmpty(guessed)
@@ -847,6 +860,10 @@ public static class DocsService
                 "名詞",
                 "名詞",
                 Intro(ctx, "列出專案裡會反覆出現的詞。")),
+            "product/intake.md" => Page(
+                "需求與變更",
+                "需求與變更",
+                Intro(ctx, "寫需求與設計變更怎麼進件、拆任務、驗收。進件表在 docs/product/intake.json。")),
             "engineering/architecture.md" => Page(
                 "架構",
                 "架構",
@@ -947,6 +964,8 @@ public static class DocsService
               href: product/overview.md
             - name: 名詞
               href: product/glossary.md
+            - name: 需求與變更
+              href: product/intake.md
         - name: 工程
           items:
             - name: 架構

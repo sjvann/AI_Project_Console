@@ -1,3 +1,5 @@
+using AiProject.Console.Core.GitHub;
+
 namespace AiProject.Console.Core.WorkHours;
 
 public static class WorkHoursPerson
@@ -8,10 +10,18 @@ public static class WorkHoursPerson
         return "local:" + Normalize(user);
     }
 
-    public static string GithubKey(string login) => "github:" + Normalize(login);
+    public static string GithubKey(string login, string? host = null)
+    {
+        var user = Normalize(login);
+        if (string.IsNullOrEmpty(user))
+            return LocalKey();
+        if (string.IsNullOrWhiteSpace(host) || GitHost.IsPublic(host))
+            return "github:" + user;
+        return "github:" + GitHost.Normalize(host) + ":" + user;
+    }
 
-    public static string FromGithubLogin(string? login) =>
-        string.IsNullOrWhiteSpace(login) ? LocalKey() : GithubKey(login!);
+    public static string FromGithubLogin(string? login, string? host = null) =>
+        string.IsNullOrWhiteSpace(login) ? LocalKey() : GithubKey(login!, host);
 
     public static string LabelFromGithub(string? login) =>
         string.IsNullOrWhiteSpace(login) ? LocalLabel() : "@" + login.Trim();

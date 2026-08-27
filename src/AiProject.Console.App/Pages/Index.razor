@@ -8,8 +8,12 @@
         <img class="brand-mark" src="img/logo.svg" width="32" height="32" alt="" />
         <h1>AI_Project 控制台</h1>
         <span class="hint">通用本機堆疊 · GitHub／部署 · v@(AppInfo.Version)</span>
+        <div class="hours-panes workbench-switch" role="tablist" aria-label="工作台">
+            <button type="button" class="hours-pane @(S.Workbench == "dev" ? "active" : null)" @onclick="@(() => S.SetWorkbench("dev"))">開發</button>
+            <button type="button" class="hours-pane @(S.Workbench == "req" ? "active" : null)" @onclick="@(() => S.SetWorkbench("req"))">需求</button>
+        </div>
         <span class="grow"></span>
-        <button type="button" class="hours-chip is-@S.WorkHoursTone" title="從開啟到現在的累計工時，點擊看週／月／季／年" @onclick="@(() => S.OpenWorkHours())">
+        <button type="button" class="hours-chip is-@S.WorkHoursTone" title="從開啟專案起算的工時，點擊看週／月／季／年與報帳單" @onclick="@(() => S.OpenWorkHours())">
             <span class="hours-chip-k">本次</span>
             <span class="hours-chip-v">@S.SessionWorkText</span>
             <span class="hours-chip-div" aria-hidden="true"></span>
@@ -20,9 +24,9 @@
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
         @if (S.GithubLoggedIn)
         {
-            <span class="gh-id" title="目前 GitHub 帳號">
+            <span class="gh-id" title="目前遠端帳號">
                 <span class="gh-id-dot" aria-hidden="true"></span>
-                <span>@S.GithubAccount.Display()</span>
+                <span>@S.GithubAccountText</span>
             </span>
             <button class="btn-sec" disabled="@S.GithubAuthBusy" title="登出 GitHub CLI 帳號" @onclick="S.LogoutGithubAsync">登出 GitHub</button>
         }
@@ -77,6 +81,8 @@
         </div>
     </div>
 
+    @if (!S.IsReqWorkbench)
+    {
     <div class="card">
         <div class="row">
             <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.StartAllAsync">啟動</button>
@@ -99,6 +105,14 @@
             <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
         </div>
     </div>
+    }
+
+    @if (S.IsReqWorkbench)
+    {
+        <IntakeWorkbench />
+    }
+    else
+    {
 
     <div class="summary">
         <span>@S.ReadyText</span>
@@ -387,6 +401,10 @@
                                             @if (!string.IsNullOrEmpty(issue.WhenText()))
                                             {
                                                 <span>@issue.WhenText()</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(issue.TraceChipText))
+                                            {
+                                                <span class="duty-chip is-@issue.TraceChipTone">@issue.TraceChipText</span>
                                             }
                                         </span>
                                     </div>
@@ -697,6 +715,8 @@
             }
         </div>
     </div>
+    }
+
     <div class="foot">關閉控制台不會停止服務 · 狀態寫入選定專案的 .ai_project/</div>
 </div>
 
@@ -704,9 +724,28 @@
 {
     <div class="overlay">
         <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="gh-login-title" aria-modal="true">
-            <h2 id="gh-login-title">需要登入 GitHub</h2>
-            <p class="hint">@(string.IsNullOrEmpty(S.GithubAuthHint) ? "此專案由 GitHub 管理。請先登入，才能讀取指派給你的 Issue。" : S.GithubAuthHint)</p>
-            <p class="hint">登入會開啟瀏覽器，用 GitHub CLI（gh）完成授權。取消則不會開啟這個專案。</p>
+            <h2 id="gh-login-title">需要登入遠端 Git</h2>
+            <p class="hint">@(string.IsNullOrEmpty(S.GithubAuthHint) ? "此專案由遠端 Git 主機管理。請先登入，才能讀取指派給你的任務。" : S.GithubAuthHint)</p>
+            <p class="hint">登入會開啟瀏覽器，用該主機的 CLI 完成授權。取消則不會開啟這個專案。</p>
+            <div class="field">
+                <span>認證主機</span>
+                <input @bind="S.GitHostName" list="git-host-list" placeholder="github.com 或 ghe.corp.com" />
+            </div>
+            <div class="field">
+                <span>種類</span>
+                <select @bind="S.GitKind">
+                    @foreach (var kind in GitHost.Kinds)
+                    {
+                        <option value="@kind.Id">@kind.Label@(kind.Ready ? "" : "（尚未接任務）")</option>
+                    }
+                </select>
+            </div>
+            <datalist id="git-host-list">
+                @foreach (var host in S.RecentGitHosts)
+                {
+                    <option value="@host"></option>
+                }
+            </datalist>
             <div class="dialog-actions">
                 <button class="btn-sec" disabled="@S.GithubAuthBusy" @onclick="S.CancelGithubLogin">取消並關閉專案</button>
                 <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">@(S.GithubAuthBusy ? "等待瀏覽器授權…" : "登入 GitHub")</button>
@@ -874,8 +913,18 @@
 {
     <div class="overlay" @onclick="S.CloseDialog">
         <div class="dialog" @onclick:stopPropagation="true">
-            <h2>GitHub 設定</h2>
-            <p class="hint">設定遠端倉庫後可提交、同步（pull）、發布（push）與發行 Release。可從 git remote 預填。</p>
+            <h2>Git 遠端設定</h2>
+            <p class="hint">設定遠端倉庫後可提交、同步（pull）、發布（push）與發行 Release。可從 git remote 預填。認證主機不要寫死公開 GitHub。</p>
+            <div class="field"><span>認證主機</span><input @bind="S.GithubDraft.Host" placeholder="github.com 或企業主機" /></div>
+            <div class="field">
+                <span>種類</span>
+                <select @bind="S.GithubDraft.Kind">
+                    @foreach (var kind in GitHost.Kinds)
+                    {
+                        <option value="@kind.Id">@kind.Label@(kind.Ready ? "" : "（尚未接任務）")</option>
+                    }
+                </select>
+            </div>
             <div class="field"><span>Owner</span><input @bind="S.GithubDraft.Owner" /></div>
             <div class="field"><span>Repository</span><input @bind="S.GithubDraft.Repo" /></div>
             <div class="field"><span>Remote 名稱</span><input @bind="S.GithubDraft.Remote" /></div>
@@ -1106,6 +1155,26 @@
                             發布前先跑本機測試
                         </label>
                         <p class="hint">只擋「發布（push）」與提交後再推。詳細測試請在 IDE 跑；控制台只做一次完整檢查。</p>
+                        <div class="field">
+                            <span>預設認證主機</span>
+                            <input @bind="S.GitHostName" list="prefs-git-host" placeholder="github.com" />
+                        </div>
+                        <div class="field">
+                            <span>預設種類</span>
+                            <select @bind="S.GitKind">
+                                @foreach (var kind in GitHost.Kinds)
+                                {
+                                    <option value="@kind.Id">@kind.Label@(kind.Ready ? "" : "（尚未接任務）")</option>
+                                }
+                            </select>
+                        </div>
+                        <datalist id="prefs-git-host">
+                            @foreach (var host in S.RecentGitHosts)
+                            {
+                                <option value="@host"></option>
+                            }
+                        </datalist>
+                        <p class="hint">大型公司可填自建 Git 主機。GitHub 相容主機用 gh；其他種類先可設，任務功能尚未接時會明白停用。</p>
                     </div>
                 }
                 else if (S.PrefsTab == "agent")

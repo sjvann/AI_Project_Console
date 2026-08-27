@@ -4,10 +4,10 @@
 
 ## 登入（GitHub 管理的專案必填）
 
-開啟的目錄若已接上 GitHub（`github.com` 遠端，或設定了 owner／repo），控制台會要求用 [GitHub CLI](https://cli.github.com/) 登入。未登入不能繼續使用該專案。
+開啟的目錄若已接上遠端 Git 主機（預設 `github.com`，或設定／remote 上的企業主機），控制台會要求用 [GitHub CLI](https://cli.github.com/) 對**該主機**登入。未登入不能繼續使用該專案。
 
-1. 安裝 `gh` 後，按對話框「登入 GitHub」。會開瀏覽器完成授權。
-2. 登入後，標題列會顯示 `@帳號`，旁邊有「登出 GitHub」（在「離開」前面）。
+1. 安裝 `gh` 後，按對話框「登入」。可改認證主機（例如 `ghe.corp.com`）。會開瀏覽器完成授權。
+2. 登入後，標題列會顯示 `@帳號`；非公開主機時加上主機名稱。旁邊有「登出 GitHub」（在「離開」前面）。
 3. 左側「任務」分頁列出指派給你的 Issue；未指派清單在下方，可開合，也能「接受」成自己的任務。
 
 已登入時，關閉專案**不會**登出。要換帳號請按「登出 GitHub」。
@@ -39,6 +39,8 @@
 "github": {
   "owner": "my-org",
   "repo": "my-repo",
+  "host": "github.com",
+  "kind": "github",
   "remote": "origin",
   "defaultBranch": "main",
   "url": ""
@@ -77,7 +79,7 @@
 | **Release 列表** | `gh release list` |
 | **開啟 Releases** | 瀏覽器開 GitHub Releases |
 | **開啟倉庫** | 瀏覽器開倉庫首頁 |
-| **建立／開啟 PR** | 已有 PR 則看檢查摘要（能不能請人審）。沒有則用提交說明建立。留言、指定審查人與合併請到 GitHub |
+| **建立／開啟 PR** | 已有 PR 則看檢查摘要（能不能請人審）。沒有則用提交說明建立。行內討論仍開遠端網頁；需求工作台可請人審、並在 CI 綠後合併 |
 | **補齊 CI workflow…** | 若沒有建置／測試 workflow，寫入 `.github/workflows/ci.yml` 骨架。既有檔不覆蓋。請審查後再提交；控制台不代跑 |
 | **Actions 狀態…** | 最近幾次遠端執行的通過／失敗／進行中。點一列或「開啟最新」到 GitHub 看 log。控制台不能修 CI，也不取代 Actions 畫面 |
 | **檢查控制台更新** | 查**這個控制台**有沒有新版，不需先設定專案 GitHub |

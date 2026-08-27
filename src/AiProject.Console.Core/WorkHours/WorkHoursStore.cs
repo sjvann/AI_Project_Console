@@ -87,25 +87,72 @@ public sealed class WorkHoursStore
     {
         var now = _now();
         var today = DateOnly.FromDateTime(now.Date);
-        return WorkHoursAggregator.SplitDays(VisibleSessions, now)
+        return WorkHoursAggregator.SplitDays(VisibleSessions.Where(s => s.HasProject), now)
             .Where(d => d.Date == today)
             .Select(d => d.Duration)
             .DefaultIfEmpty()
             .Aggregate(TimeSpan.Zero, (a, b) => a + b);
     }
 
-    public WorkSession Start(string? personKey = null, string? personLabel = null)
+    public WorkSession Start(
+        string? personKey = null,
+        string? personLabel = null,
+        string? projectRoot = null,
+        string? projectName = null,
+        string? githubSlug = null)
     {
         lock (_gate)
         {
             ReloadUnlocked();
             CloseOpenSessions(at: null);
-            ApplyPerson(personKey, personLabel);
-            var now = _now();
-            _current = new WorkSession(Guid.NewGuid().ToString("N"), now, null, now, _personKey, _personLabel);
-            _sessions.Add(_current.Value);
+            return StartUnlocked(personKey, personLabel, projectRoot, projectName, githubSlug, closeAt: null);
+        }
+    }
+
+    /// <summary>
+    /// 開啟或切換專案時開始計時。同一個專案繼續累計，不切開時段。
+    /// </summary>
+    public WorkSession SwitchProject(string projectRoot, string? projectName = null, string? githubSlug = null)
+    {
+        lock (_gate)
+        {
+            var root = WorkHoursProject.NormalizeRoot(projectRoot);
+            if (string.IsNullOrEmpty(root))
+                throw new ArgumentException("專案路徑不可為空。", nameof(projectRoot));
+            ReloadUnlocked();
+            if (_current is { } current && WorkHoursProject.SameProject(current, root, githubSlug))
+            {
+                var updated = current with
+                {
+                    ProjectRoot = string.IsNullOrWhiteSpace(current.ProjectRoot) ? root : current.ProjectRoot,
+                    ProjectName = string.IsNullOrWhiteSpace(projectName) ? current.ProjectName : projectName.Trim(),
+                    GithubSlug = string.IsNullOrWhiteSpace(githubSlug) ? current.GithubSlug : githubSlug.Trim(),
+                };
+                if (!Equals(updated, current))
+                {
+                    ReplaceCurrent(updated);
+                    Persist();
+                }
+                return updated;
+            }
+
+            return StartUnlocked(null, null, root, projectName, githubSlug, closeAt: _now());
+        }
+    }
+
+    public void BindGithubSlug(string projectRoot, string? githubSlug)
+    {
+        lock (_gate)
+        {
+            if (_current is null || string.IsNullOrWhiteSpace(githubSlug))
+                return;
+            if (!WorkHoursProject.SameRoot(_current.Value.ProjectRoot, projectRoot))
+                return;
+            var slug = githubSlug.Trim();
+            if (string.Equals(_current.Value.GithubSlug, slug, StringComparison.OrdinalIgnoreCase))
+                return;
+            ReplaceCurrent(_current.Value with { GithubSlug = slug });
             Persist();
-            return _current.Value;
         }
     }
 
@@ -187,6 +234,38 @@ public sealed class WorkHoursStore
             if (session is not null)
                 _sessions.Add(session.Value);
         }
+        foreach (var session in _sessions)
+        {
+            if (session.EndedAt is null)
+                _current = session;
+        }
+    }
+
+    WorkSession StartUnlocked(
+        string? personKey,
+        string? personLabel,
+        string? projectRoot,
+        string? projectName,
+        string? githubSlug,
+        DateTimeOffset? closeAt)
+    {
+        CloseOpenSessions(closeAt);
+        ApplyPerson(personKey, personLabel);
+        var now = _now();
+        var root = WorkHoursProject.NormalizeRoot(projectRoot);
+        _current = new WorkSession(
+            Guid.NewGuid().ToString("N"),
+            now,
+            null,
+            now,
+            _personKey,
+            _personLabel,
+            root,
+            string.IsNullOrWhiteSpace(projectName) ? "" : projectName.Trim(),
+            string.IsNullOrWhiteSpace(githubSlug) ? "" : githubSlug.Trim());
+        _sessions.Add(_current.Value);
+        Persist();
+        return _current.Value;
     }
 
     void CloseOpenSessions(DateTimeOffset? at)
@@ -247,6 +326,12 @@ public sealed class WorkHoursStore
             };
             if (session.EndedAt is { } ended)
                 obj["endedAt"] = ended.ToString("o");
+            if (!string.IsNullOrWhiteSpace(session.ProjectRoot))
+                obj["projectRoot"] = session.ProjectRoot;
+            if (!string.IsNullOrWhiteSpace(session.ProjectName))
+                obj["projectName"] = session.ProjectName;
+            if (!string.IsNullOrWhiteSpace(session.GithubSlug))
+                obj["githubSlug"] = session.GithubSlug;
             arr.Add(obj);
         }
         JsonUtil.SaveObject(_path, new JsonObject
@@ -275,6 +360,9 @@ public sealed class WorkHoursStore
             seen = parsedSeen;
         var personKey = JsonUtil.Str(obj["personKey"]);
         var personLabel = JsonUtil.Str(obj["personLabel"]);
-        return new WorkSession(id, started, ended, seen, personKey, personLabel);
+        var projectRoot = JsonUtil.Str(obj["projectRoot"]);
+        var projectName = JsonUtil.Str(obj["projectName"]);
+        var githubSlug = JsonUtil.Str(obj["githubSlug"]);
+        return new WorkSession(id, started, ended, seen, personKey, personLabel, projectRoot, projectName, githubSlug);
     }
 }

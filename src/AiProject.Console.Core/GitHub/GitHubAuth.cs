@@ -4,13 +4,13 @@ using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.GitHub;
 
-public sealed record GithubAccount(string Login, bool GhInstalled)
+public sealed record GithubAccount(string Login, bool GhInstalled, string Host = GitHost.PublicHostname)
 {
     public static GithubAccount None { get; } = new("", false);
 
     public bool LoggedIn => !string.IsNullOrEmpty(Login);
 
-    public string Display() => LoggedIn ? "@" + Login : "";
+    public string Display() => GitHost.DisplayAccount(Login, Host);
 }
 
 public static class GitHubAuth
@@ -47,51 +47,60 @@ public static class GitHubAuth
         && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')
         && !value.Contains('/', StringComparison.Ordinal);
 
-    public static async Task<GithubAccount> CurrentAsync(string? cwd = null, CancellationToken ct = default)
+    public static async Task<GithubAccount> CurrentAsync(
+        string? cwd = null,
+        string? host = null,
+        CancellationToken ct = default)
     {
         if (!GitHubService.GhAvailable())
             return GithubAccount.None;
-        var (code, stdout, _) = await CliUtil.RunCaptureAsync(
-            "gh", ["api", "user", "--jq", ".login"], cwd, 30_000, ct).ConfigureAwait(false);
+        var hostname = GitHost.Normalize(host);
+        var cfg = new GithubConfig { Host = hostname };
+        var (code, stdout, _) = await GhCli.RunCaptureAsync(
+            ["api", "user", "--jq", ".login"], cwd, cfg, 30_000, ct).ConfigureAwait(false);
         if (code != 0)
-            return new GithubAccount("", true);
+            return new GithubAccount("", true, hostname);
         var login = ParseUserLogin(stdout);
-        return login is null ? new GithubAccount("", true) : new GithubAccount(login, true);
+        return login is null ? new GithubAccount("", true, hostname) : new GithubAccount(login, true, hostname);
     }
 
     public static async Task<(bool Ok, string Message)> LoginWebAsync(
         string? cwd = null,
+        string? host = null,
         CancellationToken ct = default)
     {
         if (!GitHubService.GhAvailable())
             return (false, "尚未安裝 GitHub CLI（gh）。請先安裝 https://cli.github.com/ 再登入。");
+        var hostname = GitHost.Normalize(host);
         var (code, output) = await CliUtil.RunAsync(
             "gh",
-            ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"],
+            ["auth", "login", "--hostname", hostname, "--git-protocol", "https", "--web"],
             cwd,
             LoginTimeoutMs,
             ct,
             stdin: "\n").ConfigureAwait(false);
         if (code == 0)
-            return (true, string.IsNullOrEmpty(output) ? "已登入 GitHub" : output);
+            return (true, string.IsNullOrEmpty(output) ? "已登入 " + hostname : output);
         return (false, string.IsNullOrEmpty(output) ? "登入未完成或已取消。" : output);
     }
 
     public static async Task<(bool Ok, string Message)> LogoutAsync(
         string? cwd = null,
+        string? host = null,
         CancellationToken ct = default)
     {
         if (!GitHubService.GhAvailable())
             return (false, "尚未安裝 GitHub CLI（gh）。");
+        var hostname = GitHost.Normalize(host);
         var (code, output) = await CliUtil.RunAsync(
             "gh",
-            ["auth", "logout", "--hostname", "github.com"],
+            ["auth", "logout", "--hostname", hostname],
             cwd,
             60_000,
             ct,
             stdin: "Y\n").ConfigureAwait(false);
         if (code == 0)
-            return (true, string.IsNullOrEmpty(output) ? "已登出 GitHub" : output);
+            return (true, string.IsNullOrEmpty(output) ? "已登出 " + hostname : output);
         return (false, string.IsNullOrEmpty(output) ? "登出失敗。" : output);
     }
 }

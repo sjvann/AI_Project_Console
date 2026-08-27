@@ -36,9 +36,10 @@ public static class CliUtil
         string? cwd = null,
         int timeoutMs = 120_000,
         CancellationToken ct = default,
-        string? stdin = null)
+        string? stdin = null,
+        IReadOnlyDictionary<string, string>? extraEnv = null)
     {
-        var (code, stdout, stderr) = await RunCaptureAsync(fileName, args, cwd, timeoutMs, ct, stdin: stdin).ConfigureAwait(false);
+        var (code, stdout, stderr) = await RunCaptureAsync(fileName, args, cwd, timeoutMs, ct, stdin: stdin, extraEnv: extraEnv).ConfigureAwait(false);
         var output = string.Join('\n', new[] { stdout, stderr }.Where(s => !string.IsNullOrEmpty(s))).Trim();
         return (code, output);
     }
@@ -50,7 +51,8 @@ public static class CliUtil
         int timeoutMs = 120_000,
         CancellationToken ct = default,
         bool trim = true,
-        string? stdin = null)
+        string? stdin = null,
+        IReadOnlyDictionary<string, string>? extraEnv = null)
     {
         var redirectIn = stdin is not null;
         var psi = new ProcessStartInfo
@@ -65,6 +67,11 @@ public static class CliUtil
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        if (extraEnv is not null)
+        {
+            foreach (var kv in extraEnv)
+                psi.Environment[kv.Key] = kv.Value;
+        }
         if (redirectIn)
             psi.StandardInputEncoding = Encoding.UTF8;
         foreach (var a in args)

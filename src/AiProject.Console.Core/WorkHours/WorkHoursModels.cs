@@ -14,8 +14,17 @@ public readonly record struct WorkSession(
     DateTimeOffset? EndedAt,
     DateTimeOffset LastSeenAt,
     string PersonKey = "",
-    string PersonLabel = "")
+    string PersonLabel = "",
+    string ProjectRoot = "",
+    string ProjectName = "",
+    string GithubSlug = "")
 {
+    public bool HasProject => !string.IsNullOrWhiteSpace(ProjectRoot);
+
+    public string ProjectKey => WorkHoursProject.Key(GithubSlug, ProjectRoot);
+
+    public string DisplayName => WorkHoursProject.DisplayName(ProjectName, ProjectRoot);
+
     public DateTimeOffset CloseAt(DateTimeOffset now) => EndedAt ?? now;
 
     public TimeSpan Duration(DateTimeOffset now)
@@ -97,6 +106,86 @@ public sealed record WorkHoursReport(
     WorkHoursClock Clock)
 {
     public bool CanGoNext(DateOnly today) => RangeEnd < today;
+}
+
+public sealed record WorkHoursProjectSummary(
+    string Key,
+    string Name,
+    string ProjectRoot,
+    string GithubSlug,
+    TimeSpan Duration,
+    int WorkedDays,
+    int SessionCount,
+    bool IsUnallocated);
+
+public sealed record TimesheetItem(
+    string Kind,
+    int Number,
+    string Title,
+    string Url,
+    string State,
+    DateTimeOffset? At,
+    string ProjectKey = "",
+    string ProjectName = "",
+    string GithubSlug = "")
+{
+    public string NumberText => "#" + Number;
+
+    public string KindLabel => Kind == "pr" ? "PR" : "Issue";
+
+    public string AtText => At is { } at ? at.ToLocalTime().ToString("yyyy-MM-dd") : "";
+}
+
+public sealed record TimesheetProject(
+    string Key,
+    string Name,
+    string ProjectRoot,
+    string GithubSlug,
+    TimeSpan Duration,
+    IReadOnlyList<WorkDaySlice> Days,
+    IReadOnlyList<TimesheetItem> Issues,
+    IReadOnlyList<TimesheetItem> PullRequests,
+    string? ContributionNote = null)
+{
+    public int WorkedDays => Days.Count(d => d.HasWork);
+
+    public bool HasGithub => !string.IsNullOrWhiteSpace(GithubSlug);
+}
+
+public sealed record WorkTimesheet(
+    string PersonKey,
+    string PersonLabel,
+    DateOnly RangeStart,
+    DateOnly RangeEnd,
+    string Title,
+    TimeSpan BillableTotal,
+    TimeSpan UnallocatedTotal,
+    IReadOnlyList<TimesheetProject> Projects,
+    IReadOnlyList<TimesheetItem> Items)
+{
+    public WorkTimesheet WithContributions(
+        IReadOnlyList<TimesheetItem> items,
+        IReadOnlyDictionary<string, string>? notes = null)
+    {
+        var byProject = items
+            .GroupBy(i => i.ProjectKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var projects = Projects.Select(p =>
+        {
+            byProject.TryGetValue(p.Key, out var list);
+            list ??= [];
+            var note = notes is not null && notes.TryGetValue(p.Key, out var n) ? n : p.ContributionNote;
+            if (string.IsNullOrEmpty(note) && !p.HasGithub)
+                note = "未接 GitHub";
+            return p with
+            {
+                Issues = list.Where(i => i.Kind != "pr").ToList(),
+                PullRequests = list.Where(i => i.Kind == "pr").ToList(),
+                ContributionNote = note,
+            };
+        }).ToList();
+        return this with { Projects = projects, Items = items };
+    }
 }
 
 public static class WorkHoursFormat

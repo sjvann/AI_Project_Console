@@ -2,7 +2,7 @@
 
 標題列「設定」打開偏好設定。分五個分頁。多數項目按「儲存」才寫入；「啟動時還原上次專案」「同時開啟 Agent」在主畫面勾選也會立刻記住。
 
-設定檔位置（Windows）：`%LOCALAPPDATA%\AI_Project_Console\settings.json`。工時紀錄在同一資料夾的 `work-hours.json`。
+設定檔位置（Windows）：`%LOCALAPPDATA%\AI_Project_Console\settings.json`。工時紀錄在同一資料夾的 `work-hours.json`（依專案切開時段；匯出的工時單是另外選資料夾寫入的 Markdown／CSV）。
 
 ## 一般
 
@@ -12,6 +12,7 @@
 | 啟動時還原上次專案 | 下次自動載入最後一個目錄 |
 | 載入專案時開啟 Agent | 選好目錄後一併打開目前後端的工作區 |
 | 發布前先跑本機測試 | 發布（push）或提交後再推之前，先跑一次完整測試。沒過就不推。詳細案例請在 IDE 跑 |
+| 預設認證主機／種類 | 登入打哪一台 Git（`github.com` 或企業主機）。GitHub 相容才能開 Issue；其他種類可先設定 |
 
 ## Agent
 

@@ -111,7 +111,9 @@
     "repo": "",
     "remote": "origin",
     "defaultBranch": "main",
-    "url": ""
+    "url": "",
+    "host": "github.com",
+    "kind": "github"
   },
   "deploy": {
     "target": "none"

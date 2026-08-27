@@ -60,7 +60,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 ## GitHub 與部署
 
-可與畫面「GitHub 設定」「部署設定」互相寫入。結構見範例檔的 `github`、`deploy`、`gcp`、`onprem`、`azure`。使用者操作見 [GitHub](../user/github.md)、[部署](../user/deploy.md)。
+可與畫面「GitHub 設定」「部署設定」互相寫入。結構見範例檔的 `github`、`deploy`、`gcp`、`onprem`、`azure`。`github.host`／`github.kind` 指定認證對象（公開 GitHub 或企業主機）。使用者操作見 [GitHub](../user/github.md)、[部署](../user/deploy.md)、[需求工作台](../user/intake.md)。
 
 ## 執行期目錄
 

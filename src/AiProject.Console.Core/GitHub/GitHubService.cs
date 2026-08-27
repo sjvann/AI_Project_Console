@@ -13,6 +13,8 @@ public sealed class GithubConfig
     public string Remote { get; set; } = "origin";
     public string DefaultBranch { get; set; } = "main";
     public string Url { get; set; } = "";
+    public string Host { get; set; } = GitHost.PublicHostname;
+    public string Kind { get; set; } = GitHost.KindGithub;
 
     public bool IsComplete() =>
         (!string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repo))
@@ -20,9 +22,23 @@ public sealed class GithubConfig
 
     public bool LooksGithubHosted()
     {
-        if (!string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repo))
-            return true;
-        return (Url ?? "").Contains("github.com", StringComparison.OrdinalIgnoreCase);
+        if (!GitHost.IssuesReady(ResolvedKind()))
+            return false;
+        if (!string.IsNullOrWhiteSpace(Url))
+            return GitHost.IssuesReady(GitHost.InferKind(Host, Url));
+        return !string.IsNullOrWhiteSpace(Owner) && !string.IsNullOrWhiteSpace(Repo);
+    }
+
+    public string ResolvedKind() =>
+        string.IsNullOrWhiteSpace(Kind) ? GitHost.InferKind(Host, Url) : GitHost.NormalizeKind(Kind);
+
+    public string ResolvedHost()
+    {
+        if (!string.IsNullOrWhiteSpace(Host))
+            return GitHost.Normalize(Host);
+        if (!string.IsNullOrWhiteSpace(Url))
+            return GitHost.HostFromUrl(Url);
+        return GitHost.PublicHostname;
     }
 
     public string Slug() => string.IsNullOrEmpty(Owner) || string.IsNullOrEmpty(Repo) ? "" : $"{Owner}/{Repo}";
@@ -30,7 +46,7 @@ public sealed class GithubConfig
     public string WebUrl()
     {
         var slug = Slug();
-        return string.IsNullOrEmpty(slug) ? "" : $"https://github.com/{slug}";
+        return string.IsNullOrEmpty(slug) ? "" : GitHost.WebUrl(ResolvedHost(), Owner, Repo);
     }
 
     public string RemoteUrl()
@@ -38,7 +54,7 @@ public sealed class GithubConfig
         if (!string.IsNullOrWhiteSpace(Url))
             return Url.Trim();
         var slug = Slug();
-        return string.IsNullOrEmpty(slug) ? "" : $"https://github.com/{slug}.git";
+        return string.IsNullOrEmpty(slug) ? "" : GitHost.GitUrl(ResolvedHost(), Owner, Repo);
     }
 
     public JsonObject AsObject() => new()
@@ -48,6 +64,8 @@ public sealed class GithubConfig
         ["remote"] = string.IsNullOrEmpty(Remote) ? "origin" : Remote,
         ["defaultBranch"] = string.IsNullOrEmpty(DefaultBranch) ? "main" : DefaultBranch,
         ["url"] = Url,
+        ["host"] = ResolvedHost(),
+        ["kind"] = ResolvedKind(),
     };
 
     public static GithubConfig FromMapping(JsonNode? raw)
@@ -55,13 +73,18 @@ public sealed class GithubConfig
         var obj = JsonUtil.Obj(raw);
         if (obj is null)
             return new GithubConfig();
+        var url = JsonUtil.Str(obj["url"]);
+        var host = JsonUtil.Pick(JsonUtil.Str(obj["host"]), GitHost.HostFromUrl(url), GitHost.PublicHostname);
+        var kind = JsonUtil.Pick(JsonUtil.Str(obj["kind"]), GitHost.InferKind(host, url));
         return new GithubConfig
         {
             Owner = JsonUtil.Str(obj["owner"]),
             Repo = JsonUtil.Str(obj["repo"]),
             Remote = JsonUtil.Pick(JsonUtil.Str(obj["remote"]), "origin"),
             DefaultBranch = JsonUtil.Pick(JsonUtil.Str(obj["defaultBranch"]), JsonUtil.Str(obj["default_branch"]), "main"),
-            Url = JsonUtil.Str(obj["url"]),
+            Url = url,
+            Host = GitHost.Normalize(host),
+            Kind = GitHost.NormalizeKind(kind),
         };
     }
 }
@@ -89,6 +112,8 @@ public static class GithubConfigResolver
             var (o, r) = ParseSlug(url);
             cfg.Owner = o;
             cfg.Repo = r;
+            cfg.Host = GitHost.HostFromUrl(url);
+            cfg.Kind = GitHost.InferKind(cfg.Host, url);
         }
         (code, var branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root, 60_000).ConfigureAwait(false);
         if (code == 0 && !string.IsNullOrEmpty(branch) && branch != "HEAD")
@@ -132,6 +157,8 @@ public static class GithubConfigResolver
             repo = JsonUtil.Pick(repo, r2);
         }
         var branch = JsonUtil.Pick(local.DefaultBranch, manifest.DefaultBranch, detected.DefaultBranch, "main");
+        var host = JsonUtil.Pick(local.Host, manifest.Host, GitHost.HostFromUrl(url), ConsoleSettingsStore.GetGitHost(), GitHost.PublicHostname);
+        var kind = JsonUtil.Pick(local.Kind, manifest.Kind, GitHost.InferKind(host, url));
         return new GithubConfig
         {
             Owner = owner,
@@ -139,6 +166,8 @@ public static class GithubConfigResolver
             Remote = remote,
             DefaultBranch = branch,
             Url = url,
+            Host = GitHost.Normalize(host),
+            Kind = GitHost.NormalizeKind(kind),
         };
     }
 
@@ -325,7 +354,7 @@ public static class GitHubService
         var (owner, repo) = GithubConfigResolver.ParseSlug(url);
         return string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo)
             ? url.Trim().TrimEnd('/').ToLowerInvariant()
-            : $"github.com/{owner}/{repo}".ToLowerInvariant();
+            : $"{GitHost.HostFromUrl(url)}/{owner}/{repo}".ToLowerInvariant();
     }
 
     private static async Task<bool> SameRemoteAsync(string root, string url)
@@ -572,11 +601,12 @@ public static class GitHubService
         return list;
     }
 
-    public static async Task<string> GhAuthStatusAsync(string root)
+    public static async Task<string> GhAuthStatusAsync(string root, string? host = null)
     {
         if (!GhAvailable())
             return "未安裝 gh CLI";
-        var (code, output) = await CliUtil.RunAsync("gh", ["auth", "status"], root, 30_000).ConfigureAwait(false);
+        var cfg = new GithubConfig { Host = GitHost.Normalize(host) };
+        var (code, output) = await GhCli.RunAsync(["auth", "status"], root, cfg, 30_000).ConfigureAwait(false);
         return string.IsNullOrEmpty(output) ? (code == 0 ? "已登入" : "未登入（請執行 gh auth login）") : output;
     }
 
@@ -640,7 +670,7 @@ public static class GitHubService
         }
         var workspace = dirtyN == 0 ? "乾淨" : dirtyN >= 0 ? $"{dirtyN} 筆未提交變更" : "未知";
         var workspaceTone = dirtyN == 0 ? "ok" : dirtyN > 0 ? "warn" : "info";
-        var gh = (await GhAuthStatusAsync(root).ConfigureAwait(false)).Split('\n')[0];
+        var gh = (await GhAuthStatusAsync(root, cfg.ResolvedHost()).ConfigureAwait(false)).Split('\n')[0];
         var slug = cfg.Slug();
         var remoteUrl = cfg.RemoteUrl();
         var complete = cfg.IsComplete();
@@ -788,13 +818,13 @@ public static class GitHubService
         if (!string.IsNullOrEmpty(cfg.Slug()))
             args.AddRange(["--repo", cfg.Slug()]);
         args.AddRange(["--base", string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch, "--fill"]);
-        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root).ConfigureAwait(false);
+        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg).ConfigureAwait(false);
         if (code != 0)
         {
             var viewArgs = new List<string> { "pr", "view", "--web" };
             if (!string.IsNullOrEmpty(cfg.Slug()))
                 viewArgs.AddRange(["--repo", cfg.Slug()]);
-            var (code2, out2) = await CliUtil.RunAsync("gh", viewArgs, catalog.Root, 60_000).ConfigureAwait(false);
+            var (code2, out2) = await GhCli.RunAsync(viewArgs, catalog.Root, cfg, 60_000).ConfigureAwait(false);
             if (code2 == 0)
                 return string.IsNullOrEmpty(out2) ? "已開啟既有 PR。" : out2;
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "建立 PR 失敗。" : output);
@@ -813,15 +843,18 @@ public static class GitHubService
             || text.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase))
             return text;
         text = text.Replace('\\', '/').Trim('/');
-        if (text.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase))
+        if (text.Contains('.', StringComparison.Ordinal) && text.Contains('/', StringComparison.Ordinal)
+            && !text.Contains("://", StringComparison.Ordinal)
+            && !text.StartsWith("git@", StringComparison.OrdinalIgnoreCase))
             text = "https://" + text;
         if (text.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
             || text.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
             var (owner, repo) = GithubConfigResolver.ParseSlug(text);
+            var host = GitHost.HostFromUrl(text);
             return string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo)
                 ? text
-                : $"https://github.com/{owner}/{repo}.git";
+                : GitHost.GitUrl(host, owner, repo);
         }
         var parts = text.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 2
@@ -829,7 +862,7 @@ public static class GitHubService
             && parts[1].IndexOfAny([':', '@']) < 0)
         {
             var repo = parts[1].EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? parts[1][..^4] : parts[1];
-            return $"https://github.com/{parts[0]}/{repo}.git";
+            return GitHost.GitUrl(ConsoleSettingsStore.GetGitHost(), parts[0], repo);
         }
         return "";
     }
@@ -894,7 +927,7 @@ public static class GitHubService
         };
         if (!string.IsNullOrEmpty(cfg.Slug()))
             args.AddRange(["--repo", cfg.Slug()]);
-        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 60_000).ConfigureAwait(false);
+        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
         if (code != 0)
             return ActionsSnapshot.Unavailable(string.IsNullOrEmpty(output) ? "無法列出 Actions。" : FirstLine(output));
         var runs = ActionsStatus.ParseRuns(output);
@@ -921,7 +954,7 @@ public static class GitHubService
         };
         if (!string.IsNullOrEmpty(cfg.Slug()))
             args.AddRange(["--repo", cfg.Slug()]);
-        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 60_000).ConfigureAwait(false);
+        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
         if (code != 0)
             return PrStatus.LooksLikeNoPr(output)
                 ? PullRequestStatus.None()
@@ -1064,7 +1097,7 @@ public static class GitHubService
             args.Add(asset);
         }
 
-        var (code, output) = await CliUtil.RunAsync("gh", args, catalog.Root, 300_000).ConfigureAwait(false);
+        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 300_000).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"建立 Release {tag} 失敗。" : output);
         return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
@@ -1079,7 +1112,7 @@ public static class GitHubService
         };
         if (!string.IsNullOrEmpty(cfg.Slug()))
             args.AddRange(["--repo", cfg.Slug()]);
-        var (code, stdout, stderr) = await CliUtil.RunCaptureAsync("gh", args, catalog.Root, 60_000).ConfigureAwait(false);
+        var (code, stdout, stderr) = await GhCli.RunCaptureAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(stderr) ? (string.IsNullOrEmpty(stdout) ? "無法列出 Releases。" : stdout) : stderr);
 

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using AiProject.Console.Core.Agents;
+using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Runtime;
@@ -294,6 +295,90 @@ public static class ConsoleSettingsStore
     }
 
     public static string SkippedUpdateTag() => JsonUtil.Str(Load()["skippedUpdateTag"]);
+
+    public static string GetGitHost()
+    {
+        var raw = JsonUtil.Str(Load()["gitHost"]);
+        return string.IsNullOrWhiteSpace(raw) ? GitHost.PublicHostname : GitHost.Normalize(raw);
+    }
+
+    public static void SetGitHost(string? host)
+    {
+        var data = Load();
+        var value = GitHost.Normalize(host);
+        data["gitHost"] = value;
+        RememberGitHost(value, data);
+        Save(data);
+    }
+
+    public static string GetGitKind()
+    {
+        var raw = JsonUtil.Str(Load()["gitKind"]);
+        return string.IsNullOrWhiteSpace(raw) ? GitHost.KindGithub : GitHost.NormalizeKind(raw);
+    }
+
+    public static void SetGitKind(string? kind)
+    {
+        var data = Load();
+        data["gitKind"] = GitHost.NormalizeKind(kind);
+        Save(data);
+    }
+
+    public static IReadOnlyList<string> RecentGitHosts()
+    {
+        var data = Load();
+        var list = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string host)
+        {
+            var n = GitHost.Normalize(host);
+            if (seen.Add(n))
+                list.Add(n);
+        }
+        Add(GetGitHost());
+        Add(GitHost.PublicHostname);
+        if (data["recentGitHosts"] is JsonArray arr)
+        {
+            foreach (var n in arr)
+                Add(JsonUtil.Str(n));
+        }
+        return list;
+    }
+
+    public static void RememberGitHost(string host, JsonObject? data = null)
+    {
+        var owned = data is null;
+        data ??= Load();
+        var n = GitHost.Normalize(host);
+        var recent = new JsonArray { n };
+        if (data["recentGitHosts"] is JsonArray arr)
+        {
+            foreach (var item in arr)
+            {
+                var s = JsonUtil.Str(item);
+                if (!string.IsNullOrEmpty(s) && !string.Equals(s, n, StringComparison.OrdinalIgnoreCase))
+                    recent.Add(s);
+            }
+        }
+        while (recent.Count > 8)
+            recent.RemoveAt(recent.Count - 1);
+        data["recentGitHosts"] = recent;
+        if (owned)
+            Save(data);
+    }
+
+    public static string GetWorkbench()
+    {
+        var raw = JsonUtil.Str(Load()["workbench"]);
+        return raw == "req" ? "req" : "dev";
+    }
+
+    public static void SetWorkbench(string? mode)
+    {
+        var data = Load();
+        data["workbench"] = mode == "req" ? "req" : "dev";
+        Save(data);
+    }
 
     public static void SetSkippedUpdateTag(string? tag)
     {

@@ -1,3 +1,4 @@
+using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.WorkHours;
 
 namespace AiProject.Console.Core.Tests;
@@ -9,8 +10,15 @@ public class WorkHoursTests
     static DateTimeOffset At(int month, int day, int hour, int minute = 0, int year = 2026) =>
         new(year, month, day, hour, minute, 0, Tz);
 
-    static WorkSession Session(string id, DateTimeOffset start, DateTimeOffset? end, DateTimeOffset? seen = null) =>
-        new(id, start, end, seen ?? end ?? start);
+    static WorkSession Session(
+        string id,
+        DateTimeOffset start,
+        DateTimeOffset? end,
+        DateTimeOffset? seen = null,
+        string projectRoot = "",
+        string projectName = "",
+        string githubSlug = "") =>
+        new(id, start, end, seen ?? end ?? start, "", "", projectRoot, projectName, githubSlug);
 
     [Fact]
     public void Format_BandWindows()
@@ -180,8 +188,9 @@ public class WorkHoursTests
         try
         {
             var store = new WorkHoursStore(path, () => clock);
-            var first = store.Start();
+            var first = store.Start(projectRoot: @"E:\proj\foo", projectName: "Foo", githubSlug: "acme/foo");
             Assert.Null(first.EndedAt);
+            Assert.Equal("Foo", first.ProjectName);
             clock = At(8, 26, 10, 0);
             store.Touch();
             Assert.Equal(TimeSpan.FromHours(1), store.CurrentDuration());
@@ -226,6 +235,8 @@ public class WorkHoursTests
     public void Person_GithubLoginClaimsLocalAndKeepsOtherAccountSeparate()
     {
         Assert.Equal("github:sjvann", WorkHoursPerson.GithubKey("Sjvann"));
+        Assert.Equal("github:sjvann", WorkHoursPerson.GithubKey("Sjvann", "github.com"));
+        Assert.Equal("github:ghe.corp.com:sjvann", WorkHoursPerson.GithubKey("Sjvann", "ghe.corp.com"));
         Assert.True(WorkHoursPerson.BelongsTo("", "github:sjvann"));
         Assert.True(WorkHoursPerson.BelongsTo("local:user", "github:sjvann"));
         Assert.False(WorkHoursPerson.BelongsTo("github:other", "github:sjvann"));
@@ -245,7 +256,7 @@ public class WorkHoursTests
             clock = At(8, 26, 18, 0);
             store.End();
 
-            store.Start("github:other", "@other");
+            store.Start("github:other", "@other", @"E:\proj\bar", "Bar");
             store.Identify(WorkHoursPerson.GithubKey("other"), "@other");
             var mine = Assert.Single(store.VisibleSessions);
             Assert.Equal("github:other", mine.PersonKey);
@@ -256,5 +267,257 @@ public class WorkHoursTests
             if (File.Exists(path))
                 File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void Store_StartWithoutProject_DoesNotCountAsTodayBillable()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ai-hours-" + Guid.NewGuid().ToString("N") + ".json");
+        var clock = At(8, 26, 9, 0);
+        try
+        {
+            var store = new WorkHoursStore(path, () => clock);
+            store.Start();
+            clock = At(8, 26, 11, 0);
+            store.Touch();
+            Assert.Equal(TimeSpan.FromHours(2), store.CurrentDuration());
+            Assert.Equal(TimeSpan.Zero, store.TodayDuration());
+            Assert.False(store.Current!.Value.HasProject);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Store_SwitchProject_SplitsSessionsAndKeepsSameProject()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ai-hours-" + Guid.NewGuid().ToString("N") + ".json");
+        var clock = At(8, 26, 9, 0);
+        try
+        {
+            var store = new WorkHoursStore(path, () => clock);
+            var first = store.SwitchProject(@"E:\proj\foo", "Foo");
+            clock = At(8, 26, 11, 0);
+            var again = store.SwitchProject(@"E:\proj\foo", "Foo", "acme/foo");
+            Assert.Equal(first.Id, again.Id);
+            Assert.Equal("acme/foo", again.GithubSlug);
+            Assert.Null(again.EndedAt);
+
+            clock = At(8, 26, 12, 0);
+            var second = store.SwitchProject(@"E:\proj\bar", "Bar");
+            Assert.NotEqual(first.Id, second.Id);
+            Assert.Equal("Bar", second.ProjectName);
+            var closed = store.Sessions.Single(s => s.Id == first.Id);
+            Assert.Equal(At(8, 26, 12, 0), closed.EndedAt);
+            Assert.Equal(TimeSpan.FromHours(3), closed.Duration(clock));
+            Assert.Equal(TimeSpan.FromHours(3), store.TodayDuration());
+
+            store.End();
+            Assert.Null(store.Current);
+            Assert.Equal(TimeSpan.FromHours(3), store.TodayDuration());
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Store_ReadsLegacySessionsWithoutProject()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ai-hours-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(path, """
+            {
+              "personKey": "local:user",
+              "personLabel": "user（本機）",
+              "sessions": [
+                {
+                  "id": "legacy",
+                  "startedAt": "2026-08-26T09:00:00+08:00",
+                  "lastSeenAt": "2026-08-26T12:00:00+08:00",
+                  "endedAt": "2026-08-26T12:00:00+08:00",
+                  "personKey": "local:user",
+                  "personLabel": "user（本機）"
+                }
+              ]
+            }
+            """);
+        try
+        {
+            var store = new WorkHoursStore(path, () => At(8, 26, 13, 0));
+            var session = Assert.Single(store.Sessions);
+            Assert.False(session.HasProject);
+            Assert.Equal(WorkHoursProject.UnallocatedName, session.DisplayName);
+            Assert.Equal(TimeSpan.Zero, store.TodayDuration());
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Aggregator_GroupsBySlugAndKeepsUnallocatedSeparate()
+    {
+        var now = At(8, 26, 18, 0);
+        var sessions = new[]
+        {
+            Session("a", At(8, 26, 9, 0), At(8, 26, 12, 0), projectRoot: @"E:\clone-a", projectName: "Foo", githubSlug: "acme/foo"),
+            Session("b", At(8, 26, 13, 0), At(8, 26, 15, 0), projectRoot: @"E:\clone-b", projectName: "Foo", githubSlug: "acme/foo"),
+            Session("c", At(8, 26, 16, 0), At(8, 26, 17, 0), projectRoot: @"E:\solo", projectName: "Solo"),
+            Session("legacy", At(8, 26, 8, 0), At(8, 26, 8, 30)),
+        };
+        var summaries = WorkHoursAggregator.SummarizeProjects(sessions, new DateOnly(2026, 8, 24), new DateOnly(2026, 8, 30), now);
+        Assert.Equal(3, summaries.Count);
+        Assert.Equal("gh:acme/foo", summaries[0].Key);
+        Assert.Equal(TimeSpan.FromHours(5), summaries[0].Duration);
+        Assert.Equal("Solo", summaries[1].Name);
+        Assert.Equal(TimeSpan.FromHours(1), summaries[1].Duration);
+        Assert.True(summaries[2].IsUnallocated);
+        Assert.Equal(TimeSpan.FromMinutes(30), summaries[2].Duration);
+
+        var filtered = WorkHoursAggregator.FilterProject(sessions, "gh:acme/foo");
+        var report = WorkHoursAggregator.Build(filtered, WorkHoursView.Week, new DateOnly(2026, 8, 26), now);
+        Assert.Equal(TimeSpan.FromHours(5), report.Total);
+
+        var sheet = WorkHoursAggregator.BuildTimesheet(
+            sessions, WorkHoursView.Week, new DateOnly(2026, 8, 26), now, "github:sjvann", "@sjvann");
+        Assert.Equal(TimeSpan.FromHours(6), sheet.BillableTotal);
+        Assert.Equal(TimeSpan.FromMinutes(30), sheet.UnallocatedTotal);
+        Assert.Equal(2, sheet.Projects.Count);
+        Assert.DoesNotContain(sheet.Projects, p => p.Key == WorkHoursProject.UnallocatedKey);
+    }
+
+    [Fact]
+    public void Contributions_FiltersIssuesAndPullsByRange()
+    {
+        const string issuesJson = """
+            [
+              {
+                "number": 12,
+                "title": "修好啟動",
+                "state": "CLOSED",
+                "url": "https://github.com/acme/foo/issues/12",
+                "closedAt": "2026-08-26T02:00:00Z",
+                "updatedAt": "2026-08-26T02:00:00Z",
+                "assignees": [{"login": "sjvann"}]
+              },
+              {
+                "number": 3,
+                "title": "上個月的",
+                "state": "CLOSED",
+                "url": "https://github.com/acme/foo/issues/3",
+                "closedAt": "2026-07-01T00:00:00Z",
+                "updatedAt": "2026-07-01T00:00:00Z",
+                "assignees": [{"login": "sjvann"}]
+              }
+            ]
+            """;
+        const string pullsJson = """
+            [
+              {
+                "number": 18,
+                "title": "Add auth",
+                "state": "MERGED",
+                "url": "https://github.com/acme/foo/pull/18",
+                "createdAt": "2026-08-20T00:00:00Z",
+                "mergedAt": "2026-08-26T04:00:00Z"
+              },
+              {
+                "number": 19,
+                "title": "WIP",
+                "state": "OPEN",
+                "url": "https://github.com/acme/foo/pull/19",
+                "createdAt": "2026-08-25T08:00:00Z",
+                "mergedAt": ""
+              },
+              {
+                "number": 2,
+                "title": "舊 PR",
+                "state": "MERGED",
+                "url": "https://github.com/acme/foo/pull/2",
+                "createdAt": "2026-07-01T00:00:00Z",
+                "mergedAt": "2026-07-02T00:00:00Z"
+              }
+            ]
+            """;
+        var start = new DateOnly(2026, 8, 24);
+        var end = new DateOnly(2026, 8, 30);
+        var issues = WorkHoursContributions.FromClosedIssues(
+            GitHubIssues.ParseIssues(issuesJson), start, end, "gh:acme/foo", "Foo", "acme/foo");
+        Assert.Equal(12, Assert.Single(issues).Number);
+        Assert.Equal("修好啟動", issues[0].Title);
+
+        var pulls = WorkHoursContributions.ParsePulls(pullsJson);
+        Assert.Equal(3, pulls.Count);
+        var items = WorkHoursContributions.FromPulls(pulls, start, end, "gh:acme/foo", "Foo", "acme/foo");
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, i => i.Number == 18 && i.Kind == "pr");
+        Assert.Contains(items, i => i.Number == 19 && i.Kind == "pr");
+        Assert.DoesNotContain(items, i => i.Number == 2);
+    }
+
+    [Fact]
+    public void Export_WritesMarkdownAndCsvWithFixedHeaders()
+    {
+        var now = At(8, 26, 18, 0);
+        var sessions = new[]
+        {
+            Session("a", At(8, 26, 9, 0), At(8, 26, 12, 20), projectRoot: @"E:\proj\foo", projectName: "Foo", githubSlug: "acme/foo"),
+        };
+        var sheet = WorkHoursAggregator.BuildTimesheet(
+            sessions, WorkHoursView.Week, new DateOnly(2026, 8, 26), now, "github:sjvann", "@sjvann");
+        var item = new TimesheetItem(
+            "issue", 12, "修好啟動", "https://github.com/acme/foo/issues/12", "CLOSED",
+            At(8, 26, 10, 0), "gh:acme/foo", "Foo", "acme/foo");
+        sheet = sheet.WithContributions([item]);
+
+        Assert.Equal("timesheet-20260824-20260830-sjvann", WorkHoursExport.FilePrefix(sheet.RangeStart, sheet.RangeEnd, sheet.PersonKey));
+        var md = WorkHoursExport.Markdown(sheet);
+        Assert.Contains("# 工時報告單", md);
+        Assert.Contains("@sjvann", md);
+        Assert.Contains("3 時 20 分", md);
+        Assert.Contains("#12 修好啟動", md);
+        Assert.Contains("Foo（acme/foo）", md);
+
+        var hours = WorkHoursExport.HoursCsv(sheet);
+        Assert.StartsWith(WorkHoursExport.HoursHeader, hours);
+        Assert.Contains("github:sjvann,@sjvann,Foo,", hours);
+        Assert.Contains("acme/foo,2026-08-26,3,20,1", hours);
+
+        var items = WorkHoursExport.ItemsCsv(sheet);
+        Assert.StartsWith(WorkHoursExport.ItemsHeader, items);
+        Assert.Contains("issue,12,修好啟動,", items);
+
+        var folder = Path.Combine(Path.GetTempPath(), "ai-hours-export-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var files = WorkHoursExport.Write(folder, sheet);
+            Assert.Equal(3, files.Count);
+            Assert.All(files, path => Assert.True(File.Exists(path)));
+            var bom = File.ReadAllBytes(files[1]);
+            Assert.True(bom.Length >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF);
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+                Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Project_FileSlugAndKey()
+    {
+        Assert.Equal("sjvann", WorkHoursProject.FileSlug("github:Sjvann"));
+        Assert.Equal("local-user", WorkHoursProject.FileSlug("local:user"));
+        Assert.Equal("gh:acme/foo", WorkHoursProject.Key("Acme/Foo", @"E:\other"));
+        Assert.StartsWith("path:", WorkHoursProject.Key("", @"E:\solo"));
+        Assert.Equal(WorkHoursProject.UnallocatedKey, WorkHoursProject.Key("", ""));
+        Assert.Equal("未掛專案", WorkHoursProject.DisplayName("", ""));
     }
 }

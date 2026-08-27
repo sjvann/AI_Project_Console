@@ -15,6 +15,13 @@ public class GitHubTasksTests
         Assert.False(new GithubConfig { Url = "https://gitlab.com/acme/app.git" }.LooksGithubHosted());
     }
 
+    [Fact]
+    public void FindIssueNumbers_FromPrBody()
+    {
+        var found = GitHubLifecycle.FindIssueNumbers("Closes #12 and #15");
+        Assert.Equal([12, 15], found);
+    }
+
     [Theory]
     [InlineData("sjvann", "sjvann")]
     [InlineData("\"octocat\"", "octocat")]

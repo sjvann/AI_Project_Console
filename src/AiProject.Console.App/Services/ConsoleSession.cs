@@ -19,7 +19,7 @@ using Photino.NET;
 
 namespace AiProject.Console.App.Services;
 
-public sealed class ConsoleSession : IDisposable
+public sealed partial class ConsoleSession : IDisposable
 {
     private readonly NativeUi _native;
     private readonly CancellationTokenSource _cts = new();
@@ -32,6 +32,7 @@ public sealed class ConsoleSession : IDisposable
     private int _ciWatchGen;
     private DocsServeHandle? _docsServe;
     private readonly WorkHoursStore _workHours = new();
+    private int _timesheetGen;
 
     public ConsoleSession(NativeUi native)
     {
@@ -47,8 +48,10 @@ public sealed class ConsoleSession : IDisposable
         AskBaseUrl = ConsoleSettingsStore.GetAskBaseUrl();
         AskApiKey = ConsoleSettingsStore.GetAskApiKey();
         AskModel = ConsoleSettingsStore.GetAskModel();
+        Workbench = ConsoleSettingsStore.GetWorkbench();
+        GitHostName = ConsoleSettingsStore.GetGitHost();
+        GitKind = ConsoleSettingsStore.GetGitKind();
         RefreshAgentDetect();
-        _workHours.Start();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
         _ = RefreshGithubAuthAsync();
@@ -112,16 +115,47 @@ public sealed class ConsoleSession : IDisposable
     public string LeftTab { get; set; } = "svc";
     public string RightTab { get; set; } = "log";
     public string PrefsTab { get; set; } = "general";
+    public string Workbench { get; private set; } = "dev";
+    public bool IsReqWorkbench => Workbench == "req";
+    public string GitHostName { get; set; } = GitHost.PublicHostname;
+    public string GitKind { get; set; } = GitHost.KindGithub;
+    public IReadOnlyList<string> RecentGitHosts => ConsoleSettingsStore.RecentGitHosts();
+    public string ActiveGitHost =>
+        !string.IsNullOrWhiteSpace(GithubDraft.Host) ? GitHost.Normalize(GithubDraft.Host)
+        : GitHost.Normalize(GitHostName);
+    public string GithubAccountText => GithubAccount.Display();
+    public bool GitIssuesReady => GitHost.IssuesReady(GitKind);
     public WorkHoursView WorkHoursView { get; private set; } = WorkHoursView.Week;
     public DateOnly WorkHoursAnchor { get; private set; } = DateOnly.FromDateTime(DateTime.Now);
+    public string? WorkHoursProjectFilter { get; private set; }
+    public string WorkHoursPane { get; private set; } = "dash";
+    public WorkTimesheet? WorkTimesheet { get; private set; }
+    public bool WorkHoursTimesheetBusy { get; private set; }
+    public string WorkHoursTimesheetHint { get; private set; } = "";
+    public bool WorkHoursExporting { get; private set; }
     public TimeSpan SessionWorkDuration => _workHours.CurrentDuration();
     public TimeSpan TodayWorkDuration => _workHours.TodayDuration();
     public string SessionWorkText => WorkHoursFormat.Compact(SessionWorkDuration);
     public string TodayWorkText => WorkHoursFormat.Duration(TodayWorkDuration);
     public string WorkHoursTone => WorkHoursFormat.Tone(TodayWorkDuration);
-    public WorkHoursReport WorkHoursReport =>
-        WorkHoursAggregator.Build(_workHours.VisibleSessions, WorkHoursView, WorkHoursAnchor, DateTimeOffset.Now);
+    public IReadOnlyList<WorkHoursProjectSummary> WorkHoursProjects
+    {
+        get
+        {
+            var (start, end) = WorkHoursAggregator.Range(WorkHoursView, WorkHoursAnchor);
+            return WorkHoursAggregator.SummarizeProjects(_workHours.VisibleSessions, start, end, DateTimeOffset.Now);
+        }
+    }
+    public WorkHoursReport WorkHoursReport
+    {
+        get
+        {
+            var sessions = WorkHoursAggregator.FilterProject(_workHours.VisibleSessions, WorkHoursProjectFilter);
+            return WorkHoursAggregator.Build(sessions, WorkHoursView, WorkHoursAnchor, DateTimeOffset.Now);
+        }
+    }
     public string WorkHoursPersonLabel => _workHours.PersonLabel;
+    public string WorkHoursPersonKey => _workHours.PersonKey;
     public string? SelectedServiceId { get; private set; }
     public Dictionary<string, bool> Health { get; } = new();
     public IReadOnlyList<BuildState> Projects { get; private set; } = [];
@@ -405,6 +439,8 @@ public sealed class ConsoleSession : IDisposable
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         TestBeforePush = ConsoleSettingsStore.GetTestBeforePush();
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
+        GitHostName = ConsoleSettingsStore.GetGitHost();
+        GitKind = ConsoleSettingsStore.GetGitKind();
         McpReadOnly = ConsoleSettingsStore.GetMcpReadOnly();
         McpAllow = ConsoleSettingsStore.GetMcpAllow();
         McpDeny = ConsoleSettingsStore.GetMcpDeny();
@@ -423,17 +459,44 @@ public sealed class ConsoleSession : IDisposable
         Notify();
     }
 
+    public void SetWorkbench(string mode)
+    {
+        Workbench = mode == "req" ? "req" : "dev";
+        ConsoleSettingsStore.SetWorkbench(Workbench);
+        Notify();
+        if (IsReqWorkbench)
+            _ = RefreshIntakeAsync();
+    }
+
     public void OpenWorkHours(WorkHoursView? view = null)
     {
         WorkHoursView = view ?? WorkHoursView.Week;
         WorkHoursAnchor = DateOnly.FromDateTime(DateTime.Now);
+        WorkHoursProjectFilter = null;
+        WorkHoursPane = "dash";
         Dialog = "hours";
         Notify();
+        _ = RefreshWorkTimesheetAsync();
     }
 
     public void SetWorkHoursView(WorkHoursView view)
     {
         WorkHoursView = view;
+        Notify();
+        _ = RefreshWorkTimesheetAsync();
+    }
+
+    public void SetWorkHoursPane(string pane)
+    {
+        WorkHoursPane = pane == "sheet" ? "sheet" : "dash";
+        Notify();
+        if (WorkHoursPane == "sheet")
+            _ = RefreshWorkTimesheetAsync();
+    }
+
+    public void SetWorkHoursProjectFilter(string? key)
+    {
+        WorkHoursProjectFilter = string.IsNullOrEmpty(key) ? null : key;
         Notify();
     }
 
@@ -445,6 +508,7 @@ public sealed class ConsoleSession : IDisposable
             return;
         WorkHoursAnchor = WorkHoursAggregator.Shift(WorkHoursView, WorkHoursAnchor, steps);
         Notify();
+        _ = RefreshWorkTimesheetAsync();
     }
 
     public void OpenWorkHoursBucket(DateOnly start)
@@ -453,9 +517,112 @@ public sealed class ConsoleSession : IDisposable
             WorkHoursView = WorkHoursView.Month;
         WorkHoursAnchor = start;
         Notify();
+        _ = RefreshWorkTimesheetAsync();
     }
 
     public void CloseWorkSession() => _workHours.End();
+
+    public async Task RefreshWorkTimesheetAsync()
+    {
+        var gen = ++_timesheetGen;
+        var now = DateTimeOffset.Now;
+        var sheet = WorkHoursAggregator.BuildTimesheet(
+            _workHours.VisibleSessions,
+            WorkHoursView,
+            WorkHoursAnchor,
+            now,
+            _workHours.PersonKey,
+            _workHours.PersonLabel);
+        WorkTimesheet = sheet;
+        WorkHoursTimesheetHint = "";
+        WorkHoursTimesheetBusy = true;
+        Notify();
+        try
+        {
+            var items = new List<TimesheetItem>();
+            var notes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var project in sheet.Projects)
+            {
+                if (gen != _timesheetGen)
+                    return;
+                if (!project.HasGithub)
+                {
+                    notes[project.Key] = "未接 GitHub";
+                    continue;
+                }
+                try
+                {
+                    var found = await WorkHoursContributions.LoadAsync(
+                        project.Key,
+                        project.Name,
+                        project.GithubSlug,
+                        sheet.RangeStart,
+                        sheet.RangeEnd,
+                        project.ProjectRoot,
+                        _cts.Token,
+                        ActiveGitHost).ConfigureAwait(false);
+                    items.AddRange(found);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    notes[project.Key] = FirstLine(ex.Message);
+                }
+            }
+            if (gen != _timesheetGen)
+                return;
+            WorkTimesheet = sheet.WithContributions(items, notes);
+        }
+        finally
+        {
+            if (gen == _timesheetGen)
+            {
+                WorkHoursTimesheetBusy = false;
+                Notify();
+            }
+        }
+    }
+
+    public async Task ExportWorkTimesheetAsync()
+    {
+        if (WorkHoursExporting)
+            return;
+        if (WorkTimesheet is null || WorkHoursTimesheetBusy)
+            await RefreshWorkTimesheetAsync().ConfigureAwait(false);
+        var sheet = WorkTimesheet;
+        if (sheet is null)
+            return;
+        if (WorkHoursPerson.IsLocal(_workHours.PersonKey))
+        {
+            if (!_native.Confirm(
+                "尚未用 GitHub 歸戶",
+                "目前是本機使用者身分。登入 GitHub 後 person_key 才穩定，PM 才好把多人檔案對到同一人。\n\n仍要匯出？"))
+                return;
+        }
+        var folder = await _native.PickFolderAsync("選擇工時單匯出資料夾").ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(folder))
+            return;
+        WorkHoursExporting = true;
+        Notify();
+        try
+        {
+            var files = WorkHoursExport.Write(folder, sheet);
+            JobText = "已匯出工時單";
+            _native.Info("已匯出工時單", "已寫入：\n" + string.Join("\n", files.Select(Path.GetFileName)));
+        }
+        catch (Exception ex)
+        {
+            _native.Error("匯出工時單失敗", ex.Message);
+        }
+        finally
+        {
+            WorkHoursExporting = false;
+            Notify();
+        }
+    }
 
     public void OnAgentProviderChanged(string id)
     {
@@ -483,6 +650,8 @@ public sealed class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetRestoreLastProject(RestoreLastProject);
         ConsoleSettingsStore.SetTestBeforePush(TestBeforePush);
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
+        ConsoleSettingsStore.SetGitHost(GitHostName);
+        ConsoleSettingsStore.SetGitKind(GitKind);
         ConsoleSettingsStore.SetMcpReadOnly(McpReadOnly);
         ConsoleSettingsStore.SetMcpAllow(McpAllow);
         ConsoleSettingsStore.SetMcpDeny(McpDeny);
@@ -988,6 +1157,7 @@ public sealed class ConsoleSession : IDisposable
             ReloadLog();
             LoadAudit(reloadPolicy: true);
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
+            _workHours.SwitchProject(catalog.Root, catalog.Name);
             RefreshDocs();
             Notify();
             _ = RefreshBuildStatesAsync();
@@ -1034,6 +1204,7 @@ public sealed class ConsoleSession : IDisposable
     {
         try
         {
+            await StampWorkHoursProjectAsync().ConfigureAwait(false);
             await RefreshGitStatusAsync().ConfigureAwait(false);
             await RefreshGithubAuthAsync().ConfigureAwait(false);
             var catalog = Catalog;
@@ -1055,6 +1226,7 @@ public sealed class ConsoleSession : IDisposable
                 await RefreshActionsAsync().ConfigureAwait(false);
                 await RefreshPullRequestAsync().ConfigureAwait(false);
             }
+            await RefreshIntakeAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1139,7 +1311,7 @@ public sealed class ConsoleSession : IDisposable
     {
         try
         {
-            GithubAccount = await GitHubAuth.CurrentAsync(Catalog?.Root, _cts.Token).ConfigureAwait(false);
+            GithubAccount = await GitHubAuth.CurrentAsync(Catalog?.Root, ActiveGitHost, _cts.Token).ConfigureAwait(false);
         }
         catch
         {
@@ -1153,7 +1325,7 @@ public sealed class ConsoleSession : IDisposable
     {
         if (!GithubLoggedIn)
             return;
-        _workHours.Identify(WorkHoursPerson.GithubKey(GithubAccount.Login), GithubAccount.Display());
+        _workHours.Identify(WorkHoursPerson.GithubKey(GithubAccount.Login, GithubAccount.Host), GithubAccount.Display());
     }
 
     public async Task LoginGithubAsync()
@@ -1176,7 +1348,10 @@ public sealed class ConsoleSession : IDisposable
         Notify();
         try
         {
-            var (ok, message) = await GitHubAuth.LoginWebAsync(Catalog?.Root, _githubLoginCts.Token).ConfigureAwait(false);
+            ConsoleSettingsStore.SetGitHost(ActiveGitHost);
+            ConsoleSettingsStore.SetGitKind(GitKind);
+            GitHostName = ActiveGitHost;
+            var (ok, message) = await GitHubAuth.LoginWebAsync(Catalog?.Root, ActiveGitHost, _githubLoginCts.Token).ConfigureAwait(false);
             await RefreshGithubAuthAsync().ConfigureAwait(false);
             if (ok && GithubLoggedIn)
             {
@@ -1194,6 +1369,7 @@ public sealed class ConsoleSession : IDisposable
                     await RefreshActionsAsync().ConfigureAwait(false);
                     await RefreshPullRequestAsync().ConfigureAwait(false);
                 }
+                await RefreshIntakeAsync().ConfigureAwait(false);
                 Notify();
                 return;
             }
@@ -1231,7 +1407,7 @@ public sealed class ConsoleSession : IDisposable
         Notify();
         try
         {
-            var (ok, message) = await GitHubAuth.LogoutAsync(Catalog?.Root, _cts.Token).ConfigureAwait(false);
+            var (ok, message) = await GitHubAuth.LogoutAsync(Catalog?.Root, ActiveGitHost, _cts.Token).ConfigureAwait(false);
             await RefreshGithubAuthAsync().ConfigureAwait(false);
             ClearIssueLists();
             if (!ok && GithubLoggedIn)
@@ -1306,6 +1482,20 @@ public sealed class ConsoleSession : IDisposable
             var (mine, open) = GitHubIssues.Split(all, GithubAccount.Login);
             AssignedIssues = mine;
             UnassignedIssues = open;
+            try
+            {
+                var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+                var traces = await GitHubLifecycle.LoadTracesAsync(
+                    Catalog.Root, cfg, mine.Select(i => i.Number), _cts.Token).ConfigureAwait(false);
+                var map = traces.ToDictionary(t => t.Number);
+                AssignedIssues = mine.Select(i => map.TryGetValue(i.Number, out var tr)
+                    ? i with { CiTone = tr.CiTone, CiHint = tr.CiHint, PrUrl = tr.PrUrl, PrState = tr.PrState }
+                    : i).ToList();
+            }
+            catch
+            {
+                // 任務清單已就緒；CI／PR 燈號可下次再補
+            }
             if (!_unassignedCollapseUserSet)
                 UnassignedCollapsed = mine.Count > 0;
             IssuesHint = mine.Count == 0 && open.Count == 0
@@ -2569,6 +2759,7 @@ public sealed class ConsoleSession : IDisposable
             Assets: [.. ReleaseAssets]);
         CloseDialog();
         await RunJobAsync("發行 Release…", async () => await GitHubService.CreateReleaseAsync(Catalog, req)).ConfigureAwait(false);
+        StampReleaseOnIntake(tag);
     }
 
     public async Task OpenCommitDialogAsync()
@@ -3806,8 +3997,26 @@ public sealed class ConsoleSession : IDisposable
         }
     }
 
+    private async Task StampWorkHoursProjectAsync()
+    {
+        if (Catalog is null)
+            return;
+        try
+        {
+            var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+            var slug = cfg.LooksGithubHosted() ? cfg.Slug() : "";
+            if (!string.IsNullOrEmpty(slug))
+                _workHours.BindGithubSlug(Catalog.Root, slug);
+        }
+        catch
+        {
+            // 沒有遠端不擋計時
+        }
+    }
+
     private void ResetToStartup()
     {
+        _workHours.End();
         Catalog = null;
         Runtime = null;
         SelectedServiceId = null;
@@ -3889,6 +4098,16 @@ public sealed class ConsoleSession : IDisposable
         _pendingOpenCursor = false;
         GithubAuthBusy = false;
         GithubAuthHint = "";
+        IntakeDoc = new();
+        SelectedIntakeId = null;
+        IntakeHint = "";
+        IntakeBusy = false;
+        Collaborators = [];
+        GovernanceIssues = [];
+        HoursInbox = [];
+        HoursInboxHint = "";
+        ReviewerDraft = "";
+        DesignDocChoices = [];
         ClearIssueLists();
         ClearDocsState();
     }
