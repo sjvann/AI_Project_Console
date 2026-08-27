@@ -26,21 +26,23 @@ window.aiConsole = {
         const el = document.getElementById(id);
         if (el) el.scrollTop = el.scrollHeight;
     },
-    initSplitter: function (splitId) {
+    initSplitter: function (splitId, opts) {
         const split = document.getElementById(splitId);
         const gutter = split?.querySelector(".split-gutter");
         if (!split || !gutter || split.dataset.splitReady) return;
         split.dataset.splitReady = "1";
 
-        const key = "aiConsole.splitLeftPct";
-        const min = 180;
+        opts = typeof opts === "string" ? { storageKey: opts } : (opts || {});
+        const key = opts.storageKey || "aiConsole.splitLeftPct";
+        const min = Number(opts.minLeft) > 0 ? Number(opts.minLeft) : 180;
+        const minRight = Number(opts.minRight) > 0 ? Number(opts.minRight) : 180;
         let lastPct = null;
         let dragging = false;
 
         function applyPct(pct) {
             const w = split.clientWidth;
             const gutterW = gutter.offsetWidth;
-            const max = Math.max(min, w - gutterW - min);
+            const max = Math.max(min, w - gutterW - minRight);
             const left = Math.max(min, Math.min(max, (w * pct) / 100));
             split.style.setProperty("--split-left", left + "px");
             split.classList.add("is-sized");
@@ -63,7 +65,7 @@ window.aiConsole = {
             if (!dragging) return;
             const rect = split.getBoundingClientRect();
             const gutterW = gutter.offsetWidth;
-            const max = Math.max(min, rect.width - gutterW - min);
+            const max = Math.max(min, rect.width - gutterW - minRight);
             const left = Math.max(min, Math.min(max, e.clientX - rect.left));
             split.style.setProperty("--split-left", left + "px");
             split.classList.add("is-sized");

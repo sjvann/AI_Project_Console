@@ -27,6 +27,8 @@ public sealed partial class ConsoleSession : IDisposable
     private CancellationTokenSource? _githubLoginCts;
     private bool _pendingOpenCursor;
     private bool _unassignedCollapseUserSet;
+    private bool _autoSyncSkippedDirty;
+    private const string AutoSyncSkippedDirtyText = "工作區不乾淨，已略過自動同步";
     private long _logOffset;
     private DateTimeOffset? _ciWatchUntil;
     private int _ciWatchGen;
@@ -1266,15 +1268,18 @@ public sealed partial class ConsoleSession : IDisposable
         Notify();
         try
         {
-            var dirty = await GitHubService.DirtyCountAsync(Catalog.Root).ConfigureAwait(false);
+            await RefreshGitStatusAsync().ConfigureAwait(false);
+            var dirty = GitBrief?.DirtyCount ?? 0;
             if (dirty > 0)
             {
-                JobText = "工作區不乾淨，已略過自動同步";
+                _autoSyncSkippedDirty = true;
+                JobText = AutoSyncSkippedDirtyText;
                 _native.Warn(
                     "無法自動同步",
                     $"工作區有 {dirty} 筆未提交變更。請先提交或還原後再同步，避免本機與遠端不一致。");
                 return;
             }
+            _autoSyncSkippedDirty = false;
             await GitHubService.SyncFromRemoteAsync(Catalog).ConfigureAwait(false);
             JobText = "已從遠端同步";
         }
@@ -1872,6 +1877,7 @@ public sealed partial class ConsoleSession : IDisposable
         DoctorCopied = false;
         Dialog = "doctor";
         Notify();
+        _ = RefreshGitStatusThenNotifyAsync();
     }
 
     public async Task CopyDoctorAsync()
@@ -3969,7 +3975,8 @@ public sealed partial class ConsoleSession : IDisposable
                         Health[kv.Key] = kv.Value;
                     UpdateReady();
                 }
-                if (healthEvery % 8 == 0 && Catalog is not null)
+                var gitEvery = _autoSyncSkippedDirty ? 2 : 8;
+                if (healthEvery % gitEvery == 0 && Catalog is not null)
                     await RefreshGitStatusAsync().ConfigureAwait(false);
                 if (healthEvery % 5 == 0 && Catalog is not null)
                     LoadAudit(reloadPolicy: false);
@@ -4030,6 +4037,7 @@ public sealed partial class ConsoleSession : IDisposable
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
+        _autoSyncSkippedDirty = false;
         Actions = null;
         PullRequest = null;
         _ciWatchUntil = null;
@@ -4127,6 +4135,12 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
+    private async Task RefreshGitStatusThenNotifyAsync()
+    {
+        await RefreshGitStatusAsync().ConfigureAwait(false);
+        Notify();
+    }
+
     private async Task RefreshGitStatusAsync()
     {
         var root = Catalog?.Root;
@@ -4134,6 +4148,7 @@ public sealed partial class ConsoleSession : IDisposable
         {
             GitBrief = null;
             GitStatusText = "";
+            ReconcileAutoSyncSkipMessage();
             return;
         }
         try
@@ -4141,12 +4156,24 @@ public sealed partial class ConsoleSession : IDisposable
             var brief = await GitHubService.TryBriefStatusAsync(root).ConfigureAwait(false);
             GitBrief = brief;
             GitStatusText = brief?.Format() ?? "";
+            ReconcileAutoSyncSkipMessage();
         }
         catch
         {
             GitBrief = null;
             GitStatusText = "";
         }
+    }
+
+    private void ReconcileAutoSyncSkipMessage()
+    {
+        if (!_autoSyncSkippedDirty && JobText != AutoSyncSkippedDirtyText)
+            return;
+        if (GitBrief is { DirtyCount: > 0 })
+            return;
+        _autoSyncSkippedDirty = false;
+        if (!JobBusy && JobText == AutoSyncSkippedDirtyText)
+            JobText = "工作區已乾淨";
     }
 
     private void ApplyStartResults(IReadOnlyList<(string Id, string Label, string? Error)> results)

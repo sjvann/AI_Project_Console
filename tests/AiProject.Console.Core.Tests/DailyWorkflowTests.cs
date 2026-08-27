@@ -68,15 +68,28 @@ public class DailyWorkflowTests
     }
 
     [Fact]
-    public void ParsePorcelain_TrimmedStdoutShiftsUnstagedFirstPath()
+    public void ParsePorcelain_TrimmedStdoutDropsUnstagedFirstPath()
     {
         const string porcelain = " M alpha.txt\n?? extra.txt";
         var intact = GitHubService.ParsePorcelain(porcelain);
         Assert.Equal("alpha.txt", intact[0].Path);
         Assert.Equal(" M", intact[0].Code);
 
-        var shifted = GitHubService.ParsePorcelain(porcelain.Trim());
-        Assert.Equal("lpha.txt", shifted[0].Path);
+        var dropped = GitHubService.ParsePorcelain(porcelain.Trim());
+        var only = Assert.Single(dropped);
+        Assert.Equal("extra.txt", only.Path);
+    }
+
+    [Fact]
+    public void ParsePorcelain_IgnoresGitWarnings()
+    {
+        var changes = GitHubService.ParsePorcelain("""
+            warning: in the working copy of 'foo.cs', LF will be replaced by CRLF the next time Git touches it
+             M foo.cs
+            """);
+        var only = Assert.Single(changes);
+        Assert.Equal("foo.cs", only.Path);
+        Assert.Equal(" M", only.Code);
     }
 
     [Fact]
@@ -100,6 +113,7 @@ public class DailyWorkflowTests
             Assert.Equal("alpha.txt", only.Path);
             Assert.Equal(" M", only.Code);
             Assert.Equal("修改  alpha.txt", only.Display());
+            Assert.Equal(1, await GitHubService.DirtyCountAsync(root));
         }
         finally
         {

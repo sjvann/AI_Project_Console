@@ -407,6 +407,7 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .hours-hourly-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
 .hours-list-wrap { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
 .hours-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-shrink: 0; }
+.hours-list-head .btn-row { margin-top: 0; }
 .hours-list-title { margin: 0; font-size: 13px; }
 .hours-list-empty { margin: 0; }
 .hours-days { list-style: none; margin: 0; padding: 0; flex: 1 1 0; min-height: 0; border: 1px solid var(--border); border-radius: 6px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 12px; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--accent) var(--row-alt); }
@@ -435,11 +436,27 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
     .hours-hourly { height: 40px; }
 }
 .workbench-switch { margin: 0; }
-.intake-shell { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 12px; }
+.intake-shell { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 280px) 8px minmax(280px, 1fr); }
+.intake-shell.is-sized { grid-template-columns: minmax(200px, var(--split-left)) 8px minmax(280px, 1fr); }
+.intake-shell.dragging, .intake-shell.dragging * { cursor: col-resize; user-select: none; }
 .intake-side { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .intake-filters { display: flex; gap: 6px; }
 .intake-list { display: flex; flex-direction: column; gap: 4px; }
+.intake-card { display: flex; align-items: stretch; gap: 4px; }
+.intake-card-main { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: inherit; font: inherit; cursor: pointer; }
+.intake-card-main:hover { background: var(--sel); }
+.intake-card.is-on .intake-card-main { border-color: var(--accent); background: var(--sel); }
+.intake-card-main em { font-style: normal; color: var(--muted); font-size: 12px; margin-left: 8px; }
+.intake-card-del { appearance: none; flex: none; align-self: center; background: none; border: 1px solid transparent; color: var(--danger); font: 600 11px "Segoe UI", "Noto Sans TC", sans-serif; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.intake-card-del:hover { border-color: var(--danger); background: var(--fail-row); }
 .intake-main { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.intake-visuals { display: flex; flex-direction: column; gap: 8px; }
+.intake-visual { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.intake-visual img { width: 96px; height: 72px; object-fit: cover; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.intake-visual-miss { width: 96px; min-height: 72px; font-size: 11px; color: var(--muted); word-break: break-all; }
+.intake-visual textarea { min-height: 72px; }
+.intake-hold { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.intake-hold-note { width: min(280px, 100%); }
 .intake-rail { display: flex; flex-wrap: wrap; gap: 4px; }
 .intake-stage { font: 600 11px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--muted); padding: 3px 8px; border: 1px solid var(--border); border-radius: 999px; }
 .intake-stage.is-on { color: var(--text); border-color: var(--accent); }
@@ -449,6 +466,8 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .intake-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .intake-reviewer { width: 140px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); }
 @media (max-width: 900px) {
-    .intake-shell { grid-template-columns: 1fr; }
+    .intake-shell, .intake-shell.is-sized { grid-template-columns: 1fr; }
+    .intake-shell .split-gutter { display: none; }
     .intake-grid { grid-template-columns: 1fr; }
+    .intake-visual { grid-template-columns: 96px minmax(0, 1fr); }
 }

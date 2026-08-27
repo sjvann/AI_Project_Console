@@ -1,0 +1,39 @@
+@using AiProject.Console.Core.Intake
+@inject ConsoleSession S
+
+@if (Items.Count == 0)
+{
+    <p class="hint">尚未加入圖片。</p>
+}
+else
+{
+    <div class="intake-visuals">
+        @foreach (var visual in Items)
+        {
+            var src = S.IntakeVisualSrc(visual.Path);
+            <div class="intake-visual">
+                @if (!string.IsNullOrEmpty(src))
+                {
+                    <img src="@src" alt="" />
+                }
+                else
+                {
+                    <span class="intake-visual-miss">@visual.Path</span>
+                }
+                <textarea @bind="visual.Note" @bind:after="S.PersistIntake" placeholder="@(NoteRequired ? "這張要改什麼（必填）" : "可選說明")"></textarea>
+                <button type="button" class="btn-sec btn-compact" @onclick="@(() => S.RemoveIntakeVisual(Kind, visual.Path))">移除</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string Kind { get; set; } = "sketch";
+
+    [Parameter, EditorRequired]
+    public List<IntakeVisual> Items { get; set; } = [];
+
+    [Parameter]
+    public bool NoteRequired { get; set; }
+}

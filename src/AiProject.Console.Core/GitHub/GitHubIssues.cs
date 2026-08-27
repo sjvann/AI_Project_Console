@@ -199,17 +199,49 @@ public static class GitHubIssues
         return ParseCreated(output, cfg);
     }
 
-    public static async Task CloseAsync(
+    public static async Task CommentAsync(
         string cwd,
         GithubConfig cfg,
         int number,
+        string body,
         CancellationToken ct = default)
     {
         if (number <= 0)
             throw new InvalidOperationException("Issue 編號無效。");
-        var args = new List<string> { "issue", "close", number.ToString() };
+        if (string.IsNullOrWhiteSpace(body))
+            throw new InvalidOperationException("留言不能空白。");
+        if (!GitHubService.GhAvailable())
+            throw new InvalidOperationException("尚未安裝 GitHub CLI（gh）。");
+        var args = new List<string> { "issue", "comment", number.ToString(), "--body", body.Trim() };
         GhCli.AddRepo(args, cfg);
         var (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法在 Issue #{number} 留言。" : output);
+    }
+
+    public static async Task CloseAsync(
+        string cwd,
+        GithubConfig cfg,
+        int number,
+        CancellationToken ct = default,
+        string? reason = null)
+    {
+        if (number <= 0)
+            throw new InvalidOperationException("Issue 編號無效。");
+        var args = new List<string> { "issue", "close", number.ToString() };
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            args.Add("--reason");
+            args.Add(reason.Trim());
+        }
+        GhCli.AddRepo(args, cfg);
+        var (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0 && !string.IsNullOrWhiteSpace(reason))
+        {
+            args = ["issue", "close", number.ToString()];
+            GhCli.AddRepo(args, cfg);
+            (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        }
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法關閉 Issue #{number}。" : output);
     }

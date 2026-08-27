@@ -134,6 +134,24 @@ public static class GitHubLifecycle
         return list;
     }
 
+    public static async Task CommentPrAsync(
+        string cwd,
+        GithubConfig cfg,
+        int prNumber,
+        string body,
+        CancellationToken ct = default)
+    {
+        if (prNumber <= 0)
+            throw new InvalidOperationException("PR 編號無效。");
+        if (string.IsNullOrWhiteSpace(body))
+            throw new InvalidOperationException("留言不能空白。");
+        var args = new List<string> { "pr", "comment", prNumber.ToString(), "--body", body.Trim() };
+        GhCli.AddRepo(args, cfg);
+        var (code, output) = await GhCli.RunAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法在 PR #{prNumber} 留言。" : output);
+    }
+
     public static async Task RequestReviewAsync(
         string cwd,
         GithubConfig cfg,

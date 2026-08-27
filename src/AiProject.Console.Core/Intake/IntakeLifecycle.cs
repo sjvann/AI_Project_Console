@@ -36,6 +36,18 @@ public static class IntakeLifecycle
         if (!string.IsNullOrEmpty(intake.AcceptedAt))
             return (IntakeStages.Accepted, "");
 
+        var (stage, block) = DeriveProgress(intake, traces);
+        if (intake.IsRecalled)
+            return (stage, "已收回並通知相關 Issue。已入主線的程式不會自動還原。");
+        if (intake.IsPaused)
+            return (stage, string.IsNullOrEmpty(block) ? "已暫停執行。" : "已暫停執行。" + block);
+        return (stage, block);
+    }
+
+    static (string Stage, string Block) DeriveProgress(
+        IntakeRecord intake,
+        IReadOnlyDictionary<int, IssueTrace> traces)
+    {
         var issued = intake.Items.Where(i => i.HasIssue).ToList();
         if (issued.Count == 0)
         {
@@ -94,6 +106,21 @@ public static class IntakeLifecycle
         return (IntakeStages.Issued, "已發出，等待工程師接受。");
     }
 
+    public static string HoldComment(IntakeRecord intake, string action, string actor, string note)
+    {
+        var who = string.IsNullOrWhiteSpace(actor) ? "需求台" : actor.Trim();
+        var extra = string.IsNullOrWhiteSpace(note) ? "" : "\n\n說明：" + note.Trim();
+        return action switch
+        {
+            "pause" =>
+                $"需求台已暫停執行「{intake.Title}」（{intake.Id}），操作者 @{who}。請先停下相關實作與審查，待通知再開。{extra}",
+            "resume" =>
+                $"需求台已恢復執行「{intake.Title}」（{intake.Id}），操作者 @{who}。請依原任務繼續。{extra}",
+            _ =>
+                $"需求台收回「{intake.Title}」（{intake.Id}），操作者 @{who}。請停止實作；Issue 將關閉（不計畫進行）。已入主線的程式不會自動還原。{extra}",
+        };
+    }
+
     public static string IssueBody(IntakeRecord intake, IntakeWorkItem item)
     {
         var lines = new List<string>
@@ -120,6 +147,35 @@ public static class IntakeLifecycle
             lines.Add("## 設計文件");
             foreach (var doc in intake.DesignDocs.Where(d => !string.IsNullOrWhiteSpace(d)))
                 lines.Add("- " + doc.Trim());
+        }
+        if (intake.IsUi && !intake.IsDesignChange)
+        {
+            var sketches = intake.Sketches.Where(s => !string.IsNullOrWhiteSpace(s.Path)).ToList();
+            if (sketches.Count > 0)
+            {
+                lines.Add("");
+                lines.Add("## 介面草圖");
+                foreach (var sketch in sketches)
+                {
+                    lines.Add("- " + sketch.Path.Trim());
+                    if (!string.IsNullOrWhiteSpace(sketch.Note))
+                        lines.Add("  " + sketch.Note.Trim());
+                }
+            }
+        }
+        if (intake.IsUi && intake.IsDesignChange)
+        {
+            var crops = intake.Crops.Where(c => !string.IsNullOrWhiteSpace(c.Path)).ToList();
+            if (crops.Count > 0)
+            {
+                lines.Add("");
+                lines.Add("## 現況剪圖（修改處）");
+                foreach (var crop in crops)
+                {
+                    var note = string.IsNullOrWhiteSpace(crop.Note) ? "" : " — " + crop.Note.Trim();
+                    lines.Add("- " + crop.Path.Trim() + note);
+                }
+            }
         }
         return string.Join('\n', lines);
     }

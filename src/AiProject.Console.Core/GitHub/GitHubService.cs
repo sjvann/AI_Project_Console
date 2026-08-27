@@ -373,10 +373,14 @@ public static class GitHubService
 
     public static async Task<int> DirtyCountAsync(string root)
     {
-        var (code, dirty) = await CliUtil.RunAsync("git", ["status", "--porcelain"], root).ConfigureAwait(false);
-        if (code != 0)
+        try
+        {
+            return (await ListChangesAsync(root).ConfigureAwait(false)).Count;
+        }
+        catch
+        {
             return 0;
-        return dirty.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+        }
     }
 
     public static IReadOnlyList<GitChange> ParsePorcelain(string porcelain)
@@ -386,7 +390,8 @@ public static class GitHubService
             return list;
         foreach (var raw in porcelain.Replace("\r\n", "\n").Split('\n'))
         {
-            if (raw.Length < 4)
+            // porcelain v1：兩欄狀態 + 空白 + 路徑。警告列（warning: …）沒有這個格式。
+            if (raw.Length < 4 || raw[2] != ' ')
                 continue;
             var code = raw[..2];
             var rest = raw[3..];
@@ -653,8 +658,7 @@ public static class GitHubService
         branch = c1 == 0 ? branch : "（未知）";
         var (c2, sha) = await CliUtil.RunAsync("git", ["rev-parse", "--short", "HEAD"], root).ConfigureAwait(false);
         sha = c2 == 0 ? sha : "";
-        var (c3, dirty) = await CliUtil.RunAsync("git", ["status", "--porcelain"], root).ConfigureAwait(false);
-        var dirtyN = c3 == 0 ? dirty.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length : -1;
+        var dirtyN = await DirtyCountAsync(root).ConfigureAwait(false);
         await CliUtil.RunAsync("git", ["fetch", "--dry-run"], root, 30_000).ConfigureAwait(false);
         var ahead = "?";
         var behind = "?";

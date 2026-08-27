@@ -1,7 +1,8 @@
 @using AiProject.Console.Core.Intake
 @inject ConsoleSession S
+@inject IJSRuntime Js
 
-<div class="intake-shell">
+<div class="intake-shell" id="intake-split">
     <div class="intake-side">
         <div class="hours-list-head">
             <h3 class="hours-panel-title">進件</h3>
@@ -24,22 +25,31 @@
             <div class="intake-list">
                 @foreach (var item in S.VisibleIntakes)
                 {
-                    <button type="button"
-                            class="hours-project @(S.SelectedIntakeId == item.Id ? "is-on" : null)"
-                            @onclick="@(() => S.SelectIntake(item.Id))">
-                        <span>
-                            <strong>@item.Id</strong>
-                            <em>@item.KindLabel</em>
-                        </span>
-                        <span class="hours-project-meta">
-                            <strong>@item.StageLabel</strong>
-                            <em>@item.IssuedCount/@item.Items.Count</em>
-                        </span>
-                    </button>
+                    <div class="intake-card @(S.SelectedIntakeId == item.Id ? "is-on" : null)">
+                        <button type="button" class="intake-card-main" @onclick="@(() => S.SelectIntake(item.Id))">
+                            <span>
+                                <strong>@item.Id</strong>
+                                <em>@item.KindLabel</em>
+                            </span>
+                            <span class="hours-project-meta">
+                                <strong>@item.StageLabel</strong>
+                                @if (!string.IsNullOrEmpty(item.HoldLabel))
+                                {
+                                    <em>@item.HoldLabel</em>
+                                }
+                                <em>@item.IssuedCount/@item.Items.Count</em>
+                            </span>
+                        </button>
+                        @if (IntakeGates.CanDelete(item))
+                        {
+                            <button type="button" class="intake-card-del" title="刪除尚未發出的進件" @onclick="@(() => S.DeleteIntake(item.Id))">刪除</button>
+                        }
+                    </div>
                 }
             </div>
         }
     </div>
+    <div class="split-gutter" title="拖拉調整寬度，連點還原"></div>
     <div class="intake-main">
         @{
             var intake = S.SelectedIntake;
@@ -66,6 +76,10 @@
                     <span class="intake-stage @(on ? "is-on" : null) @(intake.Stage == stage.Id ? "is-now" : null)">@stage.Label</span>
                 }
             </div>
+            @if (!string.IsNullOrEmpty(intake.HoldLabel))
+            {
+                <p class="hint warn">狀態：@intake.HoldLabel@(string.IsNullOrEmpty(intake.HoldNote) ? "" : " — " + intake.HoldNote)</p>
+            }
             @if (!string.IsNullOrEmpty(intake.BlockReason))
             {
                 <p class="hint warn">阻擋：@intake.BlockReason</p>
@@ -97,12 +111,43 @@
                     </select>
                 </div>
             </div>
+            <label class="check">
+                <input type="checkbox" checked="@intake.IsUi" @onchange="@(() => { intake.IsUi = !intake.IsUi; S.PersistIntake(); })" />
+                這是介面（UI）
+            </label>
+            <p class="hint">@(intake.IsDesignChange
+                ? "設計變更是改既有行為：必填現況、期望、影響，並掛設計／架構頁。若是 UI，請剪出現有畫面要改的區塊。"
+                : "新需求是從無到有：寫目標與驗收即可。若是 UI，請附草圖表達版面，不必剪現有畫面。")</p>
             <div class="field" style="align-items:start"><span>說明</span><textarea @bind="intake.Body" @bind:after="S.PersistIntake"></textarea></div>
             @if (intake.IsDesignChange)
             {
                 <div class="field" style="align-items:start"><span>現況</span><textarea @bind="intake.AsIs" @bind:after="S.PersistIntake"></textarea></div>
                 <div class="field" style="align-items:start"><span>期望</span><textarea @bind="intake.ToBe" @bind:after="S.PersistIntake"></textarea></div>
                 <div class="field" style="align-items:start"><span>影響</span><textarea @bind="intake.Impact" @bind:after="S.PersistIntake"></textarea></div>
+            }
+            @if (intake.IsUi && !intake.IsDesignChange)
+            {
+                <div class="hours-list-head">
+                    <h3 class="hours-panel-title">介面草圖</h3>
+                    <div class="btn-row">
+                        <button type="button" class="hours-link" @onclick="@(() => S.AddIntakeVisualAsync("sketch"))">加入檔案</button>
+                        <button type="button" class="hours-link" @onclick="@(() => S.PasteIntakeVisual("sketch"))">貼上剪貼簿</button>
+                    </div>
+                </div>
+                <p class="hint">新介面還沒有可剪的畫面，請附手繪、線框或示意草圖。</p>
+                <IntakeVisualList Kind="sketch" Items="intake.Sketches" />
+            }
+            @if (intake.IsUi && intake.IsDesignChange)
+            {
+                <div class="hours-list-head">
+                    <h3 class="hours-panel-title">現況剪圖</h3>
+                    <div class="btn-row">
+                        <button type="button" class="hours-link" @onclick="@(() => S.AddIntakeVisualAsync("crop"))">加入剪圖</button>
+                        <button type="button" class="hours-link" @onclick="@(() => S.PasteIntakeVisual("crop"))">貼上剪貼簿</button>
+                    </div>
+                </div>
+                <p class="hint">請剪出現有畫面要改的區塊，並在旁註這張要改什麼。</p>
+                <IntakeVisualList Kind="crop" Items="intake.Crops" NoteRequired="true" />
             }
             <div class="hours-list-head">
                 <h3 class="hours-panel-title">設計文件</h3>
@@ -180,19 +225,37 @@
             </datalist>
 
             <div class="intake-actions">
-                <button class="btn-primary" disabled="@S.IntakeBusy" @onclick="S.PublishSelectedAsync">發出並指派</button>
-                <button class="btn-sec" disabled="@S.IntakeBusy" @onclick="S.RequestReviewSelectedAsync">請人審</button>
+                <button class="btn-primary" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.PublishSelectedAsync">發出並指派</button>
+                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.RequestReviewSelectedAsync">請人審</button>
                 <input class="intake-reviewer" @bind="S.ReviewerDraft" placeholder="審查人帳號" />
-                <button class="btn-sec" disabled="@S.IntakeBusy" @onclick="S.MergeSelectedAsync">合併（CI 綠）</button>
-                <button class="btn-sec" disabled="@S.IntakeBusy" @onclick="S.ReleaseSelectedAsync">發行 Release</button>
-                <button class="btn-sec" disabled="@S.IntakeBusy" @onclick="S.DeploySelectedAsync">觸發部署</button>
-                <button class="btn-sec" disabled="@S.IntakeBusy" @onclick="S.AcceptSelectedAsync">驗收結案</button>
+                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.MergeSelectedAsync">合併（CI 綠）</button>
+                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.ReleaseSelectedAsync">發行 Release</button>
+                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.DeploySelectedAsync">觸發部署</button>
+                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.AcceptSelectedAsync">驗收結案</button>
                 <button class="btn-sec" @onclick="S.ImportHoursInboxAsync">匯入工時 CSV</button>
                 <label class="check">
                     <input type="checkbox" checked="@intake.SkipDeploy" @onchange="@(() => { intake.SkipDeploy = !intake.SkipDeploy; S.PersistIntake(); })" />
                     本進件不部署
                 </label>
             </div>
+            @if (IntakeGates.CanHold(intake) || IntakeGates.CanResume(intake))
+            {
+                <div class="intake-hold">
+                    <input class="intake-reviewer intake-hold-note" @bind="S.HoldNoteDraft" placeholder="收回／暫停說明（可選）" />
+                    @if (IntakeGates.CanPause(intake))
+                    {
+                        <button class="btn-sec" disabled="@S.IntakeBusy" @onclick="S.PauseSelectedAsync">暫停執行</button>
+                    }
+                    @if (IntakeGates.CanResume(intake))
+                    {
+                        <button class="btn-primary" disabled="@S.IntakeBusy" @onclick="S.ResumeSelectedAsync">恢復執行</button>
+                    }
+                    @if (IntakeGates.CanRecall(intake))
+                    {
+                        <button class="btn-danger" disabled="@S.IntakeBusy" @onclick="S.RecallSelectedAsync">通知收回</button>
+                    }
+                </div>
+            }
             @if (!string.IsNullOrEmpty(intake.DeployHint) || !string.IsNullOrEmpty(intake.ReleaseTag))
             {
                 <p class="hint">
@@ -242,3 +305,15 @@
         }
     </div>
 </div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        await Js.InvokeVoidAsync("aiConsole.initSplitter", "intake-split", new
+        {
+            storageKey = "aiConsole.intakeSplitPct",
+            minLeft = 200,
+            minRight = 320,
+        });
+    }
+}

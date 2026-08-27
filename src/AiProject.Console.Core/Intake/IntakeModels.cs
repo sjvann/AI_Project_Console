@@ -9,6 +9,26 @@ public static class IntakeKinds
         kind == DesignChange ? "設計變更" : "需求";
 }
 
+public static class IntakeHolds
+{
+    public const string Paused = "paused";
+    public const string Recalled = "recalled";
+
+    public static string Label(string? hold) =>
+        hold switch
+        {
+            Paused => "已暫停",
+            Recalled => "已收回",
+            _ => "",
+        };
+}
+
+public sealed class IntakeVisual
+{
+    public string Path { get; set; } = "";
+    public string Note { get; set; } = "";
+}
+
 public static class IntakeStages
 {
     public const string Draft = "draft";
@@ -112,12 +132,25 @@ public sealed class IntakeRecord
     public string? AcceptedAt { get; set; }
     public bool SkipDeploy { get; set; }
     public bool Billed { get; set; }
+    public bool IsUi { get; set; }
+    public string Hold { get; set; } = "";
+    public string HoldNote { get; set; } = "";
+    public string HoldAt { get; set; } = "";
+    public string HoldBy { get; set; } = "";
+    public List<IntakeVisual> Sketches { get; set; } = [];
+    public List<IntakeVisual> Crops { get; set; } = [];
 
     public bool IsDesignChange => Kind == IntakeKinds.DesignChange;
+
+    public bool IsPaused => Hold == IntakeHolds.Paused;
+
+    public bool IsRecalled => Hold == IntakeHolds.Recalled;
 
     public string KindLabel => IntakeKinds.Label(Kind);
 
     public string StageLabel => IntakeStages.Label(Stage);
+
+    public string HoldLabel => IntakeHolds.Label(Hold);
 
     public int IssuedCount => Items.Count(i => i.HasIssue);
 
