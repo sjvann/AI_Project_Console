@@ -383,12 +383,12 @@ public static class ProcessSupervisor
         CloseLog(rt.LogPath(host.Stem));
     }
 
-    public static int? RestartService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
+    public static string? RestartService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
     {
         var host = ServiceCatalogBuilder.HostService(catalog, svc);
         StopService(catalog, rt, host);
         Thread.Sleep(800);
-        return StartService(catalog, rt, host);
+        return TryStartService(catalog, rt, host);
     }
 
     public static IReadOnlyList<string> StartAll(ProjectCatalog catalog, ProjectRuntime rt, int delayMs = 500)

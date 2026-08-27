@@ -78,6 +78,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 - 左側「專案」列出 `.csproj` 與編譯狀態
 - 左側「任務」列出指派給你的 GitHub Issue（需登入）
 - 若服務是空的：確認有 `launchSettings.json` 的 `applicationUrl`，或請工作區負責人放 `ai-project.json`
+- 工作區已開啟後又新增專案：按專案列 **重新掃描**，不必關閉再開
 
 ## 第一次建議做的三件事
 

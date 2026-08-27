@@ -1171,6 +1171,62 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
+    public async Task RefreshWorkspaceAsync()
+    {
+        if (Catalog is null)
+        {
+            _native.Info("尚未選擇專案", "請先選擇專案目錄。");
+            return;
+        }
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return;
+        }
+
+        var previous = Catalog;
+        var root = previous.Root;
+        JobBusy = true;
+        JobText = "正在重新掃描專案目錄…";
+        Notify();
+        try
+        {
+            var next = await Task.Run(() => ServiceCatalogBuilder.Build(root)).ConfigureAwait(false);
+            var diff = CatalogRefresh.Diff(previous, next);
+            ApplyRefreshedCatalog(next);
+            JobBusy = false;
+            JobText = diff.Format();
+            UpdateReady();
+            Notify();
+            await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            JobBusy = false;
+            JobText = "重新掃描失敗";
+            Notify();
+            _native.Error("重新掃描失敗", ex.Message);
+        }
+    }
+
+    private void ApplyRefreshedCatalog(ProjectCatalog next)
+    {
+        var keep = next.Services.Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in Health.Keys.Where(k => !keep.Contains(k)).ToList())
+            Health.Remove(id);
+        foreach (var id in StartErrors.Keys.Where(k => !keep.Contains(k)).ToList())
+            StartErrors.Remove(id);
+        foreach (var svc in next.Services)
+        {
+            if (ServiceCatalogBuilder.IsCurrentConsole(next, svc))
+                Health[svc.Id] = true;
+        }
+        if (SelectedServiceId is null || !keep.Contains(SelectedServiceId))
+            SelectedServiceId = next.Services.FirstOrDefault()?.Id;
+        Catalog = next;
+        ReloadLog();
+    }
+
     private async Task<bool> TryStopCurrentProjectForSwitchAsync(string nextRoot)
     {
         if (Catalog is null || Runtime is null)
@@ -1773,6 +1829,8 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (Health.GetValueOrDefault(svc.Id))
         {
+            ApplyStartResults([(svc.Id, svc.Label, null)]);
+            Notify();
             _native.Info("已在線", $"「{svc.Label}」已在執行。");
             return Task.CompletedTask;
         }
@@ -1832,8 +1890,9 @@ public sealed partial class ConsoleSession : IDisposable
         var runtime = Runtime!;
         return RunJobAsync($"重啟 {svc.Label}…", () =>
         {
-            ProcessSupervisor.RestartService(catalog, runtime, svc);
-            return Task.FromResult<string?>(null);
+            var err = ProcessSupervisor.RestartService(catalog, runtime, svc);
+            ApplyStartResults([(svc.Id, svc.Label, err)]);
+            return Task.FromResult(err);
         });
     }
 
@@ -3847,7 +3906,7 @@ public sealed partial class ConsoleSession : IDisposable
         return ServiceCatalogBuilder.ById(Catalog, SelectedServiceId);
     }
 
-    private string? StartErrorFor(ServiceEntry svc)
+    public string? StartErrorFor(ServiceEntry svc)
     {
         if (StartErrors.TryGetValue(svc.Id, out var err) && !string.IsNullOrWhiteSpace(err))
             return err;
@@ -4020,6 +4079,7 @@ public sealed partial class ConsoleSession : IDisposable
                     Health.Clear();
                     foreach (var kv in health)
                         Health[kv.Key] = kv.Value;
+                    StartErrorMap.ClearHealthy(StartErrors, health);
                     UpdateReady();
                 }
                 var gitEvery = _autoSyncSkippedDirty ? 2 : 8;
@@ -4227,12 +4287,7 @@ public sealed partial class ConsoleSession : IDisposable
         if (results.Count == 0)
             return;
         foreach (var (id, _, error) in results)
-        {
-            if (error is null)
-                StartErrors.Remove(id);
-            else
-                StartErrors[id] = error;
-        }
+            StartErrorMap.Apply(StartErrors, id, error);
         var failed = results.Where(r => r.Error is not null).ToList();
         if (failed.Count > 0)
             WarnText = string.Join("；", failed.Select(f => $"{f.Label}：{f.Error}"));

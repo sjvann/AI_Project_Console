@@ -80,4 +80,4 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 ## 改完清單之後
 
-關閉再重新選擇同一目錄，或換一個歷史項目再選回來，讓控制台重掃。環境體檢會顯示 `manifest: ai-project.json 已載入` 與服務列表。
+工作區已開啟時，按專案列 **重新掃描**（不必關閉再開）。環境體檢會顯示 `manifest: ai-project.json 已載入` 與服務列表。

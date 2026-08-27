@@ -69,6 +69,7 @@
             </select>
             <button class="btn-sec" @onclick="S.PickProjectAsync">選擇專案目錄…</button>
             <button class="btn-sec" @onclick="S.OpenCloneDialog">從 GitHub 開啟…</button>
+            <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" title="重新掃描專案目錄，找出新增或移除的專案與服務" @onclick="S.RefreshWorkspaceAsync">重新掃描</button>
             <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.CloseProjectAsync">關閉專案</button>
             <label class="check">
                 <input type="checkbox" checked="@S.RestoreLastProject" @onchange="e => S.SetRestoreLastProject((bool)(e.Value ?? false))" />
@@ -238,7 +239,7 @@
                                             <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
                                             <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
                                         }
-                                        @if (S.StartErrors.TryGetValue(svc.Id, out var startErr))
+                                        @if (S.StartErrorFor(svc) is { } startErr)
                                         {
                                             <span class="svc-err" title="@startErr">失敗</span>
                                         }
@@ -253,7 +254,7 @@
                 {
                     <div class="row">
                         <label class="check"><input type="checkbox" checked="@S.StaleOnly" @onchange="e => { S.StaleOnly = (bool)(e.Value ?? false); }" /> 只看需重編</label>
-                        <button class="btn-sec" @onclick="S.RefreshBuildStatesAsync">刷新</button>
+                        <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" title="重新掃描專案目錄並更新編譯狀態" @onclick="S.RefreshWorkspaceAsync">刷新</button>
                     </div>
                     <div class="prj-list">
                     @foreach (var g in S.ProjectGroups)
