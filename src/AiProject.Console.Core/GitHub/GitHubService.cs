@@ -458,6 +458,41 @@ public static class GitHubService
         return string.Join('\n', lines);
     }
 
+    public static async Task<string?> CommitPathsIfDirtyAsync(string root, string message, IEnumerable<string> relPaths)
+    {
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+        var msg = (message ?? "").Replace("\r\n", "\n").Trim();
+        if (string.IsNullOrEmpty(msg))
+            throw new InvalidOperationException("請填寫提交說明。");
+        var rootFull = Path.GetFullPath(root);
+        var added = 0;
+        foreach (var raw in relPaths)
+        {
+            var rel = (raw ?? "").Trim().Replace('\\', '/');
+            if (string.IsNullOrEmpty(rel) || rel.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(rel))
+                continue;
+            var full = Path.GetFullPath(Path.Combine(rootFull, rel.Replace('/', Path.DirectorySeparatorChar)));
+            if (!full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(full, rootFull, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!File.Exists(full) && !Directory.Exists(full))
+                continue;
+            var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "--", rel], root).ConfigureAwait(false);
+            if (addCode != 0)
+                throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? "git add 失敗。" : addOut);
+            added++;
+        }
+        if (added == 0)
+            return null;
+        var (diffCode, diffOut) = await CliUtil.RunAsync("git", ["diff", "--cached", "--quiet"], root).ConfigureAwait(false);
+        if (diffCode == 0)
+            return null;
+        if (diffCode != 1)
+            throw new InvalidOperationException(string.IsNullOrEmpty(diffOut) ? "無法判斷暫存區狀態。" : diffOut);
+        return await CommitAsync(root, msg, stageAll: false).ConfigureAwait(false);
+    }
+
     public static async Task<GitBriefStatus?> TryBriefStatusAsync(string root)
     {
         if (string.IsNullOrWhiteSpace(root) || !await IsGitRepoAsync(root).ConfigureAwait(false))

@@ -17,7 +17,7 @@ public static class IntakeGates
             if (string.IsNullOrWhiteSpace(intake.Impact))
                 return "設計變更要填影響範圍。";
             if (intake.DesignDocs.All(string.IsNullOrWhiteSpace))
-                return "設計變更要掛上設計或架構頁。";
+                return "設計變更要上傳分析或設計文件。";
         }
         if (intake.IsUi)
         {

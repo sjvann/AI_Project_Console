@@ -462,7 +462,9 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .intake-stage.is-on { color: var(--text); border-color: var(--accent); }
 .intake-stage.is-now { background: var(--sel); }
 .intake-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
-.intake-docs { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow: auto; }
+.intake-docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow: auto; }
+.intake-docs li { display: flex; align-items: baseline; gap: 8px; }
+.intake-docs em { font-style: normal; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .intake-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .intake-reviewer { width: 140px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); }
 @media (max-width: 900px) {

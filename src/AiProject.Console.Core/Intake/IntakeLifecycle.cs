@@ -121,7 +121,19 @@ public static class IntakeLifecycle
         };
     }
 
-    public static string IssueBody(IntakeRecord intake, IntakeWorkItem item)
+    public static IReadOnlyList<string> PublishRelPaths(IntakeRecord intake)
+    {
+        var list = new List<string> { IntakeStore.RelPath };
+        foreach (var doc in intake.DesignDocs.Where(d => !string.IsNullOrWhiteSpace(d)))
+            list.Add(doc.Trim());
+        foreach (var sketch in intake.Sketches.Where(s => !string.IsNullOrWhiteSpace(s.Path)))
+            list.Add(sketch.Path.Trim());
+        foreach (var crop in intake.Crops.Where(c => !string.IsNullOrWhiteSpace(c.Path)))
+            list.Add(crop.Path.Trim());
+        return list.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public static string IssueBody(IntakeRecord intake, IntakeWorkItem item, IntakeIssueLinks? links = null)
     {
         var lines = new List<string>
         {
@@ -144,9 +156,9 @@ public static class IntakeLifecycle
         if (intake.DesignDocs.Count > 0)
         {
             lines.Add("");
-            lines.Add("## 設計文件");
+            lines.Add("## 分析／設計文件");
             foreach (var doc in intake.DesignDocs.Where(d => !string.IsNullOrWhiteSpace(d)))
-                lines.Add("- " + doc.Trim());
+                lines.Add("- " + FileLink(doc.Trim(), links));
         }
         if (intake.IsUi && !intake.IsDesignChange)
         {
@@ -157,7 +169,7 @@ public static class IntakeLifecycle
                 lines.Add("## 介面草圖");
                 foreach (var sketch in sketches)
                 {
-                    lines.Add("- " + sketch.Path.Trim());
+                    lines.Add("- " + FileLink(sketch.Path.Trim(), links));
                     if (!string.IsNullOrWhiteSpace(sketch.Note))
                         lines.Add("  " + sketch.Note.Trim());
                 }
@@ -173,11 +185,21 @@ public static class IntakeLifecycle
                 foreach (var crop in crops)
                 {
                     var note = string.IsNullOrWhiteSpace(crop.Note) ? "" : " — " + crop.Note.Trim();
-                    lines.Add("- " + crop.Path.Trim() + note);
+                    lines.Add("- " + FileLink(crop.Path.Trim(), links) + note);
                 }
             }
         }
         return string.Join('\n', lines);
+    }
+
+    static string FileLink(string rel, IntakeIssueLinks? links)
+    {
+        if (links is null || string.IsNullOrWhiteSpace(links.WebUrl) || string.IsNullOrWhiteSpace(links.Branch))
+            return rel;
+        var name = Path.GetFileName(rel.Replace('\\', '/'));
+        if (string.IsNullOrEmpty(name))
+            name = rel;
+        return $"[{name}]({IntakeDesignFiles.BlobUrl(links.WebUrl, links.Branch, rel)})";
     }
 
     public static string PublishPreview(IntakeRecord intake)

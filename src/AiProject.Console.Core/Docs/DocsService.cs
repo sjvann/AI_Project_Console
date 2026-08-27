@@ -206,6 +206,7 @@ public static class DocsService
             File.WriteAllText(intakePath, """
                 {
                   "version": "1",
+                  "designDocsDir": "docs/product/design",
                   "intakes": []
                 }
                 """, new UTF8Encoding(false));
@@ -863,7 +864,7 @@ public static class DocsService
             "product/intake.md" => Page(
                 "需求與變更",
                 "需求與變更",
-                Intro(ctx, "寫需求與設計變更怎麼進件、拆任務、驗收。新需求從無到有（UI 附草圖）；設計變更改既有行為（填現況／期望／影響，UI 附剪圖）。進件表在 docs/product/intake.json。")),
+                Intro(ctx, "寫需求與設計變更怎麼進件、拆任務、驗收。新需求從無到有（UI 附草圖）；設計變更改既有行為（填現況／期望／影響，上傳分析／設計文件，UI 附剪圖）。進件表在 docs/product/intake.json。")),
             "engineering/architecture.md" => Page(
                 "架構",
                 "架構",

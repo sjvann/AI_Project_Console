@@ -22,8 +22,8 @@ public class IntakeTests
         intake.ToBe = "新";
         Assert.Equal("設計變更要填影響範圍。", IntakeGates.BlockDesignReady(intake));
         intake.Impact = "登入流";
-        Assert.Equal("設計變更要掛上設計或架構頁。", IntakeGates.BlockDesignReady(intake));
-        intake.DesignDocs = ["engineering/architecture.md"];
+        Assert.Equal("設計變更要上傳分析或設計文件。", IntakeGates.BlockDesignReady(intake));
+        intake.DesignDocs = ["docs/product/design/ECR-1/分析.md"];
         Assert.Null(IntakeGates.BlockPublish(intake));
     }
 
@@ -50,7 +50,7 @@ public class IntakeTests
             AsIs = "舊",
             ToBe = "新",
             Impact = "登入",
-            DesignDocs = ["engineering/architecture.md"],
+            DesignDocs = ["docs/product/design/ECR-1/分析.md"],
             Items = [new IntakeWorkItem { Title = "改鈕", AcceptanceCriteria = ["對得上剪圖"] }],
         };
         Assert.Equal("介面設計變更要提供剪圖，標出修改處。", IntakeGates.BlockDesignReady(intake));
@@ -164,6 +164,46 @@ public class IntakeTests
         {
             Directory.Delete(root, true);
         }
+    }
+
+    [Fact]
+    public void DesignFiles_StayUnderDocsAndKeepName()
+    {
+        Assert.Equal("docs/product/design", IntakeDesignFiles.NormalizeDir(""));
+        Assert.Equal("docs/engineering/ecr", IntakeDesignFiles.NormalizeDir("docs/engineering/ecr"));
+        Assert.Throws<InvalidOperationException>(() => IntakeDesignFiles.NormalizeDir("../secret"));
+        Assert.Throws<InvalidOperationException>(() => IntakeDesignFiles.NormalizeDir("src/design"));
+        var root = Path.Combine(Path.GetTempPath(), "apc-designdoc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var src = Path.Combine(root, "登入分析.md");
+            File.WriteAllText(src, "# 分析");
+            var rel = IntakeDesignFiles.CopyIn(root, "docs/product/design", "ECR-1", src);
+            Assert.Equal("docs/product/design/ECR-1/登入分析.md", rel);
+            Assert.True(IntakeDesignFiles.TryResolve(root, rel, out var full));
+            Assert.True(File.Exists(full));
+            Assert.False(IntakeDesignFiles.TryResolve(root, "src/secret.md", out _));
+            Assert.Contains("/blob/main/docs/product/design/ECR-1/", IntakeDesignFiles.BlobUrl("https://github.com/acme/app", "main", rel));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void IssueBody_UsesRemoteLinksWhenPublishing()
+    {
+        var intake = ReadyRequirement();
+        intake.Id = "REQ-1";
+        intake.DesignDocs = ["docs/product/design/REQ-1/spec.md"];
+        var body = IntakeLifecycle.IssueBody(intake, intake.Items[0], new IntakeIssueLinks("https://github.com/acme/app", "main"));
+        Assert.Contains("分析／設計文件", body);
+        Assert.Contains("[spec.md](https://github.com/acme/app/blob/main/docs/product/design/REQ-1/spec.md)", body);
+        var paths = IntakeLifecycle.PublishRelPaths(intake);
+        Assert.Contains(IntakeStore.RelPath, paths);
+        Assert.Contains("docs/product/design/REQ-1/spec.md", paths);
     }
 
     [Fact]

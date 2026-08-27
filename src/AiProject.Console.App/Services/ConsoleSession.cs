@@ -4115,7 +4115,6 @@ public sealed partial class ConsoleSession : IDisposable
         HoursInbox = [];
         HoursInboxHint = "";
         ReviewerDraft = "";
-        DesignDocChoices = [];
         ClearIssueLists();
         ClearDocsState();
     }

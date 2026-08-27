@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AiProject.Console.Core.Intake;
 
 public static class IntakeKinds
@@ -140,28 +142,39 @@ public sealed class IntakeRecord
     public List<IntakeVisual> Sketches { get; set; } = [];
     public List<IntakeVisual> Crops { get; set; } = [];
 
+    [JsonIgnore]
     public bool IsDesignChange => Kind == IntakeKinds.DesignChange;
 
+    [JsonIgnore]
     public bool IsPaused => Hold == IntakeHolds.Paused;
 
+    [JsonIgnore]
     public bool IsRecalled => Hold == IntakeHolds.Recalled;
 
+    [JsonIgnore]
     public string KindLabel => IntakeKinds.Label(Kind);
 
+    [JsonIgnore]
     public string StageLabel => IntakeStages.Label(Stage);
 
+    [JsonIgnore]
     public string HoldLabel => IntakeHolds.Label(Hold);
 
+    [JsonIgnore]
     public int IssuedCount => Items.Count(i => i.HasIssue);
 
+    [JsonIgnore]
     public int ClosedIssueGuess => Items.Count(i => i.HasIssue && string.Equals(i.PrState, "MERGED", StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class IntakeDocument
 {
     public string Version { get; set; } = "1";
+    public string DesignDocsDir { get; set; } = IntakeDesignFiles.DefaultDir;
     public List<IntakeRecord> Intakes { get; set; } = [];
 }
+
+public sealed record IntakeIssueLinks(string WebUrl, string Branch);
 
 public sealed record IssueTrace(
     int Number,

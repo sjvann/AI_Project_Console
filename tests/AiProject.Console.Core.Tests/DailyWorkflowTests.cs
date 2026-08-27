@@ -275,6 +275,34 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public async Task CommitPathsIfDirtyAsync_OnlyAddsListedFiles()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-commit-paths-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            Directory.CreateDirectory(Path.Combine(root, "docs", "product"));
+            File.WriteAllText(Path.Combine(root, "docs", "product", "intake.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "secret.txt"), "no");
+            var result = await GitHubService.CommitPathsIfDirtyAsync(root, "intake only", ["docs/product/intake.json"]);
+            Assert.Contains("已提交", result);
+            var (code, stdout) = await CliUtil.RunAsync("git", ["ls-files"], root);
+            Assert.Equal(0, code);
+            Assert.Contains("docs/product/intake.json", stdout);
+            Assert.DoesNotContain("secret.txt", stdout);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
     public void IsValidBranchName_RejectsUnsafe()
     {
         Assert.True(GitHubService.IsValidBranchName("feat/login"));

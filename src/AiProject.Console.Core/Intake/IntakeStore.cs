@@ -73,6 +73,7 @@ public static class IntakeStore
     public static JsonObject EmptyShell() => new()
     {
         ["version"] = "1",
+        ["designDocsDir"] = IntakeDesignFiles.DefaultDir,
         ["intakes"] = new JsonArray(),
     };
 }

@@ -116,7 +116,7 @@
                 這是介面（UI）
             </label>
             <p class="hint">@(intake.IsDesignChange
-                ? "設計變更是改既有行為：必填現況、期望、影響，並掛設計／架構頁。若是 UI，請剪出現有畫面要改的區塊。"
+                ? "設計變更是改既有行為：必填現況、期望、影響，並上傳分析／設計文件。若是 UI，請剪出現有畫面要改的區塊。"
                 : "新需求是從無到有：寫目標與驗收即可。若是 UI，請附草圖表達版面，不必剪現有畫面。")</p>
             <div class="field" style="align-items:start"><span>說明</span><textarea @bind="intake.Body" @bind:after="S.PersistIntake"></textarea></div>
             @if (intake.IsDesignChange)
@@ -150,25 +150,31 @@
                 <IntakeVisualList Kind="crop" Items="intake.Crops" NoteRequired="true" />
             }
             <div class="hours-list-head">
-                <h3 class="hours-panel-title">設計文件</h3>
+                <h3 class="hours-panel-title">分析／設計文件</h3>
+                <button type="button" class="hours-link" @onclick="S.AddDesignDocAsync">上傳檔案</button>
             </div>
-            <div class="intake-docs">
-                @if (S.DesignDocChoices.Count == 0)
-                {
-                    <p class="hint">尚無 docs/product 或 docs/engineering 頁。可在開發工作台「文件 → 建立體系」。</p>
-                }
-                else
-                {
-                    @foreach (var doc in S.DesignDocChoices)
+            <div class="field">
+                <span>存放目錄</span>
+                <input value="@S.IntakeDoc.DesignDocsDir" @onchange='e => S.SetDesignDocsDir(e.Value?.ToString() ?? "")' placeholder="docs/product/design" />
+            </div>
+            <p class="hint">檔案會放到專案 @($"{S.IntakeDoc.DesignDocsDir}/{intake.Id}/")。發出時會跟進件表一併提交並推到遠端，Issue 會附上連結，其他人 pull 後也看得到。</p>
+            @if (intake.DesignDocs.Count == 0)
+            {
+                <p class="hint">@(intake.IsDesignChange ? "設計變更至少要上傳一份分析或設計文件。" : "可選。有分析或規格時請上傳。")</p>
+            }
+            else
+            {
+                <ul class="intake-docs">
+                    @foreach (var doc in intake.DesignDocs)
                     {
-                        var on = intake.DesignDocs.Any(d => string.Equals(d, doc, StringComparison.OrdinalIgnoreCase));
-                        <label class="check">
-                            <input type="checkbox" checked="@on" @onchange="@(() => S.ToggleDesignDoc(doc))" />
-                            @doc
-                        </label>
+                        <li>
+                            <button type="button" class="hours-link" @onclick="@(() => S.OpenDesignDoc(doc))">@System.IO.Path.GetFileName(doc)</button>
+                            <em>@doc</em>
+                            <button type="button" class="intake-card-del" @onclick="@(() => S.RemoveDesignDoc(doc))">移除</button>
+                        </li>
                     }
-                }
-            </div>
+                </ul>
+            }
 
             <div class="hours-list-head">
                 <h3 class="hours-panel-title">工作任務</h3>
