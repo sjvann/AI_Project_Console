@@ -196,10 +196,16 @@ public static class IntakeLifecycle
     {
         if (links is null || string.IsNullOrWhiteSpace(links.WebUrl) || string.IsNullOrWhiteSpace(links.Branch))
             return rel;
-        var name = Path.GetFileName(rel.Replace('\\', '/'));
-        if (string.IsNullOrEmpty(name))
-            name = rel;
+        var name = FileName(rel);
         return $"[{name}]({IntakeDesignFiles.BlobUrl(links.WebUrl, links.Branch, rel)})";
+    }
+
+    static string FileName(string rel)
+    {
+        var norm = rel.Replace('\\', '/');
+        var i = norm.LastIndexOf('/');
+        var name = i >= 0 ? norm[(i + 1)..] : norm;
+        return string.IsNullOrEmpty(name) ? rel : name;
     }
 
     public static string PublishPreview(IntakeRecord intake)
