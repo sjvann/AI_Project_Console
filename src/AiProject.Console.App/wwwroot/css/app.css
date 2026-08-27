@@ -304,7 +304,9 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .doc-folder.collapsed .group-chevron { transform: rotate(0deg); }
 .doc-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-folder-add { flex: none; font-size: 11px; padding-right: 8px; }
-.doc-file { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-radius: 0; padding: 6px 10px; color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
+.doc-file { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; flex: 1; min-width: 0; text-align: left; background: none; border: none; border-radius: 0; padding: 6px 10px 6px 0; color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
+.doc-file-del { appearance: none; flex: none; background: none; border: 1px solid transparent; color: var(--danger); font: 600 11px "Segoe UI", "Noto Sans TC", sans-serif; padding: 4px 8px 4px 4px; border-radius: 4px; cursor: pointer; }
+.doc-file-del:hover { border-color: var(--danger); background: var(--fail-row); }
 .doc-file:hover:not(:disabled) { background: var(--sel); }
 .doc-file.sel { background: var(--sel); }
 .doc-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }

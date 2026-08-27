@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI_Project 控制台 · 經營層說明</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --color-primary: #0b6e56;
+            --color-primary-hi: #0a5c48;
+            --color-accent: #3d9b7a;
+            --color-accent-soft: rgba(61, 155, 122, 0.16);
+            --color-background: #0d1412;
+            --color-surface: #141c1a;
+            --color-card: #1a2421;
+            --color-foreground: #e8f0ec;
+            --color-muted: #8aa396;
+            --color-border: #2c3a35;
+            --color-danger: #c45c5c;
+            --color-warning: #d4a017;
+            --color-on-primary: #ffffff;
+            --color-ring: #5ec98a;
+            --primitive-gradient-primary: linear-gradient(135deg, #3d9b7a, #0b6e56);
+            --typography-font-heading: "Plus Jakarta Sans", "Noto Sans TC", "Segoe UI", sans-serif;
+            --typography-font-body: "Plus Jakarta Sans", "Noto Sans TC", "Segoe UI", sans-serif;
+            --space-slide: clamp(28px, 4.2vw, 56px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            background: #070b0a;
+            color: var(--color-foreground);
+            font-family: var(--typography-font-body);
+            overflow: hidden;
+            height: 100%;
+        }
+
+        a { color: var(--color-accent); }
+        button { font-family: inherit; cursor: pointer; }
+
+        .skip-link {
+            position: absolute;
+            left: 12px;
+            top: -40px;
+            z-index: 2000;
+            background: var(--color-primary);
+            color: var(--color-on-primary);
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+        .skip-link:focus { top: 12px; }
+
+        .progress-bar {
+            position: fixed;
+            top: 0; left: 0;
+            height: 3px;
+            width: 0;
+            background: var(--color-accent);
+            z-index: 1000;
+            transition: width 0.3s ease;
+        }
+
+        .slide-deck {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        @media (min-width: 769px) {
+            .slide-deck {
+                max-width: calc(100vh * 16 / 9);
+                max-height: calc(100vw * 9 / 16);
+                margin: auto;
+                position: absolute;
+                inset: 0;
+                box-shadow: 0 0 0 1px #0a100e, 0 24px 80px rgba(0, 0, 0, 0.45);
+            }
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: safe center;
+            align-items: center;
+            padding: var(--space-slide);
+            padding-bottom: 48px;
+            background:
+                radial-gradient(ellipse at 12% -10%, rgba(61, 155, 122, 0.16), transparent 42%),
+                radial-gradient(ellipse at 100% 100%, rgba(11, 110, 86, 0.18), transparent 40%),
+                var(--color-background);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.4s ease;
+            overflow: hidden;
+        }
+        .slide.active { opacity: 1; visibility: visible; }
+
+        .slide-content {
+            width: 100%;
+            max-width: 1120px;
+            max-height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 18px;
+        }
+
+        .kicker {
+            color: var(--color-accent);
+            font-size: clamp(12px, 1.3vw, 15px);
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+        .eyebrow {
+            color: var(--color-muted);
+            font-size: clamp(13px, 1.4vw, 16px);
+            font-weight: 600;
+        }
+        h1, h2, h3 { font-family: var(--typography-font-heading); line-height: 1.15; }
+        h1 {
+            font-size: clamp(34px, 5.4vw, 68px);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+        h2 {
+            font-size: clamp(26px, 3.4vw, 42px);
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+        .lead {
+            color: var(--color-muted);
+            font-size: clamp(16px, 1.8vw, 22px);
+            line-height: 1.5;
+            max-width: 46ch;
+        }
+        .note {
+            color: var(--color-muted);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .slide-title-hero .slide-content { align-items: flex-start; text-align: left; }
+        .slide-title-hero h1 {
+            background: linear-gradient(135deg, #f3faf7 0%, #7dceB0 55%, #3d9b7a 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            max-width: 14ch;
+        }
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--color-muted);
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .brand-mark {
+            width: 36px; height: 36px;
+            border-radius: 8px;
+            background: var(--primitive-gradient-primary);
+            display: grid;
+            place-items: center;
+        }
+        .brand-mark svg { width: 20px; height: 20px; }
+
+        .grid-3, .grid-4, .grid-2 {
+            display: grid;
+            gap: 16px;
+        }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-2 { grid-template-columns: 1.1fr 0.9fr; align-items: center; }
+        .grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .cards-2 { grid-template-columns: 1fr 1fr; }
+
+        .card {
+            background: var(--color-card);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            padding: 20px 22px;
+            text-align: left;
+        }
+        .card h3 { font-size: clamp(16px, 1.7vw, 20px); margin-bottom: 8px; }
+        .card p, .card li { color: var(--color-muted); font-size: clamp(13px, 1.25vw, 16px); line-height: 1.55; }
+        .card-accent { border-top: 3px solid var(--color-accent); }
+        .card-warn { border-top: 3px solid var(--color-warning); }
+        .card-danger { border-top: 3px solid var(--color-danger); }
+
+        .icon {
+            width: 28px; height: 28px;
+            margin-bottom: 12px;
+            color: var(--color-accent);
+        }
+
+        .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .is-not, .is-yes { padding: 8px 0; }
+        .is-not li, .is-yes li {
+            list-style: none;
+            padding: 10px 0 10px 28px;
+            position: relative;
+            color: var(--color-muted);
+            font-size: clamp(14px, 1.35vw, 17px);
+        }
+        .is-not li::before, .is-yes li::before {
+            position: absolute;
+            left: 0;
+            font-weight: 800;
+        }
+        .is-not li::before { content: "×"; color: var(--color-danger); }
+        .is-yes li::before { content: "+"; color: var(--color-accent); }
+
+        .roles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .role {
+            background: var(--color-card);
+            border: 1px solid var(--color-border);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: left;
+        }
+        .role strong { display: block; margin-bottom: 6px; font-size: 15px; }
+        .role span { color: var(--color-muted); font-size: 13px; line-height: 1.45; display: block; }
+
+        .slide-compact .slide-content { gap: 12px; }
+        .slide-compact h2 { font-size: clamp(22px, 2.6vw, 32px); }
+        .slide-compact .split { gap: 16px; }
+        .slide-compact .is-not, .slide-compact .is-yes { padding: 2px 0; }
+        .slide-compact .is-not li, .slide-compact .is-yes li {
+            padding: 5px 0 5px 24px;
+            font-size: clamp(13px, 1.15vw, 15px);
+        }
+        .slide-compact .role { padding: 12px 14px; }
+        .slide-compact .roles { gap: 10px; }
+
+        .page-num {
+            position: absolute;
+            right: 28px;
+            bottom: 16px;
+            color: var(--color-muted);
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .layer-num {
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            color: var(--color-accent);
+            margin-bottom: 8px;
+        }
+
+        .flow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .chip {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--color-foreground);
+        }
+        .chip.gate { border-color: var(--color-accent); color: var(--color-accent); }
+
+        table.compare {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: clamp(12px, 1.2vw, 15px);
+        }
+        .compare th, .compare td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--color-border);
+        }
+        .compare th { color: var(--color-muted); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
+        .compare td.yes { color: var(--color-accent); font-weight: 700; }
+        .compare td.no { color: var(--color-muted); }
+        .compare td.ours { background: var(--color-accent-soft); font-weight: 700; }
+
+        .chart-box {
+            width: 100%;
+            height: clamp(220px, 38vh, 320px);
+            position: relative;
+        }
+
+        .cta-box {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 20px;
+            align-items: stretch;
+        }
+        .cta-card {
+            background: linear-gradient(180deg, #1d2e28, #15201c);
+            border: 1px solid #356456;
+            border-radius: 14px;
+            padding: 28px;
+        }
+        .cta-card ol { margin: 12px 0 0 18px; color: var(--color-muted); line-height: 1.7; }
+        .next-list { list-style: none; }
+        .next-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-muted);
+            font-size: 15px;
+        }
+        .next-list li strong { color: var(--color-foreground); display: block; margin-bottom: 4px; }
+
+        .nav-controls {
+            position: fixed;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 1000;
+        }
+        .nav-btn {
+            width: 40px; height: 40px;
+            border: 1px solid var(--color-border);
+            background: rgba(20, 28, 26, 0.92);
+            color: var(--color-foreground);
+            border-radius: 50%;
+            font-size: 16px;
+        }
+        .nav-btn:hover { border-color: var(--color-accent); }
+        .nav-btn:focus-visible, button:focus-visible, a:focus-visible {
+            outline: 3px solid var(--color-ring);
+            outline-offset: 2px;
+        }
+        .slide-counter { color: var(--color-muted); font-size: 13px; font-weight: 600; min-width: 52px; text-align: center; }
+
+        .animate-stagger > * { animation: fadeUp 0.5s ease-out both; }
+        .animate-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+        .animate-stagger > *:nth-child(2) { animation-delay: 0.12s; }
+        .animate-stagger > *:nth-child(3) { animation-delay: 0.19s; }
+        .animate-stagger > *:nth-child(4) { animation-delay: 0.26s; }
+        .animate-fade-up { animation: fadeUp 0.55s ease-out both; }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(18px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .slide { transition: none; }
+            .animate-stagger > *, .animate-fade-up { animation: none; }
+        }
+
+        @media screen and (max-width: 900px) {
+            body:not(.print-mode) .grid-2,
+            body:not(.print-mode) .split,
+            body:not(.print-mode) .cta-box,
+            body:not(.print-mode) .cards-2 {
+                grid-template-columns: 1fr;
+            }
+            body:not(.print-mode) .grid-3,
+            body:not(.print-mode) .grid-4,
+            body:not(.print-mode) .roles,
+            body:not(.print-mode) .layers,
+            body:not(.print-mode) .grid-2x2 {
+                grid-template-columns: 1fr 1fr;
+            }
+            body:not(.print-mode) .slide { padding: 28px 20px 56px; }
+            body:not(.print-mode) h1 { font-size: clamp(28px, 8vw, 40px); }
+        }
+
+        body.print-mode,
+        body.print-mode html {
+            overflow: auto;
+            height: auto;
+        }
+        body.print-mode .slide-deck {
+            position: static;
+            max-width: none;
+            max-height: none;
+            width: auto;
+            height: auto;
+            box-shadow: none;
+        }
+        body.print-mode .slide {
+            position: relative;
+            opacity: 1;
+            visibility: visible;
+            width: 1280px;
+            height: 720px;
+            inset: auto;
+        }
+        body.print-mode .nav-controls,
+        body.print-mode .progress-bar,
+        body.print-mode .skip-link { display: none; }
+        body.print-mode .roles,
+        body.print-mode .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        body.print-mode .grid-3,
+        body.print-mode .layers { grid-template-columns: repeat(3, 1fr); }
+        body.print-mode .split,
+        body.print-mode .grid-2,
+        body.print-mode .cta-box,
+        body.print-mode .cards-2,
+        body.print-mode .grid-2x2 { grid-template-columns: 1fr 1fr; }
+
+        @page {
+            size: 13.333in 7.5in;
+            margin: 0;
+        }
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            html, body {
+                overflow: visible !important;
+                height: auto !important;
+                background: #0d1412 !important;
+            }
+            .progress-bar, .nav-controls, .skip-link { display: none !important; }
+            .slide-deck {
+                position: static !important;
+                width: auto !important;
+                height: auto !important;
+                max-width: none !important;
+                max-height: none !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+            }
+            .slide {
+                position: relative !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+                width: 13.333in;
+                height: 7.5in;
+                inset: auto !important;
+                page-break-after: always;
+                break-after: page;
+            }
+            .slide:last-of-type {
+                page-break-after: auto;
+                break-after: auto;
+            }
+            .animate-stagger > *, .animate-fade-up { animation: none !important; }
+            .roles, .grid-4 { grid-template-columns: repeat(4, 1fr) !important; }
+            .grid-3, .layers { grid-template-columns: repeat(3, 1fr) !important; }
+            .split, .grid-2, .cta-box, .cards-2, .grid-2x2 { grid-template-columns: 1fr 1fr !important; }
+            .page-num { right: 0.4in; bottom: 0.28in; }
+        }
+    </style>
+</head>
+<body>
+    <a class="skip-link" href="#deck">跳到投影片</a>
+    <div class="progress-bar" id="progressBar"></div>
+
+    <div class="slide-deck" id="deck">
+
+        <section class="slide slide-title-hero active" aria-label="第 1 頁 開場">
+            <div class="slide-content">
+                <div class="brand-row">
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 17V7l8-4 8 4v10l-8 4-8-4z"/><path d="M12 21V11"/><path d="M4 7l8 4 8-4"/></svg>
+                    </span>
+                    AI_Project 控制台 · 經營層說明
+                </div>
+                <p class="kicker">給軟體公司決策者</p>
+                <h1 class="animate-fade-up">任務在系統裡，<br>交付在本機。</h1>
+                <p class="lead">工作單在 Jira、GitHub，程式在工程師電腦，AI 會改碼卻看不到現場。中間缺一座指揮台：把治理、課責、堆疊真相，接到你們已有的 Agent。</p>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 2 頁 痛點">
+            <div class="slide-content">
+                <p class="kicker">現況</p>
+                <h2>你們並不缺工具。<br>缺的是編成一套日常。</h2>
+                <div class="grid-3 animate-stagger">
+                    <article class="card card-danger">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h6"/></svg>
+                        <h3>專案只寫在系統裡</h3>
+                        <p>工作單開了，現場卻對不上分支、編譯與驗收。PM 看到的狀態，工程師螢幕上不一定是同一件事。</p>
+                    </article>
+                    <article class="card card-warn">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c1.2-3 3.4-4.5 6-4.5S13.8 17 15 20"/><circle cx="17" cy="8" r="2.4"/><path d="M16 15.2c2 .3 3.6 1.6 4.6 4.8"/></svg>
+                        <h3>人在表上</h3>
+                        <p>工時在試算表、任務在另一個系統、報帳靠回憶。專案毛利最後是猜的。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 18V6h7v12H4zM13 18V10h7v8h-7z"/><path d="M4 9h7M13 13h7"/></svg>
+                        <h3>AI 與現場脫節</h3>
+                        <p>買了 Cursor 或 Copilot，Agent 仍在猜連接埠、猜有沒有編過。改完碼沒人用同一套真相驗證，也沒有審計。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 3 頁 不作為的代價">
+            <div class="slide-content">
+                <p class="kicker">不接起來的代價</p>
+                <h2>隱形成本不會出現在損益表標題。</h2>
+                <div class="grid-2">
+                    <div class="chart-box">
+                        <canvas id="costChart" aria-label="一週時間配置示意圖"></canvas>
+                    </div>
+                    <div class="grid-3" style="grid-template-columns: 1fr; gap: 12px;">
+                        <article class="card"><h3>毛利是猜的</h3><p>工時匯不出、對不上 Issue，專案結算只能事後拼湊。</p></article>
+                        <article class="card"><h3>驗收沒有軌跡</h3><p>客訴時講不清誰在何時放了什麼、關卡有沒有擋住。</p></article>
+                        <article class="card"><h3>新人靠口耳相傳</h3><p>啟動順序、需重編、求救上下文，都活在資深同事的腦子裡。</p></article>
+                        <p class="note">圖為示意，用來對照痛點，不是客戶實測。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide slide-compact" aria-label="第 4 頁 角色定位">
+            <div class="slide-content">
+                <p class="kicker">角色定位</p>
+                <h2>本機交付作業系統，接上你們的 Agent。</h2>
+                <div class="split">
+                    <div>
+                        <p class="eyebrow">它不是</p>
+                        <ul class="is-not">
+                            <li>另一套雲端專案管理，用來取代你們現有的任務系統</li>
+                            <li>取代 Cursor、Copilot 或任何寫程式的 Agent</li>
+                            <li>把原始碼送到控制台自己的雲端代管</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <p class="eyebrow">它是</p>
+                        <ul class="is-yes">
+                            <li>坐在 Git、GitHub、本機 Agent 之上的 Agentic 指揮層</li>
+                            <li>讓 Agent 用堆疊真相做事：編譯、啟停、查 Log，並留下審計</li>
+                            <li>本機桌面產品：Agent 跑在公司電腦，真相留在倉裡</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="roles animate-stagger">
+                    <div class="role"><strong>經營層</strong><span>AI 授權要換成可驗收的交付；工時對得上，Agent 動作有審計。</span></div>
+                    <div class="role"><strong>專案經理</strong><span>任務可請 Agent 協助；驗收與報帳關卡仍由人擋。</span></div>
+                    <div class="role"><strong>Tech Lead</strong><span>Agent 用 MCP 查就緒與需重編，不是猜。政策擋得住危險操作。</span></div>
+                    <div class="role"><strong>工程師</strong><span>求救帶齊上下文；專案問答在控制台內，不佔編譯。</span></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 5 頁 三層能力">
+            <div class="slide-content">
+                <p class="kicker">產品地圖</p>
+                <h2>同一個視窗，四層能力。</h2>
+                <p class="lead" style="max-width: none;">同一套 Git 帳號。Agent 是操作者，控制台是真相來源。開發走編譯與承接；需求走治理與生命週期。</p>
+                <div class="grid-4 animate-stagger">
+                    <article class="card card-accent">
+                        <p class="layer-num">01 交付作業</p>
+                        <h3>讓堆疊真話</h3>
+                        <p>掃描、需重編、一鍵啟停、Log、文件。摘要列一眼看值班狀態。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <p class="layer-num">02 專案治理</p>
+                        <h3>讓任務可驗收</h3>
+                        <p>新需求與設計變更分開。沒有驗收條件不能發 Issue；CI 未綠不能合。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <p class="layer-num">03 人員課責</p>
+                        <h3>讓人對得上帳</h3>
+                        <p>GitHub 帳號就是人。接受任務、工時儀表、匯出報帳單並對上 Issue。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <p class="layer-num">04 Agentic</p>
+                        <h3>讓 AI 閉環</h3>
+                        <p>本機 Agent 改碼；MCP 回查編譯與堆疊。求救帶上下文，右側有審計。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 6 頁 專案管理">
+            <div class="slide-content">
+                <p class="kicker">專案管理</p>
+                <h2>從進件到報帳，關卡寫在產品裡。</h2>
+                <div class="flow" aria-label="進件生命週期">
+                    <span class="chip">草稿</span>
+                    <span class="chip">設計就緒</span>
+                    <span class="chip">已拆解</span>
+                    <span class="chip gate">已發出</span>
+                    <span class="chip">實作中</span>
+                    <span class="chip">驗證中</span>
+                    <span class="chip gate">可審查</span>
+                    <span class="chip">入主線</span>
+                    <span class="chip">已發行</span>
+                    <span class="chip">已部署</span>
+                    <span class="chip gate">已驗收</span>
+                    <span class="chip gate">已報帳</span>
+                </div>
+                <div class="grid-3">
+                    <article class="card">
+                        <h3>新需求 ≠ 設計變更</h3>
+                        <p>從無到有走 REQ；改既有行為走 ECR，要填現況、期望、影響，並上傳分析或設計文件。介面還要草圖或剪圖。</p>
+                    </article>
+                    <article class="card">
+                        <h3>擋得住的關卡</h3>
+                        <p>沒有驗收條件不能發 Issue。CI 未綠不能合併。驗收要勾完條件，相關 PR 已入主線，且已部署或明示不部署。</p>
+                    </article>
+                    <article class="card">
+                        <h3>暫停與收回留紀錄</h3>
+                        <p>已發出的進件不能直接刪。暫停與收回會留言通知承辦人，清單留痕跡。已入主線的程式要另開變更還原。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 7 頁 人員管理">
+            <div class="slide-content">
+                <p class="kicker">人員管理</p>
+                <h2>人的主鍵是 GitHub 帳號，不是另一張卡。</h2>
+                <div class="grid-4 animate-stagger">
+                    <article class="card card-accent">
+                        <h3>任務歸戶</h3>
+                        <p>開發台看「我的＋未指派」，一鍵接受。需求看板看全部未關閉與指派，含他人。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <h3>工時自動切</h3>
+                        <p>從開啟專案起算。切換或關閉就切開時段。滿 8 小時變黃、滿 10 小時變紅。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <h3>週月季年</h3>
+                        <p>儀表板看各專案時數與作息；同一 GitHub 倉會併在一起，帳號不會混。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <h3>報帳對得上</h3>
+                        <p>匯出 Markdown 與 CSV。需求台匯入後，對上已發出的 Issue 編號，標成已報帳。</p>
+                    </article>
+                </div>
+                <p class="note">尚未登入時先記在本機使用者；登入後把未歸戶時段併到該 GitHub 帳號。匯出時會提醒負責人。</p>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 8 頁 AI 與 Agentic">
+            <div class="slide-content">
+                <p class="kicker">AI 與 Agentic</p>
+                <h2>Agent 負責改碼，控制台負責真相。</h2>
+                <p class="lead" style="max-width: none;">不取代你們已買的 AI。控制台組好上下文，交給本機後端；Agent 也可回呼控制台驗證，而不是猜。</p>
+                <div class="grid-4 animate-stagger">
+                    <article class="card card-accent">
+                        <h3>後端可換</h3>
+                        <p>預設 Cursor，也可 Claude Code、Codex、Aider、VS Code、Windsurf 或自訂命令。都在公司電腦上跑。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <h3>帶上下文求救</h3>
+                        <p>畫面卡關、服務 Log、編譯失敗、指派任務：各帶對應材料給 Agent。文件與提交說明也可請 AI 起草。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <h3>MCP 回呼</h3>
+                        <p>Agent 可查值班摘要、編譯過期項目、讀 Log、啟停服務。修完要驗證，不是只改檔。</p>
+                    </article>
+                    <article class="card card-accent">
+                        <h3>審計與問答</h3>
+                        <p>MCP 成功或被拒都入對帳單。專案問答在控制台內只讀堆疊，不外開 IDE，也不鎖編譯。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 9 頁 差異">
+            <div class="slide-content">
+                <p class="kicker">差異</p>
+                <h2>補上執行層，不是再買一套任務系統。</h2>
+                <table class="compare">
+                    <thead>
+                        <tr>
+                            <th>能力</th>
+                            <th>雲端 PM</th>
+                            <th>只用 AI IDE</th>
+                            <th>自製腳本</th>
+                            <th>本產品</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>任務與生命週期</td>
+                            <td class="yes">強</td>
+                            <td class="no">弱</td>
+                            <td class="no">無</td>
+                            <td class="ours">接到 GitHub，關卡在本機</td>
+                        </tr>
+                        <tr>
+                            <td>本機堆疊真相</td>
+                            <td class="no">無</td>
+                            <td class="no">弱</td>
+                            <td class="yes">部分</td>
+                            <td class="ours">掃描、需重編、就緒</td>
+                        </tr>
+                        <tr>
+                            <td>工時對帳</td>
+                            <td class="no">外掛</td>
+                            <td class="no">無</td>
+                            <td class="no">試算表</td>
+                            <td class="ours">內建，對上 Issue</td>
+                        </tr>
+                        <tr>
+                            <td>Agentic 閉環</td>
+                            <td class="no">無</td>
+                            <td class="yes">會改碼</td>
+                            <td class="no">無</td>
+                            <td class="ours">求救 + MCP 驗證 + 審計</td>
+                        </tr>
+                        <tr>
+                            <td>程式碼是否經本產品雲端</td>
+                            <td class="no">視供應商</td>
+                            <td class="no">視模型</td>
+                            <td class="yes">否</td>
+                            <td class="ours">否</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 10 頁 採購理由">
+            <div class="slide-content">
+                <p class="kicker">為什麼現在採購</p>
+                <h2>用一套本機產品，收斂四件事。</h2>
+                <div class="grid-2">
+                    <div class="grid-2x2">
+                        <article class="card"><h3>90 分鐘導入</h3><p>不是半年顧問案。Tech Lead 用自己的倉走完掃描到求救。</p></article>
+                        <article class="card"><h3>一張對帳單</h3><p>工時、已關閉 Issue、開啟或合併的 PR，匯出給負責人。</p></article>
+                        <article class="card"><h3>驗收能擋關</h3><p>毛利與客訴都需要軌跡。關卡寫在產品裡，不是寫在 wiki。</p></article>
+                        <article class="card"><h3>Agent 有閉環</h3><p>已有的 AI 繼續用。控制台讓它接到堆疊真相，動作看得到、擋得住。</p></article>
+                    </div>
+                    <div class="chart-box">
+                        <canvas id="coverChart" aria-label="能力涵蓋示意雷達圖"></canvas>
+                    </div>
+                </div>
+                <p class="note">雷達圖為能力涵蓋示意，用來對照角色，不是評分排名。</p>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 11 頁 常見疑慮">
+            <div class="slide-content">
+                <p class="kicker">決策時會問的</p>
+                <h2>四個疑慮，直接回答。</h2>
+                <div class="cards-2 grid-2">
+                    <article class="card">
+                        <h3>我們已經有 Cursor</h3>
+                        <p>繼續用。本產品不取代 IDE。它讓 Agent 接到需重編、就緒與 Log，並用 MCP 驗證；右側看得到呼叫與拒絕。</p>
+                    </article>
+                    <article class="card">
+                        <h3>我們已經有任務系統</h3>
+                        <p>Jira、Azure DevOps 可以繼續用。本產品補本機真相、關卡與工時對帳。任務面目前接 GitHub Issue。</p>
+                    </article>
+                    <article class="card">
+                        <h3>程式碼會不會上雲</h3>
+                        <p>控制台是本機桌面，不把原始碼上傳到自己的雲。Agent 是你們選的本機後端。MCP 有審計。</p>
+                    </article>
+                    <article class="card">
+                        <h3>會不會被鎖死</h3>
+                        <p>真相在 Git 與遠端倉。離開仍帶走 Issue、PR、文件與程式。後端可換，不是綁一家 AI。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" aria-label="第 12 頁 下一步">
+            <div class="slide-content">
+                <p class="kicker">下一步</p>
+                <h2>用你們自己的倉，跑 90 分鐘。</h2>
+                <div class="cta-box">
+                    <div class="cta-card">
+                        <h3 style="font-size: 22px; margin-bottom: 8px;">建議試用路徑</h3>
+                        <p class="eyebrow">指定一位 Tech Lead、一位專案經理</p>
+                        <ol>
+                            <li>安裝 Windows 包，打開一份真實多服務倉。</li>
+                            <li>看「需重編」、編譯過期項目、按啟動。</li>
+                            <li>登入 GitHub，看任務與工時徽章。</li>
+                            <li>用需求台走一筆進件到發出（或看既有 Issue）。</li>
+                            <li>卡住時走一次求救；若已接 MCP，請 Agent 用值班摘要驗證，不要猜。</li>
+                        </ol>
+                    </div>
+                    <div>
+                        <ul class="next-list">
+                            <li><strong>今天就能做</strong>從 Releases 下載安裝包，不必編譯本產品原始碼。</li>
+                            <li><strong>成功標準</strong>Agent 不再猜現場；工時對得上人；驗收留得住紀錄。</li>
+                            <li><strong>採購對話</strong>用試用結果談授權與導入範圍，而不是再看功能清單。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <div class="nav-controls">
+        <button type="button" class="nav-btn" id="prevBtn" aria-label="上一頁">←</button>
+        <span class="slide-counter"><span id="current">1</span> / <span id="total">12</span></span>
+        <button type="button" class="nav-btn" id="nextBtn" aria-label="下一頁">→</button>
+    </div>
+
+    <script>
+        const slides = document.querySelectorAll(".slide");
+        const total = slides.length;
+        let current = 1;
+        let chartsReady = false;
+        document.getElementById("total").textContent = total;
+        slides.forEach((s, i) => {
+            const el = document.createElement("div");
+            el.className = "page-num";
+            el.textContent = (i + 1) + " / " + total;
+            s.appendChild(el);
+        });
+
+        const chartInk = "#8aa396";
+        const chartAccent = "#3d9b7a";
+        const chartWarn = "#d4a017";
+
+        function initCharts() {
+            if (chartsReady || typeof Chart === "undefined") return;
+            chartsReady = true;
+
+            const cost = document.getElementById("costChart");
+            if (cost) {
+                new Chart(cost, {
+                    type: "bar",
+                    data: {
+                        labels: ["找環境／重編", "對工時與報帳", "等驗收與對齊", "真正開發"],
+                        datasets: [
+                            {
+                                label: "現況（示意）",
+                                data: [18, 12, 14, 36],
+                                backgroundColor: "rgba(196, 92, 92, 0.72)",
+                                borderRadius: 6
+                            },
+                            {
+                                label: "導入後（示意）",
+                                data: [6, 4, 6, 64],
+                                backgroundColor: "rgba(61, 155, 122, 0.85)",
+                                borderRadius: 6
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { labels: { color: chartInk, font: { family: "Plus Jakarta Sans" } } },
+                            title: { display: true, text: "一週工時花在哪（小時，示意）", color: "#e8f0ec", font: { size: 14, weight: 700 } }
+                        },
+                        scales: {
+                            x: { ticks: { color: chartInk, maxRotation: 0 }, grid: { color: "rgba(255,255,255,0.04)" } },
+                            y: { ticks: { color: chartInk }, grid: { color: "rgba(255,255,255,0.06)" }, beginAtZero: true }
+                        }
+                    }
+                });
+            }
+
+            const cover = document.getElementById("coverChart");
+            if (cover) {
+                new Chart(cover, {
+                    type: "radar",
+                    data: {
+                        labels: ["任務生命週期", "本機堆疊真相", "工時對帳", "Agent 閉環", "程式碼不離機"],
+                        datasets: [
+                            {
+                                label: "只靠雲端 PM + IDE（示意）",
+                                data: [8, 2, 3, 4, 4],
+                                borderColor: chartWarn,
+                                backgroundColor: "rgba(212, 160, 23, 0.12)",
+                                pointBackgroundColor: chartWarn
+                            },
+                            {
+                                label: "加上本產品（示意）",
+                                data: [8, 9, 9, 8, 9],
+                                borderColor: chartAccent,
+                                backgroundColor: "rgba(61, 155, 122, 0.18)",
+                                pointBackgroundColor: chartAccent
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { labels: { color: chartInk, font: { size: 11, family: "Plus Jakarta Sans" } } }
+                        },
+                        scales: {
+                            r: {
+                                min: 0, max: 10,
+                                ticks: { display: false },
+                                grid: { color: "rgba(255,255,255,0.08)" },
+                                angleLines: { color: "rgba(255,255,255,0.08)" },
+                                pointLabels: { color: "#e8f0ec", font: { size: 11, family: "Plus Jakarta Sans" } }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function showSlide(n) {
+            if (n < 1) n = 1;
+            if (n > total) n = total;
+            current = n;
+            slides.forEach((s, i) => s.classList.toggle("active", i === n - 1));
+            document.getElementById("current").textContent = n;
+            document.getElementById("progressBar").style.width = (n / total * 100) + "%";
+            initCharts();
+        }
+
+        function nextSlide() { showSlide(current + 1); }
+        function prevSlide() { showSlide(current - 1); }
+
+        document.getElementById("nextBtn").addEventListener("click", (e) => { e.stopPropagation(); nextSlide(); });
+        document.getElementById("prevBtn").addEventListener("click", (e) => { e.stopPropagation(); prevSlide(); });
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); nextSlide(); }
+            if (e.key === "ArrowLeft") { e.preventDefault(); prevSlide(); }
+        });
+
+        document.addEventListener("click", (e) => {
+            if (e.target.closest(".nav-controls") || e.target.closest("a") || e.target.closest("canvas")) return;
+            nextSlide();
+        });
+
+        const printMode = new URLSearchParams(location.search).has("print");
+
+        function preparePrint() {
+            document.body.classList.add("print-mode");
+            slides.forEach((s) => s.classList.add("active"));
+            initCharts();
+        }
+
+        window.addEventListener("beforeprint", preparePrint);
+        window.addEventListener("afterprint", () => {
+            if (!printMode) {
+                document.body.classList.remove("print-mode");
+                showSlide(current);
+            }
+        });
+
+        if (printMode) {
+            preparePrint();
+            document.fonts.ready.then(() => initCharts());
+        } else {
+            showSlide(1);
+        }
+    </script>
+</body>
+</html>

@@ -122,6 +122,22 @@ public static class DocsService
         File.WriteAllText(full, content ?? "", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
+    public static bool Delete(string projectRoot, string relPath)
+    {
+        var full = ResolveInsideDocs(projectRoot, relPath);
+        if (!File.Exists(full))
+            return false;
+        File.Delete(full);
+        TryPruneEmptyParents(Path.GetDirectoryName(full), DocsDirectory(projectRoot));
+        return true;
+    }
+
+    public static bool IsScaffoldFile(string? relPath)
+    {
+        var rel = NormalizeRel(relPath);
+        return ScaffoldFiles.Any(s => string.Equals(s, rel, StringComparison.OrdinalIgnoreCase));
+    }
+
     public static DocsStatus Scan(string projectRoot)
     {
         var root = Path.GetFullPath(projectRoot);
@@ -1025,6 +1041,33 @@ public static class DocsService
                 return m.Value;
         }
         return null;
+    }
+
+    static void TryPruneEmptyParents(string? startDir, string docsRoot)
+    {
+        if (string.IsNullOrEmpty(startDir))
+            return;
+        var root = Path.GetFullPath(docsRoot);
+        var dir = Path.GetFullPath(startDir);
+        while (IsUnder(dir, root) && !string.Equals(dir, root, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Directory.Exists(dir))
+                break;
+            try
+            {
+                if (Directory.EnumerateFileSystemEntries(dir).Any())
+                    break;
+                Directory.Delete(dir);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                break;
+            }
+            var parent = Path.GetDirectoryName(dir);
+            if (string.IsNullOrEmpty(parent))
+                break;
+            dir = parent;
+        }
     }
 
     static string NormalizeRel(string? relPath) =>

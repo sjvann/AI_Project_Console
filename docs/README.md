@@ -12,6 +12,7 @@
 | **團隊導入** | 帶新人走完掃描 → 編譯 → 啟動 → 求救 | [90 分鐘導入](team/trial-90min.md) |
 | **要用 Agent** | 求救後端、MCP、專案問答 | [Agent 後端](agent/backends.md) |
 | **維護此控制台** | 從原始碼編譯、打包、發 Release | [開發與維護](maintainer/develop.md) |
+| **業務／採購** | 對外部軟體公司高層說明定位與管理特色 | [銷售套件](salekit/README.md) |
 
 線上版（GitHub Pages）：<https://sjvann.github.io/AI_Project_Console/>
 
@@ -30,6 +31,7 @@
 
 可選：
 
+- [銷售套件](salekit/README.md) — 經營層投影片與講者重點
 - [部署](user/deploy.md) — 本機以外的發佈目標
 - [工作區設定](workspace/ai-project-json.md) — 服務清單與產品線
 - [MCP](agent/mcp.md) — 讓 Agent 回呼控制台

@@ -37,6 +37,7 @@ _disableNextArticle: true
   <a class="home-card" href="docs/user/help.md"><strong>卡住時</strong><span>UAT／編譯求救與專案問答。</span></a>
   <a class="home-card" href="docs/agent/mcp.md"><strong>Agent／MCP</strong><span>讓 Agent 回呼控制台查堆疊與編譯。</span></a>
   <a class="home-card" href="docs/maintainer/develop.md"><strong>維護者</strong><span>從原始碼編譯、打包，或查 API 參考。</span></a>
+  <a class="home-card" href="docs/salekit/README.md"><strong>業務／採購</strong><span>經營層投影片：角色定位、專案與人員管理。</span></a>
 </div>
 </section>
 

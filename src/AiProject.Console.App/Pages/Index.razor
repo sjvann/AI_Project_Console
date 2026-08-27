@@ -292,6 +292,7 @@
                         <span class="hint grow">@(S.Docs?.Label() ?? "尚未掃描")</span>
                         <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.ScaffoldDocsAsync">建立體系</button>
                         <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.OpenNewDocDialog())">新增文件</button>
+                        <button class="btn-sec" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath))" @onclick="@(() => S.DeleteDoc(S.SelectedDocPath!))">刪除</button>
                         <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.RefreshDocsFromUi">刷新</button>
                     </div>
                     @if (!string.IsNullOrEmpty(S.DocsHint))
@@ -335,20 +336,25 @@
                                 }
                                 else if (row.File is { } f)
                                 {
-                                    <button type="button"
-                                            class="doc-file @(f.RelPath == S.SelectedDocPath ? "sel" : null)"
-                                            style="padding-left: @(pad)px"
-                                            role="treeitem"
-                                            aria-selected="@(f.RelPath == S.SelectedDocPath)"
-                                            title="@f.RelPath"
-                                            @onclick="@(() => S.SelectDocAsync(f.RelPath))">
-                                        <span class="doc-file-name">@row.Name</span>
-                                        <span class="hint">@f.Title</span>
-                                        @if (f.IsStub)
-                                        {
-                                            <span class="doc-stub">待補</span>
-                                        }
-                                    </button>
+                                    <div class="doc-tree-line" style="padding-left: @(pad)px">
+                                        <button type="button"
+                                                class="doc-file @(f.RelPath == S.SelectedDocPath ? "sel" : null)"
+                                                role="treeitem"
+                                                aria-selected="@(f.RelPath == S.SelectedDocPath)"
+                                                title="@f.RelPath"
+                                                @onclick="@(() => S.SelectDocAsync(f.RelPath))">
+                                            <span class="doc-file-name">@row.Name</span>
+                                            <span class="hint">@f.Title</span>
+                                            @if (f.IsStub)
+                                            {
+                                                <span class="doc-stub">待補</span>
+                                            }
+                                        </button>
+                                        <button type="button"
+                                                class="doc-file-del"
+                                                title="刪除此文件"
+                                                @onclick="@(() => S.DeleteDoc(f.RelPath))">刪除</button>
+                                    </div>
                                 }
                             }
                         </div>
@@ -608,6 +614,7 @@
                     </label>
                     <button class="btn-sec" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath) || S.JobBusy)" @onclick="@(() => S.AiFillDocsAsync(true))">AI 補齊本頁</button>
                     <button class="btn-primary" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath) || !S.DocsDirty)" @onclick="S.SaveSelectedDoc">儲存</button>
+                    <button class="btn-sec" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath))" @onclick="@(() => S.DeleteDoc(S.SelectedDocPath!))">刪除</button>
                     <button class="btn-sec"
                             disabled="@S.JobBusy"
                             title="@(S.DocsPreviewOpensCurrentPage ? "用瀏覽器開 DocFX 網站的目前這頁" : "用瀏覽器開 DocFX 網站首頁")"

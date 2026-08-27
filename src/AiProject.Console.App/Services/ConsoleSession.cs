@@ -2521,6 +2521,53 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
+    public void DeleteDoc(string relPath)
+    {
+        if (!RequireCatalog() || string.IsNullOrWhiteSpace(relPath))
+            return;
+        var rel = relPath.Trim().Replace('\\', '/').Trim('/');
+        if (!DocsService.IsSafeRelPath(rel))
+        {
+            _native.Warn("無法刪除", "路徑無效。只能刪 docs/ 內的 Markdown 或 DocFX 設定。");
+            return;
+        }
+        var extra = DocsService.IsScaffoldFile(rel)
+            ? "這是骨架檔，之後可用「建立體系」再產生（不會覆蓋你已改過的其他檔）。\n\n"
+            : "";
+        if (!_native.Confirm("刪除文件", extra + $"確定刪除 docs/{rel}？本機檔案會立刻移除。"))
+            return;
+        try
+        {
+            if (!DocsService.Delete(Catalog!.Root, rel))
+            {
+                _native.Warn("無法刪除", "找不到這個檔，或已經不在磁碟上。");
+                RefreshDocs(keepSelection: true);
+                return;
+            }
+            var wasSelected = string.Equals(SelectedDocPath, rel, StringComparison.OrdinalIgnoreCase);
+            if (wasSelected)
+            {
+                SelectedDocPath = null;
+                DocsDraft = "";
+                DocsDirty = false;
+            }
+            Docs = DocsService.Scan(Catalog.Root);
+            DocsHint = "已刪除 " + rel;
+            JobText = DocsHint;
+            if (wasSelected)
+            {
+                var first = Docs.Files.FirstOrDefault(f => !f.IsConfig) ?? Docs.Files.FirstOrDefault();
+                if (first is not null)
+                    LoadDoc(first.RelPath);
+            }
+            Notify();
+        }
+        catch (Exception ex)
+        {
+            _native.Error("無法刪除文件", ex.Message);
+        }
+    }
+
     void OpenDocsPreviewPage()
     {
         var pageUrl = DocsPreviewPageUrl;

@@ -109,6 +109,40 @@ public class DocsServiceTests
     }
 
     [Fact]
+    public void Delete_RemovesFileAndPrunesEmptyFolder()
+    {
+        var root = NewTemp();
+        try
+        {
+            DocsService.Write(root, "user/note.md", "# 筆記\n");
+            DocsService.Write(root, "user/keep.md", "# 留下\n");
+            Assert.True(DocsService.Delete(root, "user/note.md"));
+            Assert.False(File.Exists(Path.Combine(root, "docs", "user", "note.md")));
+            Assert.True(File.Exists(Path.Combine(root, "docs", "user", "keep.md")));
+            Assert.True(Directory.Exists(Path.Combine(root, "docs", "user")));
+
+            Assert.True(DocsService.Delete(root, "user/keep.md"));
+            Assert.False(Directory.Exists(Path.Combine(root, "docs", "user")));
+            Assert.True(Directory.Exists(Path.Combine(root, "docs")));
+            Assert.False(DocsService.Delete(root, "user/keep.md"));
+            Assert.Throws<InvalidOperationException>(() => DocsService.Delete(root, "../secret.md"));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void IsScaffoldFile_MatchesKnownPages()
+    {
+        Assert.True(DocsService.IsScaffoldFile("user/getting-started.md"));
+        Assert.True(DocsService.IsScaffoldFile("toc.yml"));
+        Assert.False(DocsService.IsScaffoldFile("agent/backends.md"));
+        Assert.False(DocsService.IsScaffoldFile("../toc.yml"));
+    }
+
+    [Fact]
     public void Ready_WhenSkeletonHasNoTodo()
     {
         var root = NewTemp();

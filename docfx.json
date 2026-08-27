@@ -61,6 +61,11 @@
         "files": [ "**" ],
         "src": "schema",
         "dest": "schema"
+      },
+      {
+        "files": [ "salekit/**/*.{html,pdf}" ],
+        "src": "docs",
+        "dest": "docs"
       }
     ],
     "output": "_site",
