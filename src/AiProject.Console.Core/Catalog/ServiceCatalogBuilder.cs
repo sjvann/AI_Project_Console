@@ -107,7 +107,9 @@ public static class ServiceCatalogBuilder
             services = [];
 
         var lines = ReadProductLines(manifest, services);
-        var scan = ProjectScanner.ScanWorkspace(root, lines);
+        var scan = SkipProjectScan(manifest)
+            ? new ScanResult(root, [])
+            : ProjectScanner.ScanWorkspace(root, lines);
         var projects = scan.Projects.ToList();
         if (services.Count == 0)
             services = DedupeIds(ProjectScanner.ExternalServiceCandidates(scan).Select(FromScan).ToList());
@@ -150,6 +152,17 @@ public static class ServiceCatalogBuilder
             Scan = scan,
             Summary = summary,
         };
+    }
+
+    internal static bool SkipProjectScan(JsonObject manifest)
+    {
+        var node = manifest["scanProjects"] ?? manifest["scan_projects"] ?? manifest["scan"];
+        if (node is not JsonValue jv)
+            return false;
+        if (jv.TryGetValue<bool>(out var flag))
+            return !flag;
+        var text = JsonUtil.Str(jv);
+        return text is "false" or "0" or "no" or "off";
     }
 
     public static bool HasOpenableFrontend(ProjectCatalog? catalog) =>
@@ -274,7 +287,8 @@ public static class ServiceCatalogBuilder
         if (string.IsNullOrEmpty(project))
             return null;
         var stem = Path.GetFileName(project);
-        if (stem.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        if (stem.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+            || stem.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
             stem = Path.GetFileNameWithoutExtension(stem);
         var label = JsonUtil.Pick(JsonUtil.Str(item["label"]), stem);
         var sid = JsonUtil.Pick(JsonUtil.Str(item["id"]), Slug(label));

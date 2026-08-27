@@ -202,6 +202,8 @@ public static class ProcessSupervisor
             var csprojs = Directory.GetFiles(path, "*.csproj").OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
             return csprojs.Length > 0 ? csprojs[0] : path;
         }
+        if (File.Exists(path))
+            return path;
         if (!path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
         {
             var candidate = path + ".csproj";
@@ -225,7 +227,6 @@ public static class ProcessSupervisor
             throw new FileNotFoundException($"找不到專案：{proj}");
 
         var logFile = rt.LogPath(stem);
-        var relProj = Path.GetRelativePath(catalog.Root, Path.GetFullPath(proj));
         var writer = OpenLog(logFile);
         writer.WriteLine($"=== {host.Label} start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
         var prep = RunPreStart(catalog, host, writer);
@@ -236,22 +237,9 @@ public static class ProcessSupervisor
             throw new InvalidOperationException(prep);
         }
 
-        var psi = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = catalog.Root,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = true,
-        };
-        psi.ArgumentList.Add("run");
-        psi.ArgumentList.Add("--project");
-        psi.ArgumentList.Add(relProj);
-        psi.ArgumentList.Add("--no-launch-profile");
-        psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
-        if (!string.IsNullOrEmpty(host.AspnetUrls))
-            psi.Environment["ASPNETCORE_URLS"] = host.AspnetUrls;
+        var psi = CreateStartInfo(catalog, host, proj);
+        writer.WriteLine($"{psi.FileName} {string.Join(' ', psi.ArgumentList)}");
+        writer.WriteLine($"cwd {psi.WorkingDirectory}");
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
         proc.OutputDataReceived += (_, e) => WriteLog(writer, e.Data);
@@ -263,6 +251,91 @@ public static class ProcessSupervisor
         WritePid(rt, stem, proc.Id);
         return proc.Id;
     }
+
+    internal static bool IsPythonScript(string path) =>
+        path.EndsWith(".py", StringComparison.OrdinalIgnoreCase);
+
+    internal static string ResolvePythonWorkingDirectory(string scriptPath)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(scriptPath));
+        if (!string.IsNullOrEmpty(dir)
+            && Path.GetFileName(dir).Equals("developer", StringComparison.OrdinalIgnoreCase))
+        {
+            var parent = Path.GetDirectoryName(dir);
+            if (!string.IsNullOrEmpty(parent))
+                return parent;
+        }
+        return dir ?? Environment.CurrentDirectory;
+    }
+
+    internal static bool IsPyLauncher(string fileName) =>
+        Path.GetFileNameWithoutExtension(fileName).Equals("py", StringComparison.OrdinalIgnoreCase);
+
+    internal static string? ResolvePythonLauncherPath()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var py = CliUtil.FindOnPath("py");
+            if (py is not null)
+                return py;
+        }
+        foreach (var name in new[] { "python", "python3" })
+        {
+            var found = CliUtil.FindOnPath(name);
+            if (found is not null)
+                return found;
+        }
+        return null;
+    }
+
+    internal static bool HasPythonLauncher() => ResolvePythonLauncherPath() is not null;
+
+    internal static string ResolvePythonLauncher() =>
+        ResolvePythonLauncherPath() ?? (OperatingSystem.IsWindows() ? "py" : "python3");
+
+    internal static bool RequiresDotnet(ProjectCatalog catalog, ServiceEntry svc)
+    {
+        var path = ProjectPathFor(catalog, ServiceCatalogBuilder.HostService(catalog, svc));
+        return !IsPythonScript(path);
+    }
+
+    internal static ProcessStartInfo CreateStartInfo(ProjectCatalog catalog, ServiceEntry host, string proj)
+    {
+        var full = Path.GetFullPath(proj);
+        if (IsPythonScript(full))
+        {
+            var workDir = ResolvePythonWorkingDirectory(full);
+            var relScript = Path.GetRelativePath(workDir, full);
+            var launcher = ResolvePythonLauncher();
+            var python = NewRedirected(launcher, workDir);
+            if (IsPyLauncher(launcher))
+                python.ArgumentList.Add("-3");
+            python.ArgumentList.Add(relScript.Replace('\\', '/'));
+            python.Environment["PYTHONUNBUFFERED"] = "1";
+            return python;
+        }
+
+        var relProj = Path.GetRelativePath(catalog.Root, full);
+        var psi = NewRedirected("dotnet", catalog.Root);
+        psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add("--project");
+        psi.ArgumentList.Add(relProj);
+        psi.ArgumentList.Add("--no-launch-profile");
+        psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+        if (!string.IsNullOrEmpty(host.AspnetUrls))
+            psi.Environment["ASPNETCORE_URLS"] = host.AspnetUrls;
+        return psi;
+    }
+
+    private static ProcessStartInfo NewRedirected(string fileName, string workDir) => new(fileName)
+    {
+        WorkingDirectory = workDir,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        RedirectStandardInput = true,
+    };
 
     public static string? TryStartService(ProjectCatalog catalog, ProjectRuntime rt, ServiceEntry svc)
     {

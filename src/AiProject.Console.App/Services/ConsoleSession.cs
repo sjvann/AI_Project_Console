@@ -1545,11 +1545,8 @@ public sealed class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return;
-        if (!CliUtil.CommandExists("dotnet"))
-        {
-            _native.Error("缺少工具", "找不到 dotnet。");
+        if (!EnsureStartTools())
             return;
-        }
         var catalog = Catalog!;
         var runtime = Runtime!;
         var health = new Dictionary<string, bool>(Health);
@@ -1584,11 +1581,8 @@ public sealed class ConsoleSession : IDisposable
             _native.Info("已在線", $"「{svc.Label}」已在執行。");
             return Task.CompletedTask;
         }
-        if (!CliUtil.CommandExists("dotnet"))
-        {
-            _native.Error("缺少工具", "找不到 dotnet。");
+        if (!EnsureStartTools(svc))
             return Task.CompletedTask;
-        }
         var catalog = Catalog!;
         var runtime = Runtime!;
         return RunJobAsync($"啟動 {svc.Label}…", () =>
@@ -3692,6 +3686,35 @@ public sealed class ConsoleSession : IDisposable
             return true;
         _native.Info("尚未選擇專案", "請先選擇專案目錄。");
         return false;
+    }
+
+    private bool EnsureStartTools(ServiceEntry? svc = null)
+    {
+        var catalog = Catalog!;
+        IEnumerable<ServiceEntry> targets = svc is null
+            ? ServiceCatalogBuilder.OrderedRunnable(catalog)
+            : [ServiceCatalogBuilder.HostService(catalog, svc)];
+        var needDotnet = false;
+        var needPython = false;
+        foreach (var item in targets)
+        {
+            var path = ProcessSupervisor.ProjectPathFor(catalog, item);
+            if (path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+                needPython = true;
+            else
+                needDotnet = true;
+        }
+        if (needPython && !CliUtil.CommandExists("py") && !CliUtil.CommandExists("python") && !CliUtil.CommandExists("python3"))
+        {
+            _native.Error("缺少工具", "找不到 Python（py / python / python3）。");
+            return false;
+        }
+        if (needDotnet && !CliUtil.CommandExists("dotnet"))
+        {
+            _native.Error("缺少工具", "找不到 dotnet。");
+            return false;
+        }
+        return true;
     }
 
     private async Task RunJobAsync(string title, Func<Task<string?>> fn, bool refreshBuilds = true)

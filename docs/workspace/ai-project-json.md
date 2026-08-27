@@ -34,9 +34,11 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 `services` 有內容時，**以清單為準**，不再只靠掃描結果當服務列。
 
+若後續作業改由清單內的控制台／入口負責、不要再掃全倉 `.csproj`，可加 `"scanProjects": false`（也可用 `scan_projects`／`scan`）。專案頁會變空，編譯過期項目也不再列那些專案。
+
 | 欄位 | 必填 | 說明 |
 |------|------|------|
-| `project` | 是 | 相對路徑，指向專案目錄或 `.csproj`（副檔名可省略） |
+| `project` | 是 | 相對路徑，指向專案目錄、`.csproj`（副檔名可省略），或 Python 控制台腳本（`.py`；Windows 以 `py -3` 啟動） |
 | `id` | 否 | 穩定識別；空白則由名稱產生 |
 | `label` | 否 | 畫面上的名稱 |
 | `port` | 否 | 顯示與推斷健康檢查用 |

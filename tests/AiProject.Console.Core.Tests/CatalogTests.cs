@@ -291,6 +291,123 @@ public class CatalogTests
     }
 
     [Fact]
+    public void BuildCatalog_ScanProjectsFalse_SkipsCsproj()
+    {
+        var root = CreateTempProject();
+        try
+        {
+            var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(root, "ai-project.json")))!.AsObject();
+            manifest["scanProjects"] = false;
+            File.WriteAllText(Path.Combine(root, "ai-project.json"), manifest.ToJsonString());
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Empty(catalog.Projects);
+            Assert.Equal(2, catalog.Services.Count);
+            Assert.Equal("api", catalog.Services[0].Id);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_FromPythonConsoleManifest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-test-" + Guid.NewGuid().ToString("N"));
+        var scriptDir = Path.Combine(root, "developer");
+        try
+        {
+            Directory.CreateDirectory(scriptDir);
+            File.WriteAllText(Path.Combine(scriptDir, "analyst_console.py"), "print('ok')");
+            File.WriteAllText(Path.Combine(root, "ai-project.json"), """
+            {
+              "name": "ModuLaunch",
+              "services": [
+                {
+                  "id": "analyst-console",
+                  "label": "系統分析者控制台",
+                  "project": "developer/analyst_console.py",
+                  "port": 17890,
+                  "health": "http://127.0.0.1:17890/",
+                  "openUrl": "http://127.0.0.1:17890/",
+                  "group": "開發者控制台"
+                }
+              ],
+              "startOrder": ["analyst-console"],
+              "frontend": "analyst-console"
+            }
+            """);
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Equal("ModuLaunch", catalog.Name);
+            Assert.Single(catalog.Services);
+            var svc = catalog.Services[0];
+            Assert.Equal("analyst-console", svc.Id);
+            Assert.Equal("analyst_console", svc.Stem);
+            Assert.Equal("developer/analyst_console.py", svc.Project);
+            Assert.Equal(17890, svc.Port);
+            Assert.Equal("http://127.0.0.1:17890/", svc.OpenUrl);
+            var script = ProcessSupervisor.ProjectPathFor(catalog, svc);
+            Assert.True(File.Exists(script));
+            Assert.True(ProcessSupervisor.IsPythonScript(script));
+            Assert.False(ProcessSupervisor.RequiresDotnet(catalog, svc));
+            Assert.Equal(Path.GetFullPath(root), ProcessSupervisor.ResolvePythonWorkingDirectory(script));
+            var psi = ProcessSupervisor.CreateStartInfo(catalog, svc, script);
+            Assert.False(Path.GetFileNameWithoutExtension(psi.FileName).Equals("dotnet", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains("developer/analyst_console.py", string.Join(' ', psi.ArgumentList).Replace('\\', '/'));
+            Assert.Equal(Path.GetFullPath(root), psi.WorkingDirectory);
+            Assert.Equal("1", psi.Environment["PYTHONUNBUFFERED"]);
+            if (ProcessSupervisor.IsPyLauncher(psi.FileName))
+                Assert.Equal("-3", psi.ArgumentList[0]);
+            else
+                Assert.DoesNotContain("-3", psi.ArgumentList);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CreateStartInfo_SiblingPythonConsole_UsesDeveloperParent()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), "ai-console-test-" + Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(tmp, "workspace");
+        var scriptDir = Path.Combine(tmp, "product", "developer");
+        try
+        {
+            Directory.CreateDirectory(workspace);
+            Directory.CreateDirectory(scriptDir);
+            File.WriteAllText(Path.Combine(scriptDir, "module_dev_console.py"), "print('ok')");
+            File.WriteAllText(Path.Combine(workspace, "ai-project.json"), """
+            {
+              "name": "Thin",
+              "scanProjects": false,
+              "services": [
+                {
+                  "id": "module-dev-console",
+                  "label": "模組開發者控制台",
+                  "project": "../product/developer/module_dev_console.py",
+                  "port": 17887
+                }
+              ]
+            }
+            """);
+            var catalog = ServiceCatalogBuilder.Build(workspace);
+            var svc = Assert.Single(catalog.Services);
+            var script = ProcessSupervisor.ProjectPathFor(catalog, svc);
+            Assert.True(ProcessSupervisor.IsPythonScript(script));
+            Assert.Equal(Path.GetFullPath(Path.Combine(tmp, "product")), ProcessSupervisor.ResolvePythonWorkingDirectory(script));
+            var psi = ProcessSupervisor.CreateStartInfo(catalog, svc, script);
+            Assert.Contains("developer/module_dev_console.py", string.Join(' ', psi.ArgumentList).Replace('\\', '/'));
+            Assert.Equal(Path.GetFullPath(Path.Combine(tmp, "product")), psi.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(tmp, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Deploy_InfersGcpFromLegacyBlock()
     {
         var root = CreateTempProject();

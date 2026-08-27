@@ -1,0 +1,87 @@
+{
+  "name": "AI_Project_Console",
+  "description": "ModuLaunch 模組作業由四個角色控制台管控，不再啟動掃描到的模組 API／Client。",
+  "scanProjects": false,
+  "productLines": [
+    { "id": "modulaunch", "label": "ModuLaunch", "root": "../ModuLaunch/developer" }
+  ],
+  "services": [
+    {
+      "id": "analyst-console",
+      "label": "系統分析者控制台",
+      "project": "../ModuLaunch/developer/analyst_console.py",
+      "port": 17890,
+      "health": "http://127.0.0.1:17890/",
+      "openUrl": "http://127.0.0.1:17890/",
+      "group": "ModuLaunch 控制台"
+    },
+    {
+      "id": "module-dev-console",
+      "label": "模組開發者控制台",
+      "project": "../ModuLaunch/developer/module_dev_console.py",
+      "port": 17887,
+      "health": "http://127.0.0.1:17887/",
+      "openUrl": "http://127.0.0.1:17887/",
+      "group": "ModuLaunch 控制台"
+    },
+    {
+      "id": "integrator-console",
+      "label": "系統整合者控制台",
+      "project": "../ModuLaunch/developer/integrator_console.py",
+      "port": 17888,
+      "health": "http://127.0.0.1:17888/",
+      "openUrl": "http://127.0.0.1:17888/",
+      "group": "ModuLaunch 控制台"
+    },
+    {
+      "id": "customer-console",
+      "label": "客戶服務者控制台",
+      "project": "../ModuLaunch/developer/customer_console.py",
+      "port": 17991,
+      "health": "http://127.0.0.1:17991/",
+      "openUrl": "http://127.0.0.1:17991/",
+      "group": "ModuLaunch 控制台"
+    }
+  ],
+  "startOrder": [
+    "analyst-console",
+    "module-dev-console",
+    "integrator-console",
+    "customer-console"
+  ],
+  "frontend": "integrator-console",
+  "github": {
+    "owner": "sjvann",
+    "repo": "AI_Project_Console",
+    "remote": "origin",
+    "defaultBranch": "main",
+    "url": "https://github.com/sjvann/AI_Project_Console"
+  },
+  "deploy": {
+    "target": "none"
+  },
+  "gcp": {
+    "projectId": "",
+    "zone": "asia-east1-b",
+    "instance": "",
+    "host": "",
+    "workflow": "deploy-gcp.yml"
+  },
+  "onprem": {
+    "protocol": "ssh",
+    "host": "",
+    "port": "22",
+    "user": "",
+    "remotePath": "",
+    "openUrl": "",
+    "keyPath": ""
+  },
+  "azure": {
+    "subscriptionId": "",
+    "resourceGroup": "",
+    "appName": "",
+    "region": "eastasia",
+    "openUrl": "",
+    "workflow": "deploy-azure.yml"
+  }
+}
