@@ -356,21 +356,85 @@ public static class ProcessSupervisor
         }
     }
 
+    public static IReadOnlyList<ServiceEntry> OfflineRunnable(
+        ProjectCatalog catalog,
+        IReadOnlyDictionary<string, bool> health,
+        IReadOnlySet<string>? ids = null)
+    {
+        var list = new List<ServiceEntry>();
+        foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
+        {
+            if (ids is not null && !ids.Contains(svc.Id))
+                continue;
+            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc) || health.GetValueOrDefault(svc.Id))
+                continue;
+            list.Add(svc);
+        }
+        return list;
+    }
+
+    public static IReadOnlyList<ServiceEntry> OnlineRunnable(
+        ProjectCatalog catalog,
+        IReadOnlyDictionary<string, bool> health,
+        IReadOnlySet<string>? ids = null)
+    {
+        var list = new List<ServiceEntry>();
+        foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
+        {
+            if (ids is not null && !ids.Contains(svc.Id))
+                continue;
+            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc) || !health.GetValueOrDefault(svc.Id))
+                continue;
+            list.Add(svc);
+        }
+        return list;
+    }
+
     public static IReadOnlyList<(string Id, string Label, string? Error)> StartOffline(
         ProjectCatalog catalog,
         ProjectRuntime rt,
         IReadOnlyDictionary<string, bool> health,
+        IReadOnlySet<string>? ids = null,
         int delayMs = 500)
     {
         var results = new List<(string Id, string Label, string? Error)>();
-        foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
+        foreach (var svc in OfflineRunnable(catalog, health, ids))
         {
-            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc) || health.GetValueOrDefault(svc.Id))
-                continue;
             var err = TryStartService(catalog, rt, svc);
             results.Add((svc.Id, svc.Label, err));
             if (delayMs > 0)
                 Thread.Sleep(delayMs);
+        }
+        return results;
+    }
+
+    public static void StopServices(
+        ProjectCatalog catalog,
+        ProjectRuntime rt,
+        IEnumerable<ServiceEntry> services)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var svc in services)
+        {
+            if (svc.HostedBy is not null || ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
+                continue;
+            if (!seen.Add(svc.Id))
+                continue;
+            StopService(catalog, rt, svc);
+        }
+    }
+
+    public static IReadOnlyList<(string Id, string Label, string? Error)> RestartOnline(
+        ProjectCatalog catalog,
+        ProjectRuntime rt,
+        IReadOnlyDictionary<string, bool> health,
+        IReadOnlySet<string>? ids = null)
+    {
+        var results = new List<(string Id, string Label, string? Error)>();
+        foreach (var svc in OnlineRunnable(catalog, health, ids))
+        {
+            var err = RestartService(catalog, rt, svc);
+            results.Add((svc.Id, svc.Label, err));
         }
         return results;
     }

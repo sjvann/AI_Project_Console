@@ -113,6 +113,11 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .group-chevron { width: 0; height: 0; border-style: solid; border-width: 5px 0 5px 6px; border-color: transparent transparent transparent currentColor; transform: rotate(90deg); }
 .group-label.collapsed .group-chevron { transform: rotate(0deg); }
 .group-count { margin-left: auto; font-weight: 600; font-size: 11px; opacity: .75; }
+.group-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px 4px; }
+.group-row .group-label { width: auto; flex: none; min-width: 0; padding: 0; }
+.group-row .group-count { margin-left: 0; flex: none; }
+.group-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.group-actions .btn-link { padding-right: 6px; }
 .prj-list > .group-label { grid-column: 1 / -1; }
 .svc { display: grid; grid-template-columns: 52px 1fr 56px auto; gap: 6px; align-items: center; padding: 6px 8px; cursor: pointer; border-radius: 3px; }
 .svc.sel { background: var(--sel); }

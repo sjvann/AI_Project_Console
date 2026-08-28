@@ -295,9 +295,24 @@ public sealed partial class ConsoleSession : IDisposable
     private readonly HashSet<string> _collapsedProjectGroups = new(StringComparer.Ordinal);
     private readonly HashSet<string> _collapsedDocFolders = new(StringComparer.OrdinalIgnoreCase);
 
-    public IEnumerable<IGrouping<string, ServiceEntry>> ServiceGroups =>
-        Catalog?.Services.GroupBy(s => string.IsNullOrEmpty(s.Group) ? "其他" : s.Group)
-        ?? Enumerable.Empty<IGrouping<string, ServiceEntry>>();
+    public IReadOnlyList<ServiceGroupNode> ServiceGroupRoots =>
+        Catalog is null ? [] : ServiceGroupTree.Build(Catalog.Services);
+
+    public IEnumerable<ServiceGroupNode> VisibleServiceGroupNodes() =>
+        ServiceGroupTree.WalkVisible(ServiceGroupRoots, IsServiceGroupCollapsed);
+
+    public ServiceActionFlags ActionsFor(ServiceEntry svc)
+    {
+        var self = IsSelfService(svc);
+        return ServiceActionPolicy.ForRow(svc, self || Health.GetValueOrDefault(svc.Id), self);
+    }
+
+    public ServiceActionFlags ActionsFor(ServiceGroupNode node) =>
+        ServiceActionPolicy.ForGroup(node.Descendants().Select(s =>
+        {
+            var self = IsSelfService(s);
+            return (s, self || Health.GetValueOrDefault(s.Id), self);
+        }));
 
     public IReadOnlyList<IAgentBackend> AgentBackends => AgentBackendRegistry.All;
 
@@ -333,7 +348,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void ToggleAllServiceGroups()
     {
-        ToggleAllGroups(_collapsedServiceGroups, ServiceGroups.Select(g => g.Key));
+        ToggleAllGroups(_collapsedServiceGroups, ServiceGroupTree.AllKeys(ServiceGroupRoots));
     }
 
     public IReadOnlyList<DocsTreeRow> VisibleDocsTree =>
@@ -1811,6 +1826,86 @@ public sealed partial class ConsoleSession : IDisposable
         if (results.Count == 0 && !JobBusy)
             JobText = "所有服務已在線";
         Notify();
+    }
+
+    public async Task StartGroupAsync(string key)
+    {
+        if (!RequireCatalog())
+            return;
+        var catalog = Catalog!;
+        var runtime = Runtime!;
+        var health = new Dictionary<string, bool>(Health);
+        var ids = GroupRunnableIds(key);
+        var planned = ProcessSupervisor.OfflineRunnable(catalog, health, ids);
+        if (planned.Count == 0)
+        {
+            if (!JobBusy)
+                JobText = "此群組服務已在線";
+            Notify();
+            return;
+        }
+        if (!EnsureStartTools(planned))
+            return;
+        IReadOnlyList<(string Id, string Label, string? Error)> results = [];
+        await RunJobAsync("啟動中…", () =>
+        {
+            results = ProcessSupervisor.StartOffline(catalog, runtime, health, ids);
+            return Task.FromResult<string?>(null);
+        }).ConfigureAwait(false);
+        ApplyStartResults(results);
+        Notify();
+    }
+
+    public Task StopGroupAsync(string key)
+    {
+        if (!RequireCatalog())
+            return Task.CompletedTask;
+        var catalog = Catalog!;
+        var runtime = Runtime!;
+        var targets = ProcessSupervisor.OnlineRunnable(catalog, Health, GroupRunnableIds(key));
+        return RunJobAsync("停止中…", () =>
+        {
+            ProcessSupervisor.StopServices(catalog, runtime, targets);
+            return Task.FromResult<string?>(null);
+        });
+    }
+
+    public Task RestartGroupAsync(string key)
+    {
+        if (!RequireCatalog())
+            return Task.CompletedTask;
+        var catalog = Catalog!;
+        var runtime = Runtime!;
+        var health = new Dictionary<string, bool>(Health);
+        var ids = GroupRunnableIds(key);
+        var targets = ProcessSupervisor.OnlineRunnable(catalog, health, ids);
+        if (targets.Count == 0)
+            return Task.CompletedTask;
+        if (!EnsureStartTools(targets))
+            return Task.CompletedTask;
+        return RunJobAsync("重啟中…", () =>
+        {
+            var results = ProcessSupervisor.RestartOnline(catalog, runtime, health, ids);
+            ApplyStartResults(results);
+            return Task.FromResult<string?>(null);
+        });
+    }
+
+    public void OpenGroupUrls(string key)
+    {
+        var node = ServiceGroupTree.Find(ServiceGroupRoots, key);
+        if (node is null)
+            return;
+        var opened = 0;
+        foreach (var svc in node.Descendants())
+        {
+            if (string.IsNullOrEmpty(svc.OpenUrl))
+                continue;
+            CliUtil.OpenUrl(svc.OpenUrl);
+            opened++;
+        }
+        if (opened == 0)
+            _native.Info("無 URL", "沒有可開啟的 openUrl。");
     }
 
     public Task StartOneAsync(ServiceEntry svc)
@@ -3991,12 +4086,29 @@ public sealed partial class ConsoleSession : IDisposable
         return false;
     }
 
-    private bool EnsureStartTools(ServiceEntry? svc = null)
+    private HashSet<string> GroupRunnableIds(string key)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var node = ServiceGroupTree.Find(ServiceGroupRoots, key);
+        if (node is null)
+            return ids;
+        foreach (var svc in node.Descendants())
+        {
+            if (IsSelfService(svc) || !string.IsNullOrEmpty(svc.HostedBy))
+                continue;
+            ids.Add(svc.Id);
+        }
+        return ids;
+    }
+
+    private bool EnsureStartTools(ServiceEntry? svc = null) =>
+        EnsureStartTools(svc is null
+            ? ServiceCatalogBuilder.OrderedRunnable(Catalog!)
+            : [ServiceCatalogBuilder.HostService(Catalog!, svc)]);
+
+    private bool EnsureStartTools(IEnumerable<ServiceEntry> targets)
     {
         var catalog = Catalog!;
-        IEnumerable<ServiceEntry> targets = svc is null
-            ? ServiceCatalogBuilder.OrderedRunnable(catalog)
-            : [ServiceCatalogBuilder.HostService(catalog, svc)];
         var needDotnet = false;
         var needPython = false;
         foreach (var item in targets)

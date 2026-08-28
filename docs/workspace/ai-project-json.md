@@ -45,7 +45,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `health` | 否 | 健康檢查 URL；空白且有 port 時預設 `http://127.0.0.1:{port}/health` |
 | `openUrl` | 否 | 「開啟」用的瀏覽器網址 |
 | `aspnetUrls` | 否 | 傳給 ASP.NET 的 `ASPNETCORE_URLS`（也可用 `urls`） |
-| `group` | 否 | 左側分組標題 |
+| `group` | 否 | 左側分組標題。可用 `Lab/HL7` 表示次群組（`/` 分段，也接受 `\`）。未寫斜線則先當單層；若同一群組裡有兩種以上共用名稱開頭（例如兩個 HL7…、兩個 SFTP…），畫面會自動拆次群組。要固定層級請寫路徑 |
 | `hostedBy` | 否 | 掛在另一個服務的 id 上，不單獨啟動 |
 | `preStart` | 否 | 相對工作區根的腳本；也可用 `ensure`。啟動該服務前先跑，失敗則不起行程。**禁止**用來啟動另一條產品線 |
 

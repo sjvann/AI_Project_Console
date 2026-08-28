@@ -93,6 +93,26 @@
       "openUrl": "http://localhost:8091/",
       "aspnetUrls": "http://localhost:8091",
       "group": "EDDSS"
+    },
+    {
+      "id": "hl7-bench-api",
+      "label": "HL7 Test Bench API",
+      "project": "Lab/HL7.TestBench.Api",
+      "port": 5110,
+      "health": "http://127.0.0.1:5110/health",
+      "openUrl": "http://localhost:5110/scalar",
+      "aspnetUrls": "http://localhost:5110",
+      "group": "Lab/HL7"
+    },
+    {
+      "id": "sftp-bench-api",
+      "label": "SFTP Test Bench API",
+      "project": "Lab/SFTP.TestBench.Api",
+      "port": 5120,
+      "health": "http://127.0.0.1:5120/health",
+      "openUrl": "http://localhost:5120/scalar",
+      "aspnetUrls": "http://localhost:5120",
+      "group": "Lab/SFTP"
     }
   ],
   "startOrder": [
@@ -103,7 +123,9 @@
     "exchange-host",
     "platform-frontend",
     "eddss-api",
-    "eddss-web"
+    "eddss-web",
+    "hl7-bench-api",
+    "sftp-bench-api"
   ],
   "frontend": "hub-web",
   "github": {

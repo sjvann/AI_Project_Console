@@ -199,45 +199,73 @@
                     }
                     else
                     {
-                        @foreach (var g in S.ServiceGroups)
+                        @foreach (var node in S.VisibleServiceGroupNodes())
                         {
-                            var svcCollapsed = S.IsServiceGroupCollapsed(g.Key);
-                            <button type="button" class="group-label @(svcCollapsed ? "collapsed" : null)" title="展開／收合" aria-expanded="@(!svcCollapsed)" @onclick="@(() => S.ToggleServiceGroup(g.Key))">
-                                <span class="group-chevron" aria-hidden="true"></span>
-                                <span>@g.Key</span>
-                                <span class="group-count">@g.Count()</span>
-                            </button>
+                            var svcCollapsed = S.IsServiceGroupCollapsed(node.Key);
+                            var groupActs = S.ActionsFor(node);
+                            <div class="group-row" style="padding-left: @(4 + node.Depth * 14)px">
+                                <button type="button" class="group-label @(svcCollapsed ? "collapsed" : null)" title="展開／收合" aria-expanded="@(!svcCollapsed)" @onclick="@(() => S.ToggleServiceGroup(node.Key))">
+                                    <span class="group-chevron" aria-hidden="true"></span>
+                                    <span>@node.Name</span>
+                                    <span class="group-count">@node.ServiceCount</span>
+                                </button>
+                                <span class="group-actions">
+                                    @if (groupActs.Open)
+                                    {
+                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="開啟此群組全部網址" @onclick:stopPropagation="true" @onclick="@(() => S.OpenGroupUrls(node.Key))">開啟</button>
+                                    }
+                                    @if (groupActs.Start)
+                                    {
+                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="啟動此群組離線服務" @onclick:stopPropagation="true" @onclick="@(() => S.StartGroupAsync(node.Key))">啟動</button>
+                                    }
+                                    @if (groupActs.Restart)
+                                    {
+                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="重啟此群組線上服務" @onclick:stopPropagation="true" @onclick="@(() => S.RestartGroupAsync(node.Key))">重啟</button>
+                                    }
+                                    @if (groupActs.Stop)
+                                    {
+                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="停止此群組線上服務" @onclick:stopPropagation="true" @onclick="@(() => S.StopGroupAsync(node.Key))">停止</button>
+                                    }
+                                </span>
+                            </div>
                             @if (!svcCollapsed)
                             {
-                            @foreach (var svc in g)
+                            @foreach (var svc in node.Services)
                             {
                                 var self = S.IsSelfService(svc);
                                 var on = self || S.Health.GetValueOrDefault(svc.Id);
-                                <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null)" @onclick="@(() => S.SelectService(svc.Id))">
+                                var acts = S.ActionsFor(svc);
+                                <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null)" style="padding-left: @(8 + (node.Depth + 1) * 14)px" @onclick="@(() => S.SelectService(svc.Id))">
                                     <span class="@(on ? "status-on" : "status-off")">@(self ? "本機" : on ? "線上" : "離線")</span>
                                     <span>@svc.Label</span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
                                     <span>
-                                        @if (!string.IsNullOrEmpty(svc.OpenUrl))
+                                        @if (acts.Open)
                                         {
-                                            <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.OpenServiceUrl(svc))">開啟</button>
+                                            <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.OpenServiceUrl(svc))">開啟</button>
                                         }
-                                        @if (self)
+                                        @if (acts.SelfHint)
                                         {
                                             <span class="hint" title="這是目前這個控制台，再啟動會再開一扇視窗">目前這個視窗</span>
                                         }
-                                        else if (!string.IsNullOrEmpty(svc.HostedBy))
+                                        else if (acts.HostedHint)
                                         {
                                             <span class="hint">隨 @svc.HostedBy</span>
                                         }
                                         else
                                         {
-                                            @if (!on)
+                                            @if (acts.Start)
                                             {
-                                                <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.StartOneAsync(svc))">啟動</button>
+                                                <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.StartOneAsync(svc))">啟動</button>
                                             }
-                                            <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
-                                            <button class="btn-link" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
+                                            @if (acts.Restart)
+                                            {
+                                                <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
+                                            }
+                                            @if (acts.Stop)
+                                            {
+                                                <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
+                                            }
                                         }
                                         @if (S.StartErrorFor(svc) is { } startErr)
                                         {
