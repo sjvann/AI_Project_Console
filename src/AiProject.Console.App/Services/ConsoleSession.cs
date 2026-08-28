@@ -113,6 +113,7 @@ public sealed partial class ConsoleSession : IDisposable
     public string GitStatusText { get; private set; } = "";
     public string LogFilter { get; private set; } = "";
     public Dictionary<string, string> StartErrors { get; } = new();
+    public Dictionary<string, string> ServiceActivities { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool JobBusy { get; private set; }
     public string LeftTab { get; set; } = "svc";
     public string RightTab { get; set; } = "log";
@@ -1166,6 +1167,7 @@ public sealed partial class ConsoleSession : IDisposable
                     Health[svc.Id] = true;
             }
             StartErrors.Clear();
+            ServiceActivities.Clear();
             _collapsedServiceGroups.Clear();
             _collapsedProjectGroups.Clear();
             LogFilter = "";
@@ -1816,6 +1818,8 @@ public sealed partial class ConsoleSession : IDisposable
         var catalog = Catalog!;
         var runtime = Runtime!;
         var health = new Dictionary<string, bool>(Health);
+        var planned = ProcessSupervisor.OfflineRunnable(catalog, health);
+        MarkServiceActivity(planned, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
         await RunJobAsync("啟動中…", () =>
         {
@@ -1846,6 +1850,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (!EnsureStartTools(planned))
             return;
+        MarkServiceActivity(planned, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
         await RunJobAsync("啟動中…", () =>
         {
@@ -1863,6 +1868,7 @@ public sealed partial class ConsoleSession : IDisposable
         var catalog = Catalog!;
         var runtime = Runtime!;
         var targets = ProcessSupervisor.OnlineRunnable(catalog, Health, GroupRunnableIds(key));
+        MarkServiceActivity(targets, ServiceActivityMap.Stopping);
         return RunJobAsync("停止中…", () =>
         {
             ProcessSupervisor.StopServices(catalog, runtime, targets);
@@ -1883,6 +1889,7 @@ public sealed partial class ConsoleSession : IDisposable
             return Task.CompletedTask;
         if (!EnsureStartTools(targets))
             return Task.CompletedTask;
+        MarkServiceActivity(targets, ServiceActivityMap.Restarting);
         return RunJobAsync("重啟中…", () =>
         {
             var results = ProcessSupervisor.RestartOnline(catalog, runtime, health, ids);
@@ -1896,11 +1903,11 @@ public sealed partial class ConsoleSession : IDisposable
         var node = ServiceGroupTree.Find(ServiceGroupRoots, key);
         if (node is null)
             return;
+        var targets = node.Descendants().Where(s => !string.IsNullOrEmpty(s.OpenUrl)).ToList();
+        MarkServiceActivity(targets, ServiceActivityMap.Opening, withHosted: false);
         var opened = 0;
-        foreach (var svc in node.Descendants())
+        foreach (var svc in targets)
         {
-            if (string.IsNullOrEmpty(svc.OpenUrl))
-                continue;
             CliUtil.OpenUrl(svc.OpenUrl);
             opened++;
         }
@@ -1933,6 +1940,7 @@ public sealed partial class ConsoleSession : IDisposable
             return Task.CompletedTask;
         var catalog = Catalog!;
         var runtime = Runtime!;
+        MarkServiceActivity([svc], ServiceActivityMap.Starting);
         return RunJobAsync($"啟動 {svc.Label}…", () =>
         {
             var err = ProcessSupervisor.TryStartService(catalog, runtime, svc);
@@ -1947,6 +1955,7 @@ public sealed partial class ConsoleSession : IDisposable
             return Task.CompletedTask;
         var catalog = Catalog!;
         var runtime = Runtime!;
+        MarkServiceActivity(ProcessSupervisor.OnlineRunnable(catalog, Health), ServiceActivityMap.Stopping);
         return RunJobAsync("停止中…", () =>
         {
             ProcessSupervisor.StopAll(catalog, runtime);
@@ -1965,6 +1974,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
+        MarkServiceActivity([svc], ServiceActivityMap.Stopping);
         return RunJobAsync($"停止 {svc.Label}…", () =>
         {
             ProcessSupervisor.StopService(catalog, runtime, svc);
@@ -1983,6 +1993,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
+        MarkServiceActivity([svc], ServiceActivityMap.Restarting);
         return RunJobAsync($"重啟 {svc.Label}…", () =>
         {
             var err = ProcessSupervisor.RestartService(catalog, runtime, svc);
@@ -2006,6 +2017,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         else
             targets = catalog.Services.Where(s => !string.IsNullOrEmpty(s.OpenUrl)).ToList();
+        MarkServiceActivity(targets, ServiceActivityMap.Opening, withHosted: false);
         var opened = 0;
         foreach (var svc in targets)
         {
@@ -2021,8 +2033,10 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void OpenServiceUrl(ServiceEntry svc)
     {
-        if (!string.IsNullOrEmpty(svc.OpenUrl))
-            CliUtil.OpenUrl(svc.OpenUrl);
+        if (string.IsNullOrEmpty(svc.OpenUrl))
+            return;
+        MarkServiceActivity([svc], ServiceActivityMap.Opening, withHosted: false);
+        CliUtil.OpenUrl(svc.OpenUrl);
     }
 
     public void Doctor()
@@ -4013,6 +4027,29 @@ public sealed partial class ConsoleSession : IDisposable
         return null;
     }
 
+    public string? ServiceActivityText(ServiceEntry svc)
+    {
+        if (ServiceActivities.TryGetValue(svc.Id, out var activity))
+            return ServiceActivityMap.Label(activity);
+        if (Catalog is null)
+            return null;
+        var host = ServiceCatalogBuilder.HostService(Catalog, svc);
+        if (host.Id != svc.Id && ServiceActivities.TryGetValue(host.Id, out activity))
+            return ServiceActivityMap.Label(activity);
+        return null;
+    }
+
+    private void MarkServiceActivity(IEnumerable<ServiceEntry> targets, string activity, bool withHosted = true)
+    {
+        if (JobBusy || Catalog is null)
+            return;
+        var ids = withHosted
+            ? ServiceActivityMap.IdsWithHosted(Catalog.Services, targets)
+            : targets.Select(t => t.Id);
+        ServiceActivityMap.Set(ServiceActivities, ids, activity);
+        Notify();
+    }
+
     private void AppendLogTail(bool full = false)
     {
         if (Catalog is null || Runtime is null)
@@ -4181,6 +4218,8 @@ public sealed partial class ConsoleSession : IDisposable
             {
                 if (FollowLog)
                     AppendLogTail();
+                if (ServiceActivityMap.ClearOpening(ServiceActivities) > 0)
+                    Notify();
                 healthEvery++;
                 if (healthEvery % 3 == 0 && Catalog is not null)
                 {
@@ -4192,6 +4231,7 @@ public sealed partial class ConsoleSession : IDisposable
                     foreach (var kv in health)
                         Health[kv.Key] = kv.Value;
                     StartErrorMap.ClearHealthy(StartErrors, health);
+                    ServiceActivityMap.Reconcile(ServiceActivities, health, StartErrors);
                     UpdateReady();
                 }
                 var gitEvery = _autoSyncSkippedDirty ? 2 : 8;
@@ -4250,6 +4290,7 @@ public sealed partial class ConsoleSession : IDisposable
         CompileHelpEnabled = false;
         Health.Clear();
         StartErrors.Clear();
+        ServiceActivities.Clear();
         _collapsedServiceGroups.Clear();
         _collapsedProjectGroups.Clear();
         Projects = [];
@@ -4400,6 +4441,7 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         foreach (var (id, _, error) in results)
             StartErrorMap.Apply(StartErrors, id, error);
+        ServiceActivityMap.ClearFailed(ServiceActivities, StartErrors);
         var failed = results.Where(r => r.Error is not null).ToList();
         if (failed.Count > 0)
             WarnText = string.Join("；", failed.Select(f => $"{f.Label}：{f.Error}"));

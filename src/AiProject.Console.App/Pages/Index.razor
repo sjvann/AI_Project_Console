@@ -235,9 +235,16 @@
                                 var self = S.IsSelfService(svc);
                                 var on = self || S.Health.GetValueOrDefault(svc.Id);
                                 var acts = S.ActionsFor(svc);
-                                <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null)" style="padding-left: @(8 + (node.Depth + 1) * 14)px" @onclick="@(() => S.SelectService(svc.Id))">
+                                var activity = S.ServiceActivityText(svc);
+                                <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null) @(activity is not null ? "is-busy" : null)" style="padding-left: @(8 + (node.Depth + 1) * 14)px" @onclick="@(() => S.SelectService(svc.Id))">
                                     <span class="@(on ? "status-on" : "status-off")">@(self ? "本機" : on ? "線上" : "離線")</span>
-                                    <span>@svc.Label</span>
+                                    <span class="svc-label">
+                                        <span>@svc.Label</span>
+                                        @if (activity is not null)
+                                        {
+                                            <span class="svc-busy" aria-live="polite">@activity</span>
+                                        }
+                                    </span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
                                     <span>
                                         @if (acts.Open)
