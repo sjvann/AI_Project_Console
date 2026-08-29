@@ -58,7 +58,7 @@
 
 ## GitHub 選單不能用
 
-- 開啟已接 GitHub 的專案時會要求登入。沒裝 `gh`：先裝 [GitHub CLI](https://cli.github.com/)。瀏覽器沒跳出：再按一次「登入 GitHub」，或到終端機執行 `gh auth login`。
+- 開啟已接 GitHub 的專案時會要求登入。沒裝 `gh`：先裝 [GitHub CLI](https://cli.github.com/)。瀏覽器沒跳出：在登入對話框按「在瀏覽器開啟」，或複製一次性代碼後手動打開 https://github.com/login/device。也可到終端機執行 `gh auth login`。
 - 任務分頁是空的：確認已登入、倉庫有開放 Issue，並按「刷新」。未指派清單預設可收合。
 - 提交需要資料夾是 git 倉，且已安裝 Git。
 - 專案列看不到分支：確認目錄是 git 倉。切換分支前必須先提交或還原未提交變更。

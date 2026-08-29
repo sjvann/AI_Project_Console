@@ -33,6 +33,34 @@ public class GitHubTasksTests
         Assert.Equal(expected, GitHubAuth.ParseUserLogin(text));
     }
 
+    [Theory]
+    [InlineData("! First copy your one-time code: ABCD-EFGH", "ABCD-EFGH")]
+    [InlineData("! One-time code (A12B-C34D) copied to clipboard", "A12B-C34D")]
+    [InlineData("! First copy your one-time code: \u001b[1mWXYZ-9876\u001b[0m", "WXYZ-9876")]
+    [InlineData("no code here", null)]
+    [InlineData("", null)]
+    public void ParseDeviceCode_FromGhOutput(string text, string? expected)
+    {
+        Assert.Equal(expected, GitHubAuth.ParseDeviceCode(text));
+    }
+
+    [Theory]
+    [InlineData(
+        "Open this URL to continue in your web browser: https://github.com/login/device",
+        "https://github.com/login/device")]
+    [InlineData(
+        "Press Enter to open https://github.com/login/device in your browser...",
+        "https://github.com/login/device")]
+    [InlineData(
+        "Open this URL to continue in your web browser: https://ghe.corp.com/login/device",
+        "https://ghe.corp.com/login/device")]
+    [InlineData("random https://example.com/not-auth", null)]
+    [InlineData("", null)]
+    public void ParseBrowserUrl_FromGhOutput(string text, string? expected)
+    {
+        Assert.Equal(expected, GitHubAuth.ParseBrowserUrl(text));
+    }
+
     [Fact]
     public void ParseIssues_SplitsMineAndUnassigned()
     {

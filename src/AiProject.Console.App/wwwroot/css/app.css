@@ -93,6 +93,10 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .ci-row-meta { color: var(--muted); font-weight: 600; font-size: 12px; }
 .gh-id { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--row-alt); color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
 .gh-id-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.gh-login-code { display: flex; align-items: center; gap: 12px; margin: 12px 0 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--row-alt); }
+.gh-login-code-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.gh-login-code-value { font: 700 22px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .14em; user-select: all; cursor: pointer; }
+.gh-login-url { margin: 6px 0 8px; color: var(--muted); font: 12px/1.4 "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
 .duty-attn { font-weight: 600; font-size: 13px; }
 .svc-err { color: var(--danger); font-size: 12px; margin-left: 6px; }
 .log-search { min-width: 160px; max-width: 240px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }

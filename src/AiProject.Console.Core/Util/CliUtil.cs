@@ -37,9 +37,11 @@ public static class CliUtil
         int timeoutMs = 120_000,
         CancellationToken ct = default,
         string? stdin = null,
-        IReadOnlyDictionary<string, string>? extraEnv = null)
+        IReadOnlyDictionary<string, string>? extraEnv = null,
+        Action<string>? onLine = null)
     {
-        var (code, stdout, stderr) = await RunCaptureAsync(fileName, args, cwd, timeoutMs, ct, stdin: stdin, extraEnv: extraEnv).ConfigureAwait(false);
+        var (code, stdout, stderr) = await RunCaptureAsync(
+            fileName, args, cwd, timeoutMs, ct, stdin: stdin, extraEnv: extraEnv, onLine: onLine).ConfigureAwait(false);
         var output = string.Join('\n', new[] { stdout, stderr }.Where(s => !string.IsNullOrEmpty(s))).Trim();
         return (code, output);
     }
@@ -52,7 +54,8 @@ public static class CliUtil
         CancellationToken ct = default,
         bool trim = true,
         string? stdin = null,
-        IReadOnlyDictionary<string, string>? extraEnv = null)
+        IReadOnlyDictionary<string, string>? extraEnv = null,
+        Action<string>? onLine = null)
     {
         var redirectIn = stdin is not null;
         var psi = new ProcessStartInfo
@@ -82,8 +85,18 @@ public static class CliUtil
             using var proc = new Process { StartInfo = psi };
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
-            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
-            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            void Append(StringBuilder sb, string? data)
+            {
+                if (data is null)
+                    return;
+                sb.AppendLine(data);
+                if (onLine is null)
+                    return;
+                try { onLine(data); }
+                catch { /* 呼叫端不應讓擷取中斷 */ }
+            }
+            proc.OutputDataReceived += (_, e) => Append(stdout, e.Data);
+            proc.ErrorDataReceived += (_, e) => Append(stderr, e.Data);
             proc.Start();
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
@@ -100,11 +113,15 @@ public static class CliUtil
             {
                 await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
-                stderr.AppendLine("（逾時）");
-                return (1, FinishCaptured(stdout, trim), FinishCaptured(stderr, trim));
+                if (!ct.IsCancellationRequested)
+                {
+                    stderr.AppendLine("（逾時）");
+                    return (1, FinishCaptured(stdout, trim), FinishCaptured(stderr, trim));
+                }
+                throw;
             }
             return (proc.ExitCode, FinishCaptured(stdout, trim), FinishCaptured(stderr, trim));
         }
