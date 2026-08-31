@@ -127,6 +127,7 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .svc.sel, .svc.is-busy { background: var(--sel); }
 .svc-label { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .svc-label > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-deps { color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
 .svc-busy { color: var(--accent); font-weight: 700; font-size: 12px; white-space: nowrap; animation: prj-pulse 1.2s ease-in-out infinite; }
 .status-on { color: var(--ok); }
 .status-off { color: var(--down); }

@@ -244,12 +244,12 @@
                                         {
                                             <span class="svc-busy" aria-live="polite">@activity</span>
                                         }
+                                        @if (S.HasDepends(svc))
+                                        {
+                                            <span class="svc-deps" title="@S.DependsHint(svc)">依 @(string.Join("、", svc.Dependencies.Select(d => d.Id)))</span>
+                                        }
                                     </span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
-                                    @if (S.HasDepends(svc))
-                                    {
-                                        <span class="hint" title="@S.DependsHint(svc)">依 @(string.Join("、", svc.Dependencies.Select(d => d.Id)))</span>
-                                    }
                                     <span>
                                         @if (acts.Open)
                                         {
