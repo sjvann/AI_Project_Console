@@ -19,9 +19,9 @@ public static class StackToolRouter
         new("list_projects", "列出各專案編譯徽章（最新／需重編／未建置）。needsRebuild=0 或 badge=最新 表示無需重編；不要把「已與 DLL 一致」理解成要重編。", ""),
         new("build_freshness", "與 list_projects 相同：編譯徽章與需重編數字。fresh／最新＝無需重編。", ""),
         new("build", "編譯。mode=stale（預設）／services／projects／one。one 時必填 path。", "mode path"),
-        new("start_service", "啟動一個服務。", "id"),
+        new("start_service", "啟動一個服務。預設先起 dependsOn 並等到就緒。skipDepends=true 只起自己；skipOptional=true 略過可選相依。", "id skipDepends skipOptional"),
         new("stop_service", "停止一個服務。可在政策 confirm 列入後要求 confirm=true。", "id confirm"),
-        new("start_all", "啟動尚未在線的服務。", ""),
+        new("start_all", "啟動尚未在線的服務（依 startOrder，並先起 dependsOn）。", ""),
         new("stop_all", "停止全部服務。破壞性操作：必須先向使用者確認，再帶 confirm=true。", "confirm"),
         new("get_log", "讀取服務 Log 尾端。", "id tail"),
         new("doctor", "環境體檢（dotnet／git／Agent 後端／MCP 政策）。", ""),
@@ -114,7 +114,10 @@ public static class StackToolRouter
             "list_services" => workspace.ListServices(),
             "list_projects" or "build_freshness" => workspace.ListProjects(),
             "build" => await workspace.BuildAsync(Arg(args, "mode") ?? "stale", Arg(args, "path")).ConfigureAwait(false),
-            "start_service" => workspace.StartService(Require(args, "id")),
+            "start_service" => await workspace.StartServiceAsync(
+                Require(args, "id"),
+                skipDepends: Flag(args, "skipDepends", "skip_depends"),
+                skipOptional: Flag(args, "skipOptional", "skip_optional")),
             "stop_service" => workspace.StopService(Require(args, "id")),
             "start_all" => await workspace.StartAllAsync().ConfigureAwait(false),
             "stop_all" => workspace.StopAll(),
@@ -140,6 +143,22 @@ public static class StackToolRouter
 
     static string? Arg(IReadOnlyDictionary<string, string?> args, string key) =>
         args.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : null;
+
+    static bool Flag(IReadOnlyDictionary<string, string?> args, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var v = Arg(args, key);
+            if (v is null)
+                continue;
+            if (v.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || v.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                || v.Equals("y", StringComparison.OrdinalIgnoreCase)
+                || v == "1")
+                return true;
+        }
+        return false;
+    }
 
     static string Require(IReadOnlyDictionary<string, string?> args, string key) =>
         Arg(args, key) ?? throw new ArgumentException("缺少參數：" + key);

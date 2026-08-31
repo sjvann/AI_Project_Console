@@ -72,7 +72,8 @@
       "health": "http://127.0.0.1:8102/",
       "openUrl": "http://localhost:8102/",
       "aspnetUrls": "http://localhost:8102",
-      "group": "Platform"
+      "group": "Platform",
+      "dependsOn": [{ "id": "platform-host", "optional": true }]
     },
     {
       "id": "eddss-api",
@@ -92,7 +93,8 @@
       "health": "http://127.0.0.1:8091/",
       "openUrl": "http://localhost:8091/",
       "aspnetUrls": "http://localhost:8091",
-      "group": "EDDSS"
+      "group": "EDDSS",
+      "dependsOn": ["eddss-api"]
     },
     {
       "id": "hl7-bench-api",

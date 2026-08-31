@@ -4,7 +4,7 @@
 
 - 根目錄本身幾乎沒有專案（薄工作區），真正的產品線在隔壁資料夾
 - 掃描到的服務名稱、port、健康檢查不對
-- 要固定啟動順序或預設前端
+- 要固定啟動順序、預設前端，或宣告服務啟動相依（`dependsOn`）
 - 要把 GitHub／部署設定跟倉一起走
 
 完整範例：[`schema/ai-project.example.json`](../../schema/ai-project.example.json)。
@@ -48,6 +48,35 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `group` | 否 | 左側分組標題。可用 `Lab/HL7` 表示次群組（`/` 分段，也接受 `\`）。未寫斜線則先當單層；若同一群組裡有兩種以上共用名稱開頭（例如兩個 HL7…、兩個 SFTP…），畫面會自動拆次群組。要固定層級請寫路徑 |
 | `hostedBy` | 否 | 掛在另一個服務的 id 上，不單獨啟動 |
 | `preStart` | 否 | 相對工作區根的腳本；也可用 `ensure`。啟動該服務前先跑，失敗則不起行程。**禁止**用來啟動另一條產品線 |
+| `dependsOn` | 否 | 另一個行程的啟動相依（見下方）。與 `hostedBy` 不同 |
+| `ready` | 否 | 等就緒用的 URL；空白則用 `health`。跨線相依請用這個，不要只看 port 占用 |
+| `readyTimeoutMs` | 否 | 等就緒逾時毫秒；空白預設 180000 |
+
+## 啟動相依（dependsOn）
+
+三層分工，不要混：
+
+| 誰 | 做什麼 | 不做什麼 |
+|----|--------|----------|
+| **AI_Project 控制台**（0.6.6+） | 解析 `dependsOn`、先起相依、等 `ready`、循環檢查、略過可選相依 | 不把「先起誰」寫死在程式裡 |
+| **工作區 `ai-project.json`** | 只宣告誰依誰 | 不改各倉應用程式碼 |
+| **各應用** | 維持獨立可開；連不上就說清楚 | 不要在程式裡啟動其他服務（禁止 `dotnet run` 另一條產品線） |
+
+相依是本機編排，不是編譯相依。寫在清單裡，由控制台先起、等到就緒，再起自己。
+
+```json
+"dependsOn": ["lab-api"]
+```
+
+字串＝硬相依：沒起來就不要起自己（例如 Lab Web → API）。
+
+```json
+"dependsOn": [{ "id": "fhir-host", "optional": true }]
+```
+
+`optional: true`＝軟相依：本機預設先起；使用者要接外部服務時可略過（服務列「啟動」按住 Alt 略過可選相依，按住 Shift 只起自己）。
+
+控制台會遞迴展開、偵測循環、把 `hostedBy` 別名解析成真正宿主。不要把這種跨線關係寫進 `startOrder` 或 `preStart`。
 
 ## 啟動順序與前端
 
@@ -56,7 +85,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 "frontend": "hub-web"
 ```
 
-`startOrder` 裡的 id 要對得上 `services[].id`。`frontend` 是「開啟前端」的預設項。
+`startOrder` 裡的 id 要對得上 `services[].id`。`frontend` 是「開啟前端」的預設項。`startOrder` 只影響工具列「啟動全部」的偏好順序，不要拿來表達跨線相依（用 `dependsOn`）。
 
 ## GitHub 與部署
 

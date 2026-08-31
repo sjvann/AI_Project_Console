@@ -414,6 +414,11 @@ public sealed partial class ConsoleSession : IDisposable
 
     public bool IsSelfService(ServiceEntry svc) =>
         Catalog is not null && ServiceCatalogBuilder.IsCurrentConsole(Catalog, svc);
+
+    public bool HasDepends(ServiceEntry svc) => svc.Dependencies.Count > 0;
+
+    public string DependsHint(ServiceEntry svc) =>
+        string.Join("、", svc.Dependencies.Select(d => d.Optional ? d.Id + "（可略過）" : d.Id));
     public int OfflineCount => Math.Max(0, ServiceCount - ReadyCount);
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
     public string? LastAuditFailTool => AuditEntries.LastOrDefault(e => !e.Ok)?.Tool;
@@ -1891,12 +1896,21 @@ public sealed partial class ConsoleSession : IDisposable
         var runtime = Runtime!;
         var health = new Dictionary<string, bool>(Health);
         var planned = ProcessSupervisor.OfflineRunnable(catalog, health);
-        MarkServiceActivity(planned, ServiceActivityMap.Starting);
+        var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
+        MarkServiceActivity(plan.Order.Count > 0 ? plan.Order : planned, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
-        await RunJobAsync("啟動中…", () =>
+        await RunJobAsync("啟動中…", async () =>
         {
-            results = ProcessSupervisor.StartOffline(catalog, runtime, health);
-            return Task.FromResult<string?>(null);
+            results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                planned.Select(s => s.Id),
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            return null;
         }).ConfigureAwait(false);
         ApplyStartResults(results);
         if (results.Count == 0 && !JobBusy)
@@ -1920,14 +1934,24 @@ public sealed partial class ConsoleSession : IDisposable
             Notify();
             return;
         }
-        if (!EnsureStartTools(planned))
+        var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
+        var toStart = plan.Order.Count > 0 ? plan.Order : planned;
+        if (!EnsureStartTools(toStart))
             return;
-        MarkServiceActivity(planned, ServiceActivityMap.Starting);
+        MarkServiceActivity(toStart, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
-        await RunJobAsync("啟動中…", () =>
+        await RunJobAsync("啟動中…", async () =>
         {
-            results = ProcessSupervisor.StartOffline(catalog, runtime, health, ids);
-            return Task.FromResult<string?>(null);
+            results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                planned.Select(s => s.Id),
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            return null;
         }).ConfigureAwait(false);
         ApplyStartResults(results);
         Notify();
@@ -1987,7 +2011,7 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("無 URL", "沒有可開啟的 openUrl。");
     }
 
-    public Task StartOneAsync(ServiceEntry svc)
+    public Task StartOneAsync(ServiceEntry svc, bool skipOptional = false, bool skipDepends = false)
     {
         if (!RequireCatalog())
             return Task.CompletedTask;
@@ -2008,16 +2032,37 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("已在線", $"「{svc.Label}」已在執行。");
             return Task.CompletedTask;
         }
-        if (!EnsureStartTools(svc))
-            return Task.CompletedTask;
+        if (skipDepends && svc.Dependencies.Any(d => !d.Optional))
+        {
+            var hard = string.Join("、", svc.Dependencies.Where(d => !d.Optional).Select(d => d.Id));
+            if (!_native.Confirm(
+                    "只起自己",
+                    $"「{svc.Label}」硬相依 {hard}。略過後可能無法連線。仍要只起自己嗎？"))
+                return Task.CompletedTask;
+        }
         var catalog = Catalog!;
         var runtime = Runtime!;
-        MarkServiceActivity([svc], ServiceActivityMap.Starting);
-        return RunJobAsync($"啟動 {svc.Label}…", () =>
+        var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id], skipOptional, skipDepends);
+        var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
+        if (!EnsureStartTools(toStart))
+            return Task.CompletedTask;
+        MarkServiceActivity(toStart, ServiceActivityMap.Starting);
+        return RunJobAsync($"啟動 {svc.Label}…", async () =>
         {
-            var err = ProcessSupervisor.TryStartService(catalog, runtime, svc);
-            ApplyStartResults([(svc.Id, svc.Label, err)]);
-            return Task.FromResult(err);
+            var results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                [svc.Id],
+                skipOptional: skipOptional,
+                skipDepends: skipDepends,
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            ApplyStartResults(results);
+            var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
+            return self.Error;
         });
     }
 
@@ -2065,12 +2110,27 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
-        MarkServiceActivity([svc], ServiceActivityMap.Restarting);
-        return RunJobAsync($"重啟 {svc.Label}…", () =>
+        var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id]);
+        var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
+        if (!EnsureStartTools(toStart))
+            return Task.CompletedTask;
+        MarkServiceActivity(toStart, ServiceActivityMap.Restarting);
+        return RunJobAsync($"重啟 {svc.Label}…", async () =>
         {
-            var err = ProcessSupervisor.RestartService(catalog, runtime, svc);
-            ApplyStartResults([(svc.Id, svc.Label, err)]);
-            return Task.FromResult(err);
+            ProcessSupervisor.StopService(catalog, runtime, svc);
+            await Task.Delay(800).ConfigureAwait(false);
+            var results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                [svc.Id],
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            ApplyStartResults(results);
+            var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
+            return self.Error;
         });
     }
 

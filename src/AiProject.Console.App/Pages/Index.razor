@@ -246,6 +246,10 @@
                                         }
                                     </span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
+                                    @if (S.HasDepends(svc))
+                                    {
+                                        <span class="hint" title="@S.DependsHint(svc)">依 @(string.Join("、", svc.Dependencies.Select(d => d.Id)))</span>
+                                    }
                                     <span>
                                         @if (acts.Open)
                                         {
@@ -263,7 +267,7 @@
                                         {
                                             @if (acts.Start)
                                             {
-                                                <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.StartOneAsync(svc))">啟動</button>
+                                                <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.HasDepends(svc) ? "啟動（含相依）。Alt：略過可選相依；Shift：只起自己" : "啟動")" @onclick:stopPropagation="true" @onclick="@(e => S.StartOneAsync(svc, skipOptional: e.AltKey, skipDepends: e.ShiftKey))">啟動</button>
                                             }
                                             @if (acts.Restart)
                                             {
