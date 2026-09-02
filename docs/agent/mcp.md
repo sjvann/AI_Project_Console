@@ -104,7 +104,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stop_all --a
 
 ## MCP 審計
 
-右側分頁是 Agent 操作本機堆疊的對帳單。每次工具呼叫（成功或被拒）寫入 `{root}/.ai_project/mcp-audit.jsonl`。服務 Log 看程式輸出；這頁看工具名、參數、耗時、拒絕原因。
+點摘要列「MCP 拒絕」打開對帳單。每次工具呼叫（成功或被拒）寫入 `{root}/.ai_project/mcp-audit.jsonl`。服務 Log 看程式輸出；這裡看工具名、參數、耗時、拒絕原因。
 
 1. 設定 → MCP，把「本控制台」加入專案，並重新載入 Cursor。
 2. 請 Agent 呼叫工具，或問「用 `duty_summary` 看現在能不能交班」。

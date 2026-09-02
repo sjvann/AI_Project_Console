@@ -3,7 +3,7 @@
 <div class="mcp-prefs">
     @if (Section == "mcp")
     {
-    <p class="hint">本控制台負責本機堆疊（狀態、編譯、啟停、Log）。這裡把其他 MCP 寫進專案 <code>.cursor/mcp.json</code>，讓 Agent 並排使用 GitHub、套件文件或公司內部閘道。不是只能三個：選建議範本，或選「自訂」填命令／URL。Agent 呼叫本控制台（含被拒）會出現在右側「MCP 審計」。</p>
+    <p class="hint">本控制台負責本機堆疊（狀態、編譯、啟停、Log）。這裡把其他 MCP 寫進專案 <code>.cursor/mcp.json</code>，讓 Agent 並排使用 GitHub、套件文件或公司內部閘道。不是只能三個：選建議範本，或選「自訂」填命令／URL。Agent 呼叫本控制台（含被拒）會出現在 MCP 審計視窗（摘要列「MCP 拒絕」）。</p>
 
     <section class="mcp-block" aria-labelledby="mcp-refs-title">
         <div class="mcp-block-head">
@@ -187,7 +187,7 @@
             <strong id="ask-title">專案問答</strong>
             <span class="hint">控制台內對談 · OpenAI 相容</span>
         </div>
-        <p class="hint">右側「專案問答」頁籤用這裡的端點回答目前專案問題，並本機呼叫值班／Log／審計工具。預設本機 Ollama；也可改成 OpenAI、Groq 或其他相容端點。</p>
+        <p class="hint">工具列「專案問答」用這裡的端點回答目前專案問題，並本機呼叫值班／Log／審計工具。預設本機 Ollama；也可改成 OpenAI、Groq 或其他相容端點。</p>
         <div class="field">
             <span>Base URL</span>
             <input value="@S.AskBaseUrl" @oninput="OnAskUrl" placeholder="http://127.0.0.1:11434/v1" />

@@ -40,12 +40,12 @@
                         @a.Label
                     </button>
                 }
-                @if (lane.Id == GithubActionLanes.Collab)
-                {
-                    <button type="button" disabled="@(!S.HasProject)" @onclick="S.ShowTasksFromHub">我的任務</button>
-                }
             </section>
         }
+    </div>
+    <div class="gh-hub-tasks">
+        <h3>任務</h3>
+        <TaskList />
     </div>
     <div class="dialog-actions">
         <button type="button" class="btn-sec" disabled="@S.JobBusy" @onclick="OpenStatus">狀態報告</button>

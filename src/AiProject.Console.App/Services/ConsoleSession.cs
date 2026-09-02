@@ -116,7 +116,14 @@ public sealed partial class ConsoleSession : IDisposable
     public Dictionary<string, string> ServiceActivities { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool JobBusy { get; private set; }
     public string LeftTab { get; set; } = "svc";
-    public string RightTab { get; set; } = "log";
+    public string RightTab => LeftTab switch
+    {
+        "prj" => "build",
+        "docs" => "docs",
+        _ => "log"
+    };
+    public bool AskPanelOpen { get; private set; }
+    public bool AuditPanelOpen { get; private set; }
     public string PrefsTab { get; set; } = "general";
     public string Workbench { get; private set; } = "dev";
     public bool IsReqWorkbench => Workbench == "req";
@@ -1705,8 +1712,7 @@ public sealed partial class ConsoleSession : IDisposable
             return $"已接受 {issue?.NumberText ?? "#" + number}";
         }).ConfigureAwait(false);
         await RefreshIssuesAsync().ConfigureAwait(false);
-        LeftTab = "task";
-        Notify();
+        OpenGithubHub();
     }
 
     public void OpenIssueUrl(GithubIssue issue)
@@ -1728,17 +1734,17 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void ShowTasks()
     {
-        LeftTab = "task";
-        if (GithubLoggedIn && GithubManaged)
-            _ = RefreshIssuesAsync();
-        else
-            Notify();
+        OpenGithubHub();
     }
 
     public void OpenGithubHub()
     {
+        AskPanelOpen = false;
+        AuditPanelOpen = false;
         GithubHubOpen = true;
         Notify();
+        if (GithubLoggedIn && GithubManaged)
+            _ = RefreshIssuesAsync();
     }
 
     public void CloseGithubHub()
@@ -1751,8 +1757,10 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void ToggleGithubHub()
     {
-        GithubHubOpen = !GithubHubOpen;
-        Notify();
+        if (GithubHubOpen)
+            CloseGithubHub();
+        else
+            OpenGithubHub();
     }
 
     public async Task RunGithubNextAsync()
@@ -1774,9 +1782,8 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void ShowTasksFromHub()
     {
-        CloseGithubHub();
         SetWorkbench("dev");
-        ShowTasks();
+        OpenGithubHub();
     }
 
     private void ClearIssueLists()
@@ -1800,6 +1807,7 @@ public sealed partial class ConsoleSession : IDisposable
     public void SelectService(string id)
     {
         SelectedServiceId = id;
+        LeftTab = "svc";
         ReloadLog();
         Notify();
     }
@@ -1838,18 +1846,77 @@ public sealed partial class ConsoleSession : IDisposable
     public void ShowDocs()
     {
         LeftTab = "docs";
-        RightTab = "docs";
         RefreshDocs(keepSelection: true);
+        Notify();
+    }
+
+    public void SetWorkspaceTab(string tab)
+    {
+        LeftTab = tab is "prj" or "docs" ? tab : "svc";
         Notify();
     }
 
     public void SetRightTab(string tab)
     {
-        RightTab = tab;
-        if (tab == "audit")
-            RefreshAudit();
+        switch (tab)
+        {
+            case "audit":
+                OpenAuditPanel();
+                return;
+            case "ask":
+                OpenAskPanel();
+                return;
+            case "build":
+                LeftTab = "prj";
+                Notify();
+                return;
+            case "docs":
+                ShowDocs();
+                return;
+            default:
+                LeftTab = "svc";
+                Notify();
+                return;
+        }
+    }
+
+    public void OpenAskPanel()
+    {
+        GithubHubOpen = false;
+        AuditPanelOpen = false;
+        AskPanelOpen = true;
+        Notify();
+    }
+
+    public void CloseAskPanel()
+    {
+        if (!AskPanelOpen)
+            return;
+        AskPanelOpen = false;
+        Notify();
+    }
+
+    public void ToggleAskPanel()
+    {
+        if (AskPanelOpen)
+            CloseAskPanel();
         else
-            Notify();
+            OpenAskPanel();
+    }
+
+    public void OpenAuditPanel()
+    {
+        AskPanelOpen = false;
+        AuditPanelOpen = true;
+        RefreshAudit();
+    }
+
+    public void CloseAuditPanel()
+    {
+        if (!AuditPanelOpen)
+            return;
+        AuditPanelOpen = false;
+        Notify();
     }
 
     public void SetAuditFilter(string value)
@@ -2239,6 +2306,8 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void Doctor()
     {
+        AskPanelOpen = false;
+        AuditPanelOpen = false;
         DoctorView = DoctorSnapshot.Build(Catalog);
         DoctorCopied = false;
         Dialog = "doctor";
@@ -2559,7 +2628,7 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         var catalog = Catalog!;
         var target = Path.Combine(catalog.Root, relPath.Replace('/', Path.DirectorySeparatorChar));
-        RightTab = "build";
+        LeftTab = "prj";
         LastBuildFailure = null;
         CompileHelpEnabled = false;
         Notify();
@@ -2725,7 +2794,7 @@ public sealed partial class ConsoleSession : IDisposable
         if (!ConfirmDiscardDocs())
             return;
         LoadDoc(relPath);
-        RightTab = "docs";
+        LeftTab = "docs";
         Notify();
         await Task.CompletedTask;
     }
@@ -2876,7 +2945,7 @@ public sealed partial class ConsoleSession : IDisposable
                 _collapsedDocFolders.Remove(folder);
             Docs = DocsService.Scan(Catalog.Root);
             LoadDoc(rel);
-            RightTab = "docs";
+            LeftTab = "docs";
             DocsHint = string.IsNullOrEmpty(existing) ? "已新增 " + rel : "已開啟既有檔 " + rel;
             JobText = DocsHint;
             CloseDialog();
@@ -3964,7 +4033,7 @@ public sealed partial class ConsoleSession : IDisposable
             return true;
         }
 
-        RightTab = "build";
+        LeftTab = "prj";
         BuildText = "";
         LastBuildFailure = null;
         CompileHelpEnabled = false;
@@ -4020,7 +4089,7 @@ public sealed partial class ConsoleSession : IDisposable
         if (!RequireCatalog())
             return;
         var catalog = Catalog!;
-        RightTab = "build";
+        LeftTab = "prj";
         BuildText = "";
         LastBuildFailure = null;
         CompileHelpEnabled = false;
@@ -4530,7 +4599,8 @@ public sealed partial class ConsoleSession : IDisposable
         JobBusy = false;
         _logOffset = 0;
         LeftTab = "svc";
-        RightTab = "log";
+        AskPanelOpen = false;
+        AuditPanelOpen = false;
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;

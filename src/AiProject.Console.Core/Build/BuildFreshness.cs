@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Xml.Linq;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Build;
 
@@ -289,6 +291,14 @@ public static class BuildFreshness
                 reason += "；控制台上次編譯失敗（" + FormatAgo(report.CompletedUtc) + "）";
         }
 
+        // mtime 會被 checkout／掃描器整批改寫；Git 乾淨且最後提交早於 DLL 時不要誤報需重編。
+        if (status == "stale" && outMtime > 0 && (report is null || report.Ok)
+            && TryGitCleanContentStamp(root, projectDir, out var gitUnix) && gitUnix <= outMtime)
+        {
+            status = "fresh";
+            reason = "來源內容未變（Git 乾淨），僅檔案時間較新，無需重編";
+        }
+
         return seed with
         {
             Status = status,
@@ -323,5 +333,105 @@ public static class BuildFreshness
         if (delta.TotalHours < 24)
             return $"{Math.Max(1, (int)delta.TotalHours)} 小時";
         return $"{Math.Max(1, (int)delta.TotalDays)} 天";
+    }
+
+    /// <summary>
+    /// Last commit time (unix seconds) of <paramref name="projectDir"/> when that tree has no
+    /// dirty compile sources. False if not a git repo, git missing, or sources are dirty.
+    /// </summary>
+    internal static bool TryGitCleanContentStamp(string root, string projectDir, out double commitUnix)
+    {
+        commitUnix = 0;
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(projectDir))
+            return false;
+        string rel;
+        try
+        {
+            var fullRoot = Path.GetFullPath(root);
+            var fullDir = Path.GetFullPath(projectDir);
+            if (!fullDir.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+                return false;
+            rel = Path.GetRelativePath(fullRoot, fullDir);
+            if (string.IsNullOrWhiteSpace(rel) || rel == ".")
+                rel = ".";
+        }
+        catch
+        {
+            return false;
+        }
+
+        var git = CliUtil.FindOnPath("git");
+        if (string.IsNullOrEmpty(git))
+            return false;
+        if (RunGit(git, root, ["rev-parse", "--is-inside-work-tree"]) is not ("true", 0))
+            return false;
+        var (toplevel, topCode) = RunGit(git, root, ["rev-parse", "--show-toplevel"]);
+        if (topCode != 0 || string.IsNullOrWhiteSpace(toplevel))
+            return false;
+        if (!string.Equals(Path.GetFullPath(toplevel), Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var (porcelain, stCode) = RunGit(git, root, ["-c", "core.quotepath=false", "status", "--porcelain", "--", rel]);
+        if (stCode != 0)
+            return false;
+        if (HasDirtyCompileSource(porcelain))
+            return false;
+
+        var (log, logCode) = RunGit(git, root, ["log", "-1", "--format=%ct", "--", rel]);
+        if (logCode != 0 || string.IsNullOrWhiteSpace(log))
+            return false;
+        return double.TryParse(log.Trim(), out commitUnix) && commitUnix > 0;
+    }
+
+    static bool HasDirtyCompileSource(string porcelain)
+    {
+        if (string.IsNullOrWhiteSpace(porcelain))
+            return false;
+        foreach (var raw in porcelain.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.TrimEnd();
+            if (line.Length < 4)
+                continue;
+            var path = line[3..].Trim().Replace('/', Path.DirectorySeparatorChar);
+            if (path.Contains(" -> ", StringComparison.Ordinal))
+                path = path.Split(" -> ", 2)[^1];
+            if (IsRuntimeState(path))
+                continue;
+            if (SourceSuffixes.Contains(Path.GetExtension(path)))
+                return true;
+        }
+        return false;
+    }
+
+    static (string Output, int Code) RunGit(string git, string root, string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = git,
+                WorkingDirectory = root,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var a in args)
+                psi.ArgumentList.Add(a);
+            using var proc = Process.Start(psi);
+            if (proc is null)
+                return ("", 1);
+            if (!proc.WaitForExit(8_000))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                return ("", 1);
+            }
+            var stdout = proc.StandardOutput.ReadToEnd().Trim();
+            return (stdout, proc.ExitCode);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            return ("", 1);
+        }
     }
 }

@@ -45,6 +45,7 @@ internal static class Program
             .SetUseOsDefaultSize(false)
             .SetSize(new Size(1280, 820))
             .SetMinSize(960, 640)
+            .SetMaximized(true)
             .Center();
 
         if (iconFile is not null)

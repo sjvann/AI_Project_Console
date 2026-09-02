@@ -1,5 +1,6 @@
 using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Tests;
 
@@ -285,6 +286,93 @@ public class BuildFreshnessTests
         Assert.Equal("5 分鐘前", BuildFreshness.FormatAgo(now.AddMinutes(-5), now));
     }
 
+    [Fact]
+    public void Sanitize_DistinguishesSameFolderNameUnderDifferentModules()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-san-" + Guid.NewGuid().ToString("N"));
+        var ast = Path.Combine(root, "Modules", "AST", "src", "Client");
+        var iam = Path.Combine(root, "Modules", "IAM", "src", "Client");
+        var astId = BuildReportStore.Sanitize(ast, root);
+        var iamId = BuildReportStore.Sanitize(iam, root);
+        Assert.NotEqual(astId, iamId);
+        Assert.Contains("AST", astId, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("IAM", iamId, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Modules-AST-src-Client", astId);
+    }
+
+    [Fact]
+    public void TryRead_IgnoresReportWrittenForADifferentProject()
+    {
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            var apiDir = Path.Combine(root, "src", "Demo.Api");
+            var otherDir = Path.Combine(root, "src", "Other.Api");
+            Directory.CreateDirectory(otherDir);
+            var runtime = new ProjectRuntime(root);
+            BuildReportStore.Write(runtime, apiDir, 0, BuildFreshness.DefaultConfiguration);
+            Assert.Null(BuildReportStore.TryRead(root, otherDir));
+            Assert.NotNull(BuildReportStore.TryRead(root, apiDir));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ProjectStaysFresh_WhenGitCleanAndOnlyMtimeIsNewerThanDll()
+    {
+        if (string.IsNullOrEmpty(CliUtil.FindOnPath("git")))
+            return;
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            InitGitRepo(root);
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var cs = Path.Combine(projectDir, "Program.cs");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-5));
+            File.SetLastWriteTimeUtc(cs, now);
+
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("fresh", state.Status);
+            Assert.Contains("Git 乾淨", state.Reason);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void ProjectIsStale_WhenGitHasDirtyCsNewerThanDll()
+    {
+        if (string.IsNullOrEmpty(CliUtil.FindOnPath("git")))
+            return;
+        var root = CreateProject("Demo.Api");
+        try
+        {
+            InitGitRepo(root);
+            var projectDir = Path.Combine(root, "src", "Demo.Api");
+            var cs = Path.Combine(projectDir, "Program.cs");
+            var dll = Path.Combine(projectDir, "bin", "Debug", "net8.0", "Demo.Api.dll");
+            File.WriteAllText(cs, "Console.WriteLine(1);");
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(dll, now.AddMinutes(-5));
+            File.SetLastWriteTimeUtc(cs, now);
+
+            var state = BuildFreshness.ProjectBuildState(root, DemoApiInfo());
+            Assert.Equal("stale", state.Status);
+            Assert.Contains("Program.cs", state.Reason);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
     static ProjectInfo DemoApiInfo() => new(
         RelDir: "src/Demo.Api",
         Name: "Demo.Api",
@@ -321,6 +409,66 @@ public class BuildFreshnessTests
         File.WriteAllText(Path.Combine(proj, "appsettings.json"), "{ }");
         File.WriteAllBytes(Path.Combine(proj, "bin", "Debug", "net8.0", name + ".dll"), [0]);
         return root;
+    }
+
+    static void TryDelete(string root)
+    {
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                try { File.SetAttributes(path, FileAttributes.Normal); } catch { /* ignore */ }
+            }
+            Directory.Delete(root, recursive: true);
+        }
+        catch (IOException)
+        {
+            /* Windows locks .git objects; temp cleaner will drop them */
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    static void InitGitRepo(string root)
+    {
+        RunGit(root, "init");
+        RunGit(root, "config", "user.email", "test@example.com");
+        RunGit(root, "config", "user.name", "Test");
+        RunGit(root, "add", "-A");
+        RunGit(root, extraEnv: new Dictionary<string, string>
+        {
+            ["GIT_AUTHOR_DATE"] = "2020-01-01T00:00:00Z",
+            ["GIT_COMMITTER_DATE"] = "2020-01-01T00:00:00Z",
+        }, "-c", "commit.gpgsign=false", "commit", "-m", "init");
+    }
+
+    static void RunGit(string root, params string[] args) => RunGit(root, extraEnv: null, args);
+
+    static void RunGit(string root, Dictionary<string, string>? extraEnv, params string[] args)
+    {
+        var git = CliUtil.FindOnPath("git") ?? "git";
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = git,
+            WorkingDirectory = root,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        if (extraEnv is not null)
+        {
+            foreach (var kv in extraEnv)
+                psi.Environment[kv.Key] = kv.Value;
+        }
+        foreach (var a in args)
+            psi.ArgumentList.Add(a);
+        using var proc = System.Diagnostics.Process.Start(psi)
+            ?? throw new InvalidOperationException("git failed to start");
+        proc.WaitForExit(15_000);
+        if (proc.ExitCode != 0)
+            throw new InvalidOperationException(proc.StandardError.ReadToEnd());
     }
 
     static void StampSources(string projectDir, DateTime utc)

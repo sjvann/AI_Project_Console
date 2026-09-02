@@ -1,0 +1,92 @@
+@inject ConsoleSession S
+
+<div class="overlay" @onclick="S.CloseAskPanel">
+    <div class="dialog dialog-lg ask-dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="ask-title" aria-modal="true">
+        <div class="ask-dialog-head">
+            <div>
+                <h2 id="ask-title">專案問答</h2>
+                <p class="hint">@(S.AskBusy ? S.AskStatus : (S.AskConfigured ? "本機堆疊事實 · 不鎖控制台" : "尚未設定模型"))</p>
+            </div>
+            <span class="grow"></span>
+            <button class="btn-sec" disabled="@(!S.AskBusy)" @onclick="S.CancelAsk">取消</button>
+            <button type="button" class="btn-sec" @onclick="S.CloseAskPanel">關閉</button>
+        </div>
+        <div class="ask-help">
+            @if (!S.HasProject)
+            {
+                <p class="hint">請先選擇專案目錄。這頁只回答目前倉的值班、服務、編譯與 MCP 審計，不會外開 Cursor。</p>
+            }
+            else if (!S.AskConfigured)
+            {
+                <p class="hint">請到設定填寫專案問答的 Base URL 與模型。預設可接本機 Ollama（<code>http://127.0.0.1:11434/v1</code>）。</p>
+                <button class="btn-link" type="button" @onclick="OpenPrefs">前往問答設定</button>
+            }
+            else
+            {
+                <p>用本機堆疊事實回答專案問題。點建議題或自己打字；等回覆時仍可切頁、看 Log、按啟動。</p>
+            }
+        </div>
+        <div class="ask-chips" role="list">
+            @foreach (var q in S.AskSuggestions)
+            {
+                <button type="button" class="ask-chip @(q.Highlighted ? "is-suggest" : null)" role="listitem"
+                        disabled="@(!S.CanAsk)" title="@q.Prompt"
+                        @onclick="@(() => S.SendAskSuggestionAsync(q.Prompt))">
+                    @if (q.Highlighted)
+                    {
+                        <span class="ask-chip-mark">建議</span>
+                    }
+                    @q.Title
+                </button>
+            }
+        </div>
+        <div class="ask-list" id="ask-view">
+            @if (!S.AskMessages.Any())
+            {
+                <div class="ask-empty">
+                    <p class="hint">尚無對話。點上方建議題，或在下方輸入。</p>
+                </div>
+            }
+            @foreach (var m in S.AskMessages)
+            {
+                <div class="ask-msg ask-@m.Role">
+                    @if (m.Role == "tool")
+                    {
+                        <span class="hint">已呼叫 @m.Text</span>
+                    }
+                    else if (m.Role == "user")
+                    {
+                        <strong>你</strong>
+                        <p>@m.Text</p>
+                    }
+                    else if (m.Role == "error")
+                    {
+                        <strong>錯誤</strong>
+                        <p>@m.Text</p>
+                    }
+                    else
+                    {
+                        <strong>控制台</strong>
+                        <p>@m.Text</p>
+                    }
+                </div>
+            }
+        </div>
+        <div class="ask-compose">
+            <textarea value="@S.AskDraft" @oninput="OnDraft" placeholder="問這個專案：離線、需重編、Log、MCP 拒絕…"
+                      disabled="@(!S.HasProject || !S.AskConfigured || S.AskBusy)"></textarea>
+            <button class="btn-primary" type="button" disabled="@(!S.CanAsk || string.IsNullOrWhiteSpace(S.AskDraft))"
+                    @onclick="@(() => S.SendAskAsync())">送出</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    void OnDraft(ChangeEventArgs e) => S.SetAskDraft(e.Value?.ToString() ?? "");
+
+    void OpenPrefs()
+    {
+        S.CloseAskPanel();
+        S.OpenPreferences("ask");
+    }
+}

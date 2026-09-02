@@ -19,12 +19,12 @@ public static class BuildReportStore
     static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
     public static string FilePath(string root, string target) =>
-        Path.Combine(Path.GetFullPath(root), AppInfo.RuntimeDirName, "build-reports", Sanitize(target) + ".json");
+        Path.Combine(Path.GetFullPath(root), AppInfo.RuntimeDirName, "build-reports", Sanitize(target, root) + ".json");
 
     public static string Write(ProjectRuntime runtime, string target, int exitCode, string configuration)
     {
         runtime.Ensure();
-        var id = Sanitize(target);
+        var id = Sanitize(target, runtime.Root);
         var path = Path.Combine(runtime.BuildReports, id + ".json");
         var report = new Dictionary<string, object?>
         {
@@ -58,12 +58,16 @@ public static class BuildReportStore
             var status = JsonUtil.Str(obj["status"]);
             if (string.IsNullOrEmpty(status))
                 status = exit == 0 ? "ok" : "failed";
-            return new BuildReport(
+            var report = new BuildReport(
                 JsonUtil.Str(obj["target"]),
                 exit,
                 status,
                 utc,
                 JsonUtil.Str(obj["configuration"]));
+            // 舊版只留資料夾名（Client.json），所有模組 Client 會搶同一份；對不上目前路徑就當沒有。
+            if (!ReportBelongsTo(report.Target, root, target))
+                return null;
+            return report;
         }
         catch (IOException)
         {
@@ -71,13 +75,60 @@ public static class BuildReportStore
         }
     }
 
-    public static string Sanitize(string target)
+    public static string Sanitize(string target) => Sanitize(target, root: null);
+
+    public static string Sanitize(string target, string? root)
     {
-        var name = Path.GetFileName(BuildFreshness.ToProjectDir("", target));
-        if (string.IsNullOrEmpty(name))
-            name = "build";
-        var chars = name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c).ToArray();
+        var dir = BuildFreshness.ToProjectDir(root ?? "", target);
+        if (!string.IsNullOrWhiteSpace(root))
+        {
+            try
+            {
+                var fullRoot = Path.GetFullPath(root);
+                var fullDir = Path.GetFullPath(dir);
+                if (fullDir.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    var rel = Path.GetRelativePath(fullRoot, fullDir);
+                    if (!string.IsNullOrWhiteSpace(rel) && rel != ".")
+                        return SafeFileId(rel);
+                }
+            }
+            catch
+            {
+                /* fall through */
+            }
+        }
+
+        return SafeFileId(LastSegments(dir, 4));
+    }
+
+    static bool ReportBelongsTo(string storedTarget, string root, string target)
+    {
+        if (string.IsNullOrWhiteSpace(storedTarget))
+            return true;
+        var stored = BuildFreshness.ToProjectDir(root, storedTarget);
+        var current = BuildFreshness.ToProjectDir(root, target);
+        return string.Equals(stored, current, StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string LastSegments(string path, int n)
+    {
+        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Where(p => p.Length > 0 && p is not "." && !p.EndsWith(':'))
+            .ToArray();
+        if (parts.Length == 0)
+            return "build";
+        return string.Join("-", parts.Skip(Math.Max(0, parts.Length - n)));
+    }
+
+    static string SafeFileId(string rel)
+    {
+        var chars = rel.Select(c =>
+            c is '/' or '\\' ? '-' :
+            Path.GetInvalidFileNameChars().Contains(c) ? '-' : c).ToArray();
         var safe = new string(chars).Trim('-');
+        if (safe.Length > 120)
+            safe = safe[^120..].Trim('-');
         return string.IsNullOrEmpty(safe) ? "build" : safe;
     }
 }

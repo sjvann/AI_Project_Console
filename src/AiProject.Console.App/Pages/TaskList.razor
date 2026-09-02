@@ -1,0 +1,93 @@
+@inject ConsoleSession S
+
+<div class="row task-toolbar">
+    <span class="hint grow">@(S.GithubLoggedIn ? S.GithubAccount.Display() + " 的 Issue" : "GitHub 任務")</span>
+    <button class="btn-sec" disabled="@(S.IssuesBusy || !S.GithubLoggedIn || !S.GithubManaged)" @onclick="S.RefreshIssuesAsync">刷新</button>
+</div>
+@if (S.Catalog is null)
+{
+    <p class="hint">請先選擇專案目錄。GitHub 管理的專案會在登入後顯示指派給你的 Issue。</p>
+}
+else if (!S.GithubManaged)
+{
+    <p class="hint">此專案尚未接上 GitHub，沒有 Issue 任務。</p>
+}
+else if (!S.GithubLoggedIn)
+{
+    <div class="task-empty">
+        <p class="hint">此專案由 GitHub 管理，請先登入才能看任務。</p>
+        <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">登入 GitHub</button>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(S.IssuesHint))
+    {
+        <p class="hint">@S.IssuesHint</p>
+    }
+    <section class="task-section" aria-label="我的任務">
+        <h3 class="task-heading">我的任務 <span class="group-count">@S.AssignedIssues.Count</span></h3>
+        @if (S.AssignedIssues.Count == 0)
+        {
+            <p class="hint">目前沒有指派給你的 Issue。可從下方未指派清單接手。</p>
+        }
+        @foreach (var issue in S.AssignedIssues)
+        {
+            <div class="task-row">
+                <span class="task-num">@issue.NumberText</span>
+                <div class="task-main">
+                    <button type="button" class="task-title" title="在瀏覽器開啟" @onclick="@(() => S.OpenIssueUrl(issue))">@issue.Title</button>
+                    <span class="task-meta">
+                        @if (!string.IsNullOrEmpty(issue.LabelText))
+                        {
+                            <span>@issue.LabelText</span>
+                        }
+                        @if (!string.IsNullOrEmpty(issue.WhenText()))
+                        {
+                            <span>@issue.WhenText()</span>
+                        }
+                        @if (!string.IsNullOrEmpty(issue.TraceChipText))
+                        {
+                            <span class="duty-chip is-@issue.TraceChipTone">@issue.TraceChipText</span>
+                        }
+                    </span>
+                </div>
+                <button class="btn-primary btn-compact" title="請後端 Agent 協助處理此 Issue" @onclick="@(() => S.OpenIssueHelp(issue))">請 Agent 協助</button>
+            </div>
+        }
+    </section>
+    <section class="task-section" aria-label="未指派">
+        <button type="button" class="group-label @(S.UnassignedCollapsed ? "collapsed" : null)" title="展開／收合未指派清單" aria-expanded="@(!S.UnassignedCollapsed)" @onclick="S.ToggleUnassignedIssues">
+            <span class="group-chevron" aria-hidden="true"></span>
+            <span>未指派</span>
+            <span class="group-count">@S.UnassignedIssues.Count</span>
+        </button>
+        @if (!S.UnassignedCollapsed)
+        {
+            @if (S.UnassignedIssues.Count == 0)
+            {
+                <p class="hint">沒有未指派的 Issue。</p>
+            }
+            @foreach (var issue in S.UnassignedIssues)
+            {
+                <div class="task-row task-open">
+                    <span class="task-num">@issue.NumberText</span>
+                    <div class="task-main">
+                        <button type="button" class="task-title" title="在瀏覽器開啟" @onclick="@(() => S.OpenIssueUrl(issue))">@issue.Title</button>
+                        <span class="task-meta">
+                            @if (!string.IsNullOrEmpty(issue.LabelText))
+                            {
+                                <span>@issue.LabelText</span>
+                            }
+                            @if (!string.IsNullOrEmpty(issue.WhenText()))
+                            {
+                                <span>@issue.WhenText()</span>
+                            }
+                        </span>
+                    </div>
+                    <button class="btn-sec btn-compact" title="把這則 Issue 指派給自己" @onclick="@(() => S.AcceptIssueAsync(issue.Number))">接受</button>
+                </div>
+            }
+        }
+    </section>
+}

@@ -104,17 +104,29 @@
             <span class="sep"></span>
             <ActionMenu Title="建置" Actions="S.BuildActions" Session="S" @bind-Open="openMenu" Key="build" />
             <span class="sep"></span>
+            <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
+            <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
             <button type="button"
-                    class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
+                    class="git-pulse-mark row-end @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
                     title="開啟 GitHub 操作台（Ctrl+G）"
                     aria-haspopup="true"
                     aria-expanded="@S.GithubHubOpen"
                     @onclick="S.ToggleGithubHub">
                 GitHub 操作台
             </button>
-            <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
-            <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
-            <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
+            <button type="button"
+                    class="btn-sec @(S.AskPanelOpen ? "is-open" : null)"
+                    title="用本機堆疊事實回答專案問題"
+                    aria-haspopup="dialog"
+                    aria-expanded="@S.AskPanelOpen"
+                    @onclick="S.ToggleAskPanel">
+                專案問答
+                @if (S.AskBusy)
+                {
+                    <span class="badge">…</span>
+                }
+            </button>
+            <button class="btn-sec" @onclick="S.Doctor">環境體檢</button>
         </div>
     </div>
     }
@@ -122,6 +134,16 @@
     @if (S.GithubHubOpen)
     {
         <GithubHub />
+    }
+
+    @if (S.AskPanelOpen)
+    {
+        <AskPanel />
+    }
+
+    @if (S.AuditPanelOpen)
+    {
+        <AuditPanel />
     }
 
     @if (S.IsReqWorkbench)
@@ -138,7 +160,7 @@
             <button type="button" class="duty-chip @(S.StaleProjectCount > 0 ? "is-warn" : "is-ok")" @onclick="S.ShowStaleProjects">
                 需重編 @S.StaleProjectCount
             </button>
-            <button type="button" class="duty-chip @(S.AuditIncidentCount > 0 ? "is-warn" : "is-ok")" title="對帳單。政策擋下或未知工具不是故障；點一下看原因。" @onclick="@(() => S.SetRightTab("audit"))">
+            <button type="button" class="duty-chip @(S.AuditIncidentCount > 0 ? "is-warn" : "is-ok")" title="對帳單。政策擋下或未知工具不是故障；點一下看原因。" @onclick="S.OpenAuditPanel">
                 MCP 拒絕 @S.AuditFailCount
             </button>
             @if (S.GithubManaged)
@@ -162,30 +184,24 @@
         }
     </div>
 
-    <div class="split" id="split-view">
-        <div class="pane">
-            <div class="tabs" role="tablist" aria-label="服務、專案、文件與任務">
-                <div class="tab @(S.LeftTab == "svc" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "svc")" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "svc")" @ondblclick="S.ToggleAllServiceGroups" @onkeydown="@(e => OnLeftTabKey(e, "svc"))">
-                    服務 <span class="badge">@S.ReadyCount/@S.ServiceCount</span>
-                </div>
-                <div class="tab @(S.LeftTab == "prj" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "prj")" title="連點：全部展開／收合" @onclick="@(() => S.LeftTab = "prj")" @ondblclick="S.ToggleAllProjectGroups" @onkeydown="@(e => OnLeftTabKey(e, "prj"))">
-                    專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
-                </div>
-                <div class="tab @(S.LeftTab == "docs" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "docs")" title="專案 docs/" @onclick="S.ShowDocs" @onkeydown="@(e => OnLeftTabKey(e, "docs"))">
-                    文件
-                    @if (S.Docs is not null)
-                    {
-                        <span class="badge">@S.Docs.FileCount</span>
-                    }
-                </div>
-                <div class="tab @(S.LeftTab == "task" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "task")" title="指派給我的 GitHub Issue" @onclick="S.ShowTasks" @onkeydown="@(e => OnLeftTabKey(e, "task"))">
-                    任務
-                    @if (S.GithubLoggedIn && S.GithubManaged)
-                    {
-                        <span class="badge">@S.AssignedIssues.Count</span>
-                    }
-                </div>
+    <div class="workspace">
+        <div class="tabs workspace-tabs" role="tablist" aria-label="服務、專案與文件">
+            <div class="tab @(S.LeftTab == "svc" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "svc")" title="連點：全部展開／收合" @onclick="@(() => S.SetWorkspaceTab("svc"))" @ondblclick="S.ToggleAllServiceGroups" @onkeydown="@(e => OnWorkspaceTabKey(e, "svc"))">
+                服務 <span class="badge">@S.ReadyCount/@S.ServiceCount</span>
             </div>
+            <div class="tab @(S.LeftTab == "prj" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "prj")" title="連點：全部展開／收合" @onclick="@(() => S.SetWorkspaceTab("prj"))" @ondblclick="S.ToggleAllProjectGroups" @onkeydown="@(e => OnWorkspaceTabKey(e, "prj"))">
+                專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
+            </div>
+            <div class="tab @(S.LeftTab == "docs" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "docs")" title="專案 docs/" @onclick="S.ShowDocs" @onkeydown="@(e => OnWorkspaceTabKey(e, "docs"))">
+                文件
+                @if (S.Docs is not null)
+                {
+                    <span class="badge">@S.Docs.FileCount</span>
+                }
+            </div>
+        </div>
+        <div class="split" id="split-view">
+        <div class="pane">
             <div class="pane-body">
                 @if (S.LeftTab == "svc")
                 {
@@ -396,138 +412,11 @@
                         </div>
                     }
                 }
-                else
-                {
-                    <div class="row task-toolbar">
-                        <span class="hint grow">@(S.GithubLoggedIn ? S.GithubAccount.Display() + " 的 Issue" : "GitHub 任務")</span>
-                        <button class="btn-sec" disabled="@(S.IssuesBusy || !S.GithubLoggedIn || !S.GithubManaged)" @onclick="S.RefreshIssuesAsync">刷新</button>
-                    </div>
-                    @if (S.Catalog is null)
-                    {
-                        <p class="hint">請先選擇專案目錄。GitHub 管理的專案會在登入後顯示指派給你的 Issue。</p>
-                    }
-                    else if (!S.GithubManaged)
-                    {
-                        <p class="hint">此專案尚未接上 GitHub，沒有 Issue 任務。</p>
-                    }
-                    else if (!S.GithubLoggedIn)
-                    {
-                        <div class="task-empty">
-                            <p class="hint">此專案由 GitHub 管理，請先登入才能看任務。</p>
-                            <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">登入 GitHub</button>
-                        </div>
-                    }
-                    else
-                    {
-                        @if (!string.IsNullOrEmpty(S.IssuesHint))
-                        {
-                            <p class="hint">@S.IssuesHint</p>
-                        }
-                        <section class="task-section" aria-label="我的任務">
-                            <h3 class="task-heading">我的任務 <span class="group-count">@S.AssignedIssues.Count</span></h3>
-                            @if (S.AssignedIssues.Count == 0)
-                            {
-                                <p class="hint">目前沒有指派給你的 Issue。可從下方未指派清單接手。</p>
-                            }
-                            @foreach (var issue in S.AssignedIssues)
-                            {
-                                <div class="task-row">
-                                    <span class="task-num">@issue.NumberText</span>
-                                    <div class="task-main">
-                                        <button type="button" class="task-title" title="在瀏覽器開啟" @onclick="@(() => S.OpenIssueUrl(issue))">@issue.Title</button>
-                                        <span class="task-meta">
-                                            @if (!string.IsNullOrEmpty(issue.LabelText))
-                                            {
-                                                <span>@issue.LabelText</span>
-                                            }
-                                            @if (!string.IsNullOrEmpty(issue.WhenText()))
-                                            {
-                                                <span>@issue.WhenText()</span>
-                                            }
-                                            @if (!string.IsNullOrEmpty(issue.TraceChipText))
-                                            {
-                                                <span class="duty-chip is-@issue.TraceChipTone">@issue.TraceChipText</span>
-                                            }
-                                        </span>
-                                    </div>
-                                    <button class="btn-primary btn-compact" title="請後端 Agent 協助處理此 Issue" @onclick="@(() => S.OpenIssueHelp(issue))">請 Agent 協助</button>
-                                </div>
-                            }
-                        </section>
-                        <section class="task-section" aria-label="未指派">
-                            <button type="button" class="group-label @(S.UnassignedCollapsed ? "collapsed" : null)" title="展開／收合未指派清單" aria-expanded="@(!S.UnassignedCollapsed)" @onclick="S.ToggleUnassignedIssues">
-                                <span class="group-chevron" aria-hidden="true"></span>
-                                <span>未指派</span>
-                                <span class="group-count">@S.UnassignedIssues.Count</span>
-                            </button>
-                            @if (!S.UnassignedCollapsed)
-                            {
-                                @if (S.UnassignedIssues.Count == 0)
-                                {
-                                    <p class="hint">沒有未指派的 Issue。</p>
-                                }
-                                @foreach (var issue in S.UnassignedIssues)
-                                {
-                                    <div class="task-row task-open">
-                                        <span class="task-num">@issue.NumberText</span>
-                                        <div class="task-main">
-                                            <button type="button" class="task-title" title="在瀏覽器開啟" @onclick="@(() => S.OpenIssueUrl(issue))">@issue.Title</button>
-                                            <span class="task-meta">
-                                                @if (!string.IsNullOrEmpty(issue.LabelText))
-                                                {
-                                                    <span>@issue.LabelText</span>
-                                                }
-                                                @if (!string.IsNullOrEmpty(issue.WhenText()))
-                                                {
-                                                    <span>@issue.WhenText()</span>
-                                                }
-                                            </span>
-                                        </div>
-                                        <button class="btn-sec btn-compact" title="把這則 Issue 指派給自己" @onclick="@(() => S.AcceptIssueAsync(issue.Number))">接受</button>
-                                    </div>
-                                }
-                            }
-                        </section>
-                    }
-                }
             </div>
         </div>
         <div class="split-gutter" title="拖拉調整寬度，連點還原各半"></div>
         <div class="pane">
-            <div class="tabs">
-                <div class="tab @(S.RightTab == "log" ? "active" : null)" @onclick="@(() => S.SetRightTab("log"))">服務 Log</div>
-                <div class="tab @(S.RightTab == "build" ? "active" : null)" @onclick="@(() => S.SetRightTab("build"))">建置／測試</div>
-                <div class="tab @(S.RightTab == "audit" ? "active" : null)" @onclick="@(() => S.SetRightTab("audit"))">
-                    MCP 審計
-                    @if (S.AuditIncidentCount > 0)
-                    {
-                        <span class="badge badge-failed">@S.AuditIncidentCount</span>
-                    }
-                    else if (S.AuditTotal > 0)
-                    {
-                        <span class="badge">@S.AuditTotal</span>
-                    }
-                </div>
-                <div class="tab @(S.RightTab == "ask" ? "active" : null)" @onclick="@(() => S.SetRightTab("ask"))">
-                    專案問答
-                    @if (S.AskBusy)
-                    {
-                        <span class="badge">…</span>
-                    }
-                    else if (S.AskMessages.Count > 0)
-                    {
-                        <span class="badge">@S.AskMessages.Count</span>
-                    }
-                </div>
-                <div class="tab @(S.RightTab == "docs" ? "active" : null)" @onclick="@(() => S.SetRightTab("docs"))">
-                    文件
-                    @if (S.DocsDirty)
-                    {
-                        <span class="badge">未存</span>
-                    }
-                </div>
-            </div>
-            @if (S.RightTab == "log")
+            @if (S.LeftTab == "svc")
             {
                 <div class="log-tools">
                     <strong>@S.LogTitle</strong>
@@ -540,7 +429,7 @@
                 </div>
                 <pre class="log" id="log-view">@S.VisibleLogText</pre>
             }
-            else if (S.RightTab == "build")
+            else if (S.LeftTab == "prj")
             {
                 <div class="log-tools">
                     <strong>建置輸出</strong>
@@ -556,86 +445,7 @@
                 </div>
                 <pre class="log" id="build-view">@S.BuildText</pre>
             }
-            else if (S.RightTab == "audit")
-            {
-                <div class="log-tools">
-                    <strong>MCP 審計</strong>
-                    <span class="hint">@(S.AuditTotal > 0 ? $"最近 {S.AuditEntries.Count}／共 {S.AuditTotal} 筆" : "尚無紀錄")</span>
-                    <input class="log-search" placeholder="搜尋工具／參數…" title="依工具名稱、參數或拒絕原因過濾" value="@S.AuditFilter" @oninput="OnAuditFilter" />
-                    <button class="btn-sec" disabled="@(!S.HasProject)" title="從 .ai_project/mcp-audit.jsonl 讀取最新紀錄" @onclick="S.RefreshAudit">重新載入</button>
-                    <button class="btn-sec" disabled="@(!S.HasProject)" title="用系統預設程式開啟 mcp-audit.jsonl" @onclick="S.OpenAuditDir">開啟檔案</button>
-                </div>
-                <div class="audit-help">
-                    <p>這裡是 <strong>Agent 操作本機堆疊的對帳單</strong>。每次透過 MCP 呼叫（編譯、啟停、讀 Log）無論成功或被政策拒絕，都會寫進來。服務 Log 看程式輸出；這頁看「Agent 呼叫了哪支工具」。</p>
-                    @if (S.AuditTotal == 0)
-                    {
-                        <ol>
-                            <li>設定 → MCP，把「本控制台」加入專案，並重新載入 Cursor。</li>
-                            <li>請 Agent 呼叫 <code>stack_status</code>、<code>build</code>、<code>get_log</code> 等工具（或問「用 duty_summary 看現在能不能交班」）。</li>
-                            <li>回到這頁按「重新載入」。摘要「MCP 拒絕」是對帳單；政策擋下或未知工具不會變黃。點一下也會打開這裡。</li>
-                        </ol>
-                        <button class="btn-link" type="button" @onclick="@(() => S.OpenPreferences("mcp"))">前往 MCP 設定</button>
-                    }
-                    else
-                    {
-                        <p class="hint">每一列是一次呼叫：時間、OK／拒、工具、耗時、參數或拒絕原因。搜尋可過濾；「開啟檔案」看完整 <code>.ai_project/mcp-audit.jsonl</code>。</p>
-                    }
-                    @if (!string.IsNullOrEmpty(S.AuditPolicyText))
-                    {
-                        <p class="hint">@S.AuditPolicyText</p>
-                    }
-                    <p class="hint">可寫／唯讀＝Agent 能否編譯與啟停。允許＝白名單（空白＝全部）。禁止＝一律擋下。需確認＝必須帶 <code>confirm=true</code>（預設 <code>stop_all</code>）。改權限請到設定 → 權限。</p>
-                </div>
-                <div class="audit-list">
-                    @if (S.VisibleAuditEntries.Any())
-                    {
-                        <div class="audit-row audit-head" aria-hidden="true">
-                            <span>時間</span>
-                            <span>結果</span>
-                            <span>工具</span>
-                            <span>耗時</span>
-                            <span>參數／拒絕原因</span>
-                        </div>
-                    }
-                    @foreach (var e in S.VisibleAuditEntries)
-                    {
-                        <div class="audit-row @(e.Ok ? "ok" : "fail")" title="@(e.Error ?? e.ArgsText)">
-                            <span class="audit-when">@e.WhenText</span>
-                            <span class="@(e.Ok ? "status-on" : "status-off")">@(e.Ok ? "OK" : "拒")</span>
-                            <span class="audit-tool">@e.Tool</span>
-                            <span class="hint">@(e.Ms)ms</span>
-                            <span class="audit-detail">
-                                @if (!string.IsNullOrEmpty(e.Error))
-                                {
-                                    <span class="audit-err">@e.Error</span>
-                                }
-                                else if (!string.IsNullOrEmpty(e.ArgsText))
-                                {
-                                    <span class="audit-args">@e.ArgsText</span>
-                                }
-                            </span>
-                        </div>
-                    }
-                    @if (!S.VisibleAuditEntries.Any())
-                    {
-                        <div class="audit-empty">
-                            @if (!S.HasProject)
-                            {
-                                <p class="hint">請先選擇專案目錄。審計檔會寫在該專案的 <code>.ai_project/mcp-audit.jsonl</code>。</p>
-                            }
-                            else if (S.AuditTotal == 0)
-                            {
-                                <p class="hint">目前沒有紀錄。這不是故障：Agent 還沒呼叫堆疊工具，或控制台尚未加入 Cursor 的 MCP。</p>
-                            }
-                            else
-                            {
-                                <p class="hint">沒有符合「@S.AuditFilter」的紀錄。清掉搜尋即可看到最近呼叫。</p>
-                            }
-                        </div>
-                    }
-                </div>
-            }
-            else if (S.RightTab == "docs")
+            else
             {
                 <div class="log-tools">
                     <strong>@(string.IsNullOrEmpty(S.SelectedDocPath) ? "文件" : S.SelectedDocPath)</strong>
@@ -681,81 +491,7 @@
                               placeholder="Markdown…"></textarea>
                 }
             }
-            else
-            {
-                <div class="log-tools">
-                    <strong>專案問答</strong>
-                    <span class="hint">@(S.AskBusy ? S.AskStatus : (S.AskConfigured ? "本機堆疊事實 · 不鎖控制台" : "尚未設定模型"))</span>
-                    <button class="btn-sec" disabled="@(!S.AskBusy)" @onclick="S.CancelAsk">取消</button>
-                </div>
-                <div class="ask-help">
-                    @if (!S.HasProject)
-                    {
-                        <p class="hint">請先選擇專案目錄。這頁只回答目前倉的值班、服務、編譯與 MCP 審計，不會外開 Cursor。</p>
-                    }
-                    else if (!S.AskConfigured)
-                    {
-                        <p class="hint">請到設定填寫專案問答的 Base URL 與模型。預設可接本機 Ollama（<code>http://127.0.0.1:11434/v1</code>）。</p>
-                        <button class="btn-link" type="button" @onclick="@(() => S.OpenPreferences("ask"))">前往問答設定</button>
-                    }
-                    else
-                    {
-                        <p>用本機堆疊事實回答專案問題。點建議題或自己打字；等回覆時仍可切頁、看 Log、按啟動。</p>
-                    }
-                </div>
-                <div class="ask-chips" role="list">
-                    @foreach (var q in S.AskSuggestions)
-                    {
-                        <button type="button" class="ask-chip @(q.Highlighted ? "is-suggest" : null)" role="listitem"
-                                disabled="@(!S.CanAsk)" title="@q.Prompt"
-                                @onclick="@(() => S.SendAskSuggestionAsync(q.Prompt))">
-                            @if (q.Highlighted)
-                            {
-                                <span class="ask-chip-mark">建議</span>
-                            }
-                            @q.Title
-                        </button>
-                    }
-                </div>
-                <div class="ask-list" id="ask-view">
-                    @if (!S.AskMessages.Any())
-                    {
-                        <div class="ask-empty">
-                            <p class="hint">尚無對話。點上方建議題，或在下方輸入。</p>
-                        </div>
-                    }
-                    @foreach (var m in S.AskMessages)
-                    {
-                        <div class="ask-msg ask-@m.Role">
-                            @if (m.Role == "tool")
-                            {
-                                <span class="hint">已呼叫 @m.Text</span>
-                            }
-                            else if (m.Role == "user")
-                            {
-                                <strong>你</strong>
-                                <p>@m.Text</p>
-                            }
-                            else if (m.Role == "error")
-                            {
-                                <strong>錯誤</strong>
-                                <p>@m.Text</p>
-                            }
-                            else
-                            {
-                                <strong>控制台</strong>
-                                <p>@m.Text</p>
-                            }
-                        </div>
-                    }
-                </div>
-                <div class="ask-compose">
-                    <textarea value="@S.AskDraft" @oninput="OnAskDraft" placeholder="問這個專案：離線、需重編、Log、MCP 拒絕…"
-                              disabled="@(!S.HasProject || !S.AskConfigured || S.AskBusy)"></textarea>
-                    <button class="btn-primary" type="button" disabled="@(!S.CanAsk || string.IsNullOrWhiteSpace(S.AskDraft))"
-                            @onclick="@(() => S.SendAskAsync())">送出</button>
-                </div>
-            }
+        </div>
         </div>
     </div>
     }
@@ -1391,11 +1127,11 @@
             }
         }
         _hubWasOpen = S.GithubHubOpen;
-        if (S.FollowLog && S.RightTab == "log")
+        if (S.FollowLog && S.LeftTab == "svc")
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "log-view");
-        if (S.RightTab == "build")
+        if (S.LeftTab == "prj")
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "build-view");
-        if (S.RightTab == "ask")
+        if (S.AskPanelOpen)
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "ask-view");
     }
 
@@ -1403,16 +1139,14 @@
 
     void Toggle(string key) => openMenu = openMenu == key ? null : key;
 
-    void OnLeftTabKey(KeyboardEventArgs e, string tab)
+    void OnWorkspaceTabKey(KeyboardEventArgs e, string tab)
     {
         if (e.Key is not ("Enter" or " "))
             return;
-        if (tab == "task")
-            S.ShowTasks();
-        else if (tab == "docs")
+        if (tab == "docs")
             S.ShowDocs();
         else
-            S.LeftTab = tab;
+            S.SetWorkspaceTab(tab);
     }
 
     async Task OnRecent(ChangeEventArgs e)
@@ -1423,10 +1157,6 @@
     }
 
     void OnLogFilter(ChangeEventArgs e) => S.SetLogFilter(e.Value?.ToString() ?? "");
-
-    void OnAuditFilter(ChangeEventArgs e) => S.SetAuditFilter(e.Value?.ToString() ?? "");
-
-    void OnAskDraft(ChangeEventArgs e) => S.SetAskDraft(e.Value?.ToString() ?? "");
 
     void OnDocsDraft(ChangeEventArgs e) => S.SetDocsDraft(e.Value?.ToString() ?? "");
 
