@@ -177,4 +177,30 @@ public class ServiceActivityMapTests
         Assert.Equal(1, cleared);
         Assert.Empty(map);
     }
+
+    [Fact]
+    public void Reconcile_ClearsStartingWhenPidDeadAndStillOffline()
+    {
+        var map = new Dictionary<string, string> { ["module"] = ServiceActivityMap.Starting };
+        var health = new Dictionary<string, bool> { ["module"] = false };
+        var dead = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "module" };
+
+        var cleared = ServiceActivityMap.Reconcile(map, health, deadStarted: dead);
+
+        Assert.Equal(1, cleared);
+        Assert.Empty(map);
+    }
+
+    [Fact]
+    public void Reconcile_KeepsStartingWhenPidAliveAndOffline()
+    {
+        var map = new Dictionary<string, string> { ["module"] = ServiceActivityMap.Starting };
+        var health = new Dictionary<string, bool> { ["module"] = false };
+        var dead = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var cleared = ServiceActivityMap.Reconcile(map, health, deadStarted: dead);
+
+        Assert.Equal(0, cleared);
+        Assert.Equal(ServiceActivityMap.Starting, map["module"]);
+    }
 }

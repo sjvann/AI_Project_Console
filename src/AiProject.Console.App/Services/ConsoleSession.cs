@@ -273,6 +273,28 @@ public sealed partial class ConsoleSession : IDisposable
     public IReadOnlyList<ConsoleAction> GithubActions => ActionCatalog.Load("github");
     public IReadOnlyList<ConsoleAction> DeployActions => ActionCatalog.Load("deploy");
     public IReadOnlyList<ConsoleAction> DocsActions => ActionCatalog.Load("docs");
+    public IEnumerable<ConsoleAction> GithubLane(string lane) =>
+        GithubActions.Where(a => string.Equals(a.Lane, lane, StringComparison.OrdinalIgnoreCase));
+    public bool GithubHubOpen { get; private set; }
+    public bool ShowGitPulse => HasProject && GitBrief is not null;
+    public bool GitPulseBlocked => GitBrief is { } brief && !brief.IsClearToLeave;
+    public GitHubNextStep GithubNext => GitHubNextAction.Decide(
+        GitBrief,
+        PullRequest?.HasPr ?? false,
+        string.IsNullOrWhiteSpace(GithubDraft.DefaultBranch) ? "main" : GithubDraft.DefaultBranch,
+        Actions?.Latest?.IsInProgress == true,
+        WatchingCi && Actions?.Latest?.IsFailure == true);
+    public string GithubRepoText
+    {
+        get
+        {
+            var slug = GithubDraft.Slug();
+            if (!string.IsNullOrEmpty(slug))
+                return slug;
+            return HasProject ? (Catalog?.Name ?? "未設定遠端") : "尚未選擇專案";
+        }
+    }
+    public string GithubHostText => GithubDraft.ResolvedHost();
     public DocsStatus? Docs { get; private set; }
     public string? SelectedDocPath { get; private set; }
     public string DocsDraft { get; set; } = "";
@@ -1381,7 +1403,7 @@ public sealed partial class ConsoleSession : IDisposable
             return true;
         _native.Warn(
             $"還不能{action}",
-            reason + "\n\n請先在摘要列提交，或用 GitHub 選單發布。專案列的「分支」可確認目前分支。");
+            reason + "\n\n請先在 Pulse 提交，或開 GitHub 操作台發布。專案列的「分支」可確認目前分支。");
         return false;
     }
 
@@ -1634,6 +1656,54 @@ public sealed partial class ConsoleSession : IDisposable
             _ = RefreshIssuesAsync();
         else
             Notify();
+    }
+
+    public void OpenGithubHub()
+    {
+        if (!string.IsNullOrEmpty(Dialog))
+            return;
+        GithubHubOpen = true;
+        Notify();
+    }
+
+    public void CloseGithubHub()
+    {
+        if (!GithubHubOpen)
+            return;
+        GithubHubOpen = false;
+        Notify();
+    }
+
+    public void ToggleGithubHub()
+    {
+        if (GithubHubOpen)
+            CloseGithubHub();
+        else
+            OpenGithubHub();
+    }
+
+    public async Task RunGithubNextAsync()
+    {
+        var next = GithubNext;
+        if (next.OpensHub)
+        {
+            OpenGithubHub();
+            return;
+        }
+        var action = GithubActions.FirstOrDefault(a => a.Handler == next.Handler);
+        if (action is null)
+        {
+            OpenGithubHub();
+            return;
+        }
+        await OnActionAsync(action).ConfigureAwait(false);
+    }
+
+    public void ShowTasksFromHub()
+    {
+        CloseGithubHub();
+        SetWorkbench("dev");
+        ShowTasks();
     }
 
     private void ClearIssueLists()
@@ -2223,6 +2293,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     public async Task OnActionAsync(ConsoleAction action)
     {
+        CloseGithubHub();
         var handler = action.Handler;
         if (action.RequiresDeploy && handler is not "deploy_settings" and not "gcp_settings")
         {
@@ -3659,7 +3730,7 @@ public sealed partial class ConsoleSession : IDisposable
     {
         var url = Actions?.Latest?.Url;
         if (!GitHubService.OpenWorkflowRun(url))
-            _native.Info("無法開啟", "沒有可開的 Actions 執行。請到 GitHub 選單看倉庫。");
+            _native.Info("無法開啟", "沒有可開的 Actions 執行。請到 GitHub 操作台看倉庫。");
     }
 
     public void OpenCiRun(string? url)
@@ -4231,7 +4302,8 @@ public sealed partial class ConsoleSession : IDisposable
                     foreach (var kv in health)
                         Health[kv.Key] = kv.Value;
                     StartErrorMap.ClearHealthy(StartErrors, health);
-                    ServiceActivityMap.Reconcile(ServiceActivities, health, StartErrors);
+                    var dead = Runtime is null ? null : ProcessSupervisor.DeadStartedIds(catalog, Runtime);
+                    ServiceActivityMap.Reconcile(ServiceActivities, health, StartErrors, dead);
                     UpdateReady();
                 }
                 var gitEvery = _autoSyncSkippedDirty ? 2 : 8;
@@ -4297,6 +4369,7 @@ public sealed partial class ConsoleSession : IDisposable
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
+        GithubHubOpen = false;
         _autoSyncSkippedDirty = false;
         Actions = null;
         PullRequest = null;

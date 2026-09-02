@@ -92,7 +92,38 @@ button:focus-visible, .tab:focus-visible, .task-title:focus-visible { outline: 2
 .ci-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ci-row-meta { color: var(--muted); font-weight: 600; font-size: 12px; }
 .gh-id { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--row-alt); color: var(--text); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
+button.gh-id { cursor: pointer; }
+button.gh-id:hover { border-color: var(--accent); }
+button.gh-id.is-muted { color: var(--muted); }
 .gh-id-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.git-pulse { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.git-pulse.is-blocked { border-color: var(--wait); }
+.git-pulse-mark { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 4px; background: var(--panel); color: var(--accent); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; }
+.git-pulse-mark:hover { background: var(--sel); }
+.git-pulse-mark.is-warn { border-color: var(--wait); color: var(--wait); }
+.git-pulse-mark.is-open { background: var(--sel); }
+.git-pulse-icon { flex: none; }
+.git-pulse-meta { color: var(--text); font-weight: 700; font-size: 12px; white-space: nowrap; }
+.git-pulse-hint { color: var(--muted); font-size: 12px; font-weight: 600; min-width: 0; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-hub { width: min(960px, 94vw); display: flex; flex-direction: column; gap: 12px; }
+.gh-hub-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gh-hub-id h2 { margin: 0; }
+.gh-hub-id .hint { margin: 4px 0 0; }
+.gh-hub-advice { margin: 0; padding: 8px 12px; border-radius: 4px; background: var(--sel); color: var(--text); font-weight: 600; font-size: 13px; }
+.gh-hub-lanes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.gh-hub-lane { border: 1px solid var(--border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 4px; min-width: 0; transition: border-color 160ms ease; }
+.gh-hub-lane.is-next { border-color: var(--accent); }
+.gh-hub-lane h3 { margin: 0; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.gh-hub-lane .hint { margin: 0 0 4px; }
+.gh-hub-lane button { display: block; width: 100%; text-align: left; background: none; border: none; border-radius: 4px; font-weight: 600; padding: 7px 8px; color: var(--text); }
+.gh-hub-lane button:hover:not(:disabled) { background: var(--sel); }
+.gh-hub-lane button.is-cta { background: var(--sel); color: var(--accent-hi); }
+@media (max-width: 840px) {
+    .gh-hub-lanes { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .gh-hub-lane { transition: none; }
+}
 .duty-attn { font-weight: 600; font-size: 13px; }
 .svc-err { color: var(--danger); font-size: 12px; margin-left: 6px; }
 .log-search { min-width: 160px; max-width: 240px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }

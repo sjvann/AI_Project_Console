@@ -111,8 +111,11 @@ public static class ServiceCatalogBuilder
             ? new ScanResult(root, [])
             : ProjectScanner.ScanWorkspace(root, lines);
         var projects = scan.Projects.ToList();
+        var scanned = DedupeIds(ProjectScanner.ExternalServiceCandidates(scan).Select(FromScan).ToList());
         if (services.Count == 0)
-            services = DedupeIds(ProjectScanner.ExternalServiceCandidates(scan).Select(FromScan).ToList());
+            services = scanned;
+        else if (MergeScanServices(manifest))
+            services = DedupeIds(MergeManifestOverScan(scanned, services));
 
         var startOrder = new List<string>();
         var orderNode = manifest["startOrder"] ?? manifest["start_order"];
@@ -163,6 +166,51 @@ public static class ServiceCatalogBuilder
             return !flag;
         var text = JsonUtil.Str(jv);
         return text is "false" or "0" or "no" or "off";
+    }
+
+    /// <summary>
+    /// 掃描到的服務保留，再把 <c>services</c> 當額外／覆寫（同路徑以清單為準）。
+    /// 預設仍是「有 services 就整份取代」，避免 AION 等既有清單被掃進多餘項目。
+    /// </summary>
+    internal static bool MergeScanServices(JsonObject manifest)
+    {
+        var node = manifest["mergeScanServices"] ?? manifest["merge_scan_services"] ?? manifest["mergeScan"];
+        if (node is not JsonValue jv)
+            return false;
+        if (jv.TryGetValue<bool>(out var flag))
+            return flag;
+        var text = JsonUtil.Str(jv);
+        return text is "true" or "1" or "yes" or "on";
+    }
+
+    internal static List<ServiceEntry> MergeManifestOverScan(
+        IReadOnlyList<ServiceEntry> scanned,
+        IReadOnlyList<ServiceEntry> listed)
+    {
+        var byPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var merged = new List<ServiceEntry>(scanned);
+        for (var i = 0; i < merged.Count; i++)
+            byPath[ProjectKey(merged[i].Project)] = i;
+        foreach (var svc in listed)
+        {
+            var key = ProjectKey(svc.Project);
+            if (byPath.TryGetValue(key, out var idx))
+                merged[idx] = svc;
+            else
+            {
+                byPath[key] = merged.Count;
+                merged.Add(svc);
+            }
+        }
+        return merged;
+    }
+
+    internal static string ProjectKey(string project)
+    {
+        var n = (project ?? "").Replace('\\', '/').Trim().Trim('/');
+        if (n.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            n = n[..^".csproj".Length];
+        return n.TrimEnd('/');
     }
 
     public static bool HasOpenableFrontend(ProjectCatalog? catalog) =>

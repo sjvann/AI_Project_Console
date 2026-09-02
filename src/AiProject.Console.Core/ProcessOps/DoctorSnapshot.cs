@@ -243,7 +243,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
                 ci.BuildTest ? DoctorLevel.Ok : DoctorLevel.Info,
                 HowTo: ci.BuildTest
                     ? null
-                    : "GitHub 選單「補齊 CI workflow…」可寫入骨架。控制台只顯示狀態，不代跑 Actions。",
+                    : "GitHub 操作台「補齊 CI workflow…」可寫入骨架。控制台只顯示狀態，不代跑 Actions。",
                 Badge: ci.Badge));
 
             sections.Add(new(

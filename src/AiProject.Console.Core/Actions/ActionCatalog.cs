@@ -36,7 +36,8 @@ public static class ActionCatalog
                     Handler: a.TryGetProperty("handler", out var h) ? h.GetString() ?? "" : "",
                     RequiresGithub: a.TryGetProperty("requiresGithub", out var rg) && rg.ValueKind == JsonValueKind.True,
                     RequiresDeploy: a.TryGetProperty("requiresDeploy", out var rd) && rd.ValueKind == JsonValueKind.True,
-                    Confirm: a.TryGetProperty("confirm", out var c) ? c.GetString() : null));
+                    Confirm: a.TryGetProperty("confirm", out var c) ? c.GetString() : null,
+                    Lane: a.TryGetProperty("lane", out var ln) ? ln.GetString() ?? "" : ""));
             }
             return list;
         }

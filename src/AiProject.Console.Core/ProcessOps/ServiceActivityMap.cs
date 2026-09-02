@@ -73,11 +73,13 @@ public static class ServiceActivityMap
     /// <summary>
     /// 健康檢查已對上預期狀態，或啟動／重啟已失敗時清掉過渡標記。
     /// 重啟要等再度上線才清；不要用「工作結束當下」的舊健康狀態提前清掉。
+    /// <paramref name="deadStarted"/>：本控制台寫過 pid、行程已死——桌面程式沒 HTTP 時也要結束「啟動中…」。
     /// </summary>
     public static int Reconcile(
         IDictionary<string, string> map,
         IReadOnlyDictionary<string, bool> health,
-        IReadOnlyDictionary<string, string>? errors = null)
+        IReadOnlyDictionary<string, string>? errors = null,
+        IReadOnlySet<string>? deadStarted = null)
     {
         var n = 0;
         foreach (var id in map.Keys.ToList())
@@ -90,6 +92,12 @@ public static class ServiceActivityMap
                 continue;
             }
             var on = health.GetValueOrDefault(id);
+            if (activity is Starting or Restarting && !on && deadStarted is not null && deadStarted.Contains(id))
+            {
+                map.Remove(id);
+                n++;
+                continue;
+            }
             var done = activity switch
             {
                 Starting or Restarting => on,

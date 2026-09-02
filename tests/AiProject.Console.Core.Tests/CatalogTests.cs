@@ -291,6 +291,62 @@ public class CatalogTests
     }
 
     [Fact]
+    public void BuildCatalog_MergeScanServices_KeepsScanAndAddsGroup()
+    {
+        var root = CreateScanOnlyProject("Demo.Api", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+          </PropertyGroup>
+        </Project>
+        """, launchUrl: "scalar");
+        var appDir = Path.Combine(root, "developer", "desktop", "src", "Demo.App");
+        try
+        {
+            Directory.CreateDirectory(appDir);
+            File.WriteAllText(Path.Combine(appDir, "Demo.App.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk.Razor">
+              <PropertyGroup>
+                <OutputType>WinExe</OutputType>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+              </ItemGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(appDir, "Home.razor"), "<h1>Hi</h1>");
+            File.WriteAllText(Path.Combine(root, "ai-project.json"), """
+            {
+              "name": "Care",
+              "mergeScanServices": true,
+              "services": [
+                {
+                  "id": "demo-console",
+                  "label": "示範控制台",
+                  "project": "developer/desktop/src/Demo.App",
+                  "group": "控制台",
+                  "health": "mutex:Local\\CareMatrix.Console.Demo"
+                }
+              ]
+            }
+            """);
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Equal(2, catalog.Projects.Count);
+            Assert.Contains(catalog.Services, s => s.Id == "demo-api" || s.Stem == "Demo.Api");
+            var console = Assert.Single(catalog.Services, s => s.Id == "demo-console");
+            Assert.Equal("控制台", console.Group);
+            Assert.Equal("示範控制台", console.Label);
+            Assert.Equal(@"mutex:Local\CareMatrix.Console.Demo", console.Health);
+            Assert.DoesNotContain(catalog.Services, s => s.Id == "demo-console" && s.Source == "scan");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void BuildCatalog_ScanProjectsFalse_SkipsCsproj()
     {
         var root = CreateTempProject();

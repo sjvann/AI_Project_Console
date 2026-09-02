@@ -22,7 +22,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 | Windows 10／11（64 位元） | 所有人 | 目前正式安裝包是 Windows x64 |
 | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | 所有人 | Win10／11 通常已內建；若視窗打不開再裝 |
 | [.NET SDK](https://dotnet.microsoft.com/download) | 要啟動／編譯 .NET 服務時 | 控制台本身已內含執行環境；**被管理的專案**仍需要 `dotnet` |
-| [Git](https://git-scm.com/) | 要用 GitHub 選單時 | 提交、同步、clone |
+| [Git](https://git-scm.com/) | 要用 GitHub Pulse／操作台時 | 提交、同步、clone |
 | [GitHub CLI `gh`](https://cli.github.com/) | GitHub 管理的專案、任務 Issue、發行 Release、建 PR | 開啟這類專案時控制台會要求登入；也可先執行 `gh auth login` |
 | Cursor 或其他 Agent | 要用「求救」時 | 見 [Agent 後端](../agent/backends.md) |
 
@@ -98,6 +98,6 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 | zip 免安裝 | 下載 zip，程式結束後覆蓋並重開 |
 | `dotnet run`／從原始碼 | 不能覆蓋開發目錄；請 `git pull` 後重編，或改用 Releases |
 
-也可按標題列「檢查更新」，或 GitHub 選單「檢查控制台更新」。按「稍後再說」會略過該版號，直到出現更新的 tag。背景檢查最多每 6 小時一次。
+也可按標題列「檢查更新」。按「稍後再說」會略過該版號，直到出現更新的 tag。背景檢查最多每 6 小時一次。
 
 私人倉庫的 latest 查詢需要已登入的 `gh`，或環境變數 `GH_TOKEN`。

@@ -22,14 +22,17 @@
         </button>
         <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
-        @if (S.GithubLoggedIn)
-        {
-            <span class="gh-id" title="目前遠端帳號">
+        <button type="button" class="gh-id @(S.GithubLoggedIn ? null : "is-muted")" title="GitHub 操作台（Ctrl+G）" @onclick="S.OpenGithubHub">
+            @if (S.GithubLoggedIn)
+            {
                 <span class="gh-id-dot" aria-hidden="true"></span>
                 <span>@S.GithubAccountText</span>
-            </span>
-            <button class="btn-sec" disabled="@S.GithubAuthBusy" title="登出 GitHub CLI 帳號" @onclick="S.LogoutGithubAsync">登出 GitHub</button>
-        }
+            }
+            else
+            {
+                <span>GitHub</span>
+            }
+        </button>
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
 
@@ -82,6 +85,8 @@
         </div>
     </div>
 
+    <GitPulse />
+
     @if (!S.IsReqWorkbench)
     {
     <div class="card">
@@ -100,7 +105,7 @@
             <span class="sep"></span>
             <ActionMenu Title="建置" Actions="S.BuildActions" Session="S" @bind-Open="openMenu" Key="build" />
             <span class="sep"></span>
-            <ActionMenu Title="GitHub" Actions="S.GithubActions" Session="S" @bind-Open="openMenu" Key="github" />
+            <button type="button" class="btn-sec" title="GitHub 操作台（Ctrl+G）" @onclick="S.OpenGithubHub">GitHub</button>
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
             <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
             <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
@@ -134,29 +139,9 @@
             <button type="button" class="duty-chip @(S.DocsChipWarn ? "is-warn" : "is-ok")" title="專案文件（docs/）" @onclick="S.ShowDocs">
                 @(S.Docs?.ChipText() ?? "文件 無文件")
             </button>
-            @if (S.ShowCiChip)
-            {
-                <button type="button" class="duty-chip is-@S.CiChipTone" title="遠端已經跑完。控制台不能修 CI；點一下到 GitHub 看 log。" @onclick="S.OpenCiDialogAsync">
-                    @S.CiChipText
-                </button>
-            }
-            @if (S.ShowPrChip)
-            {
-                <button type="button" class="duty-chip is-@S.PrChipTone" title="目前分支的 PR 檢查是否通過，點一下看摘要" @onclick="S.OpenPrDialogAsync">
-                    @S.PrChipText
-                </button>
-            }
             @if (!string.IsNullOrEmpty(S.DutyAttention))
             {
                 <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
-            }
-        }
-        @if (!string.IsNullOrEmpty(S.GitStatusText))
-        {
-            <button type="button" class="git git-btn" disabled="@S.JobBusy" title="切換分支" @onclick="S.OpenBranchDialogAsync">@S.GitStatusText</button>
-            @if (S.HasUncommitted)
-            {
-                <button class="btn-link" disabled="@S.JobBusy" @onclick="S.OpenCommitDialogAsync">提交…</button>
             }
         }
         <span class="job">@S.JobText</span>
@@ -763,6 +748,8 @@
     <div class="foot">關閉控制台不會停止服務 · 狀態寫入選定專案的 .ai_project/</div>
 </div>
 
+<GithubHub />
+
 @if (S.Dialog == "gh-login")
 {
     <div class="overlay">
@@ -1318,6 +1305,8 @@
 
 @code {
     string? openMenu;
+    DotNetObjectReference<Index>? _hubKeys;
+    bool _hubWasOpen;
 
     string HistorySelectValue =>
         S.Catalog?.Root is { } root
@@ -1346,7 +1335,14 @@
     {
         await Js.InvokeVoidAsync("aiConsole.setTheme", S.Theme);
         if (first)
+        {
             await Js.InvokeVoidAsync("aiConsole.initSplitter", "split-view");
+            _hubKeys = DotNetObjectReference.Create(this);
+            await Js.InvokeVoidAsync("aiConsole.bindGithubHubKeys", _hubKeys);
+        }
+        if (S.GithubHubOpen && !_hubWasOpen)
+            await Js.InvokeVoidAsync("aiConsole.focusGithubHub");
+        _hubWasOpen = S.GithubHubOpen;
         if (S.FollowLog && S.RightTab == "log")
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "log-view");
         if (S.RightTab == "build")
@@ -1432,5 +1428,20 @@
             S.SetPrefsTab(next);
     }
 
-    public void Dispose() => S.Changed -= OnChanged;
+    [JSInvokable]
+    public void ToggleGithubHubFromJs()
+    {
+        if (!string.IsNullOrEmpty(S.Dialog))
+            return;
+        S.ToggleGithubHub();
+    }
+
+    [JSInvokable]
+    public void CloseGithubHubFromJs() => S.CloseGithubHub();
+
+    public void Dispose()
+    {
+        S.Changed -= OnChanged;
+        _hubKeys?.Dispose();
+    }
 }

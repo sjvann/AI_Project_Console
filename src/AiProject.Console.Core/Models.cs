@@ -73,7 +73,8 @@ public sealed record ConsoleAction(
     string Handler,
     bool RequiresGithub = false,
     bool RequiresDeploy = false,
-    string? Confirm = null);
+    string? Confirm = null,
+    string Lane = "");
 
 public sealed record BuildFailure(string Target, int ExitCode, string Log);
 
@@ -100,6 +101,15 @@ public sealed record GitBriefStatus(
     public string Format()
     {
         var parts = new List<string> { Branch };
+        var meta = PulseMeta();
+        if (!string.IsNullOrEmpty(meta))
+            parts.Add(meta);
+        return string.Join(" · ", parts);
+    }
+
+    public string PulseMeta()
+    {
+        var parts = new List<string>();
         if (DirtyCount > 0)
             parts.Add($"{DirtyCount} 未提交");
         if (Ahead is > 0)

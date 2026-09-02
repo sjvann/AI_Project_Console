@@ -1,0 +1,77 @@
+@inject ConsoleSession S
+
+@if (S.GithubHubOpen)
+{
+    <div class="overlay" @onclick="S.CloseGithubHub">
+        <div class="dialog gh-hub" @onclick:stopPropagation="true" role="dialog" aria-labelledby="gh-hub-title" aria-modal="true" tabindex="-1" @onkeydown="OnHubKey">
+            <div class="gh-hub-head">
+                <div class="gh-hub-id">
+                    <h2 id="gh-hub-title">GitHub 操作台</h2>
+                    <p class="hint">@S.GithubRepoText · @S.GithubHostText</p>
+                </div>
+                <span class="grow"></span>
+                @if (S.GithubLoggedIn)
+                {
+                    <span class="gh-id" title="目前遠端帳號">
+                        <span class="gh-id-dot" aria-hidden="true"></span>
+                        <span>@S.GithubAccountText</span>
+                    </span>
+                    <button type="button" class="btn-sec" disabled="@S.GithubAuthBusy" @onclick="S.LogoutGithubAsync">登出</button>
+                }
+                else
+                {
+                    <button type="button" class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">
+                        @(S.GithubAuthBusy ? "等待瀏覽器授權…" : "登入 GitHub")
+                    </button>
+                }
+            </div>
+            <p class="gh-hub-advice" role="status">@S.GithubNext.Hint</p>
+            <div class="gh-hub-lanes">
+                @foreach (var lane in GithubActionLanes.All)
+                {
+                    <section class="gh-hub-lane @(S.GithubNext.Lane == lane.Id ? "is-next" : null)">
+                        <h3>@lane.Title</h3>
+                        <p class="hint">@lane.Hint</p>
+                        @foreach (var a in S.GithubLane(lane.Id))
+                        {
+                            <button type="button"
+                                    class="@(a.Handler == S.GithubNext.Handler ? "is-cta" : null)"
+                                    disabled="@S.JobBusy"
+                                    data-hub-focus="@(IsFocus(a) ? "true" : null)"
+                                    @onclick="@(() => S.OnActionAsync(a))">
+                                @a.Label
+                            </button>
+                        }
+                        @if (lane.Id == GithubActionLanes.Collab)
+                        {
+                            <button type="button" disabled="@(!S.HasProject)" @onclick="S.ShowTasksFromHub">我的任務</button>
+                        }
+                    </section>
+                }
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="btn-sec" @onclick="S.CloseGithubHub">關閉</button>
+                <button type="button" class="btn-sec" disabled="@S.JobBusy" @onclick="OpenStatus">狀態報告</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    string FocusHandler =>
+        string.IsNullOrEmpty(S.GithubNext.Handler) ? "github_status" : S.GithubNext.Handler;
+
+    bool IsFocus(ConsoleAction a) => a.Handler == FocusHandler;
+
+    void OnHubKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            S.CloseGithubHub();
+    }
+
+    Task OpenStatus()
+    {
+        var status = S.GithubActions.FirstOrDefault(a => a.Handler == "github_status");
+        return status is null ? Task.CompletedTask : S.OnActionAsync(status);
+    }
+}

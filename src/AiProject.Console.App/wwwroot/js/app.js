@@ -91,5 +91,28 @@ window.aiConsole = {
             if (lastPct != null)
                 applyPct(lastPct);
         });
+    },
+    bindGithubHubKeys: function (dotNetRef) {
+        if (window._ghHubKeysBound)
+            return;
+        window._ghHubKeysBound = true;
+        document.addEventListener("keydown", (e) => {
+            const t = e.target;
+            const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "g") {
+                if (typing)
+                    return;
+                e.preventDefault();
+                dotNetRef.invokeMethodAsync("ToggleGithubHubFromJs");
+                return;
+            }
+            if (e.key === "Escape" && !typing)
+                dotNetRef.invokeMethodAsync("CloseGithubHubFromJs");
+        });
+    },
+    focusGithubHub: function () {
+        const el = document.querySelector(".gh-hub [data-hub-focus='true']") || document.querySelector(".gh-hub button");
+        if (el)
+            el.focus();
     }
 };

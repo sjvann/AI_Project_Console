@@ -32,9 +32,11 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 ## 服務
 
-`services` 有內容時，**以清單為準**，不再只靠掃描結果當服務列。
+`services` 有內容時，**預設以清單為準**，不再只靠掃描結果當服務列。
 
-若後續作業改由清單內的控制台／入口負責、不要再掃全倉 `.csproj`，可加 `"scanProjects": false`（也可用 `scan_projects`／`scan`）。專案頁會變空，編譯過期項目也不再列那些專案。
+若只要**多一個群組**（例如桌面控制台），掃描到的 API／Web 仍要留著，加 `"mergeScanServices": true`（也可用 `merge_scan_services`／`mergeScan`）。清單列會覆寫同路徑的掃描項（可改 `label`／`group`），其餘掃描結果照舊。
+
+`scanProjects` 與 `services` **不是互斥**：不寫或 `true` 時專案頁仍掃 `.csproj`。只有要關掉專案掃描時才設 `"scanProjects": false`（也可用 `scan_projects`／`scan`）；專案頁會變空，編譯過期項目也不再列那些專案。
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
@@ -42,7 +44,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `id` | 否 | 穩定識別；空白則由名稱產生 |
 | `label` | 否 | 畫面上的名稱 |
 | `port` | 否 | 顯示與推斷健康檢查用 |
-| `health` | 否 | 健康檢查 URL；空白且有 port 時預設 `http://127.0.0.1:{port}/health` |
+| `health` | 否 | 健康檢查。HTTP URL；或桌面程式用 `mutex:Local\Name`、`tcp:17888`。空白且有 port 時預設 `http://127.0.0.1:{port}/health` |
 | `openUrl` | 否 | 「開啟」用的瀏覽器網址 |
 | `aspnetUrls` | 否 | 傳給 ASP.NET 的 `ASPNETCORE_URLS`（也可用 `urls`） |
 | `group` | 否 | 左側分組標題。可用 `Lab/HL7` 表示次群組（`/` 分段，也接受 `\`）。未寫斜線則先當單層；若同一群組裡有兩種以上共用名稱開頭（例如兩個 HL7…、兩個 SFTP…），畫面會自動拆次群組。要固定層級請寫路徑 |

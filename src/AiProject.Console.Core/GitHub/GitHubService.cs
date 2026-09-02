@@ -776,7 +776,7 @@ public static class GitHubService
 
         return new InfoReport(
             Title: "GitHub 狀態",
-            Hint: "控制台只讀目前倉庫狀態。提交、同步與發行請用 GitHub 選單。",
+            Hint: "控制台只讀目前倉庫狀態。提交、同步與發行請用 Pulse 或 GitHub 操作台。",
             Headline: headline,
             HeadlineDetail: detail,
             Tone: tone,

@@ -12,6 +12,8 @@ public class DailyWorkflowTests
     {
         Assert.Equal("main · 乾淨", new GitBriefStatus("main", 0, 0, 0).Format());
         Assert.Equal("feat · 3 未提交 · ↑2 · ↓1", new GitBriefStatus("feat", 3, 2, 1).Format());
+        Assert.Equal("3 未提交 · ↑2 · ↓1", new GitBriefStatus("feat", 3, 2, 1).PulseMeta());
+        Assert.Equal("乾淨", new GitBriefStatus("main", 0, 0, 0).PulseMeta());
         Assert.Equal("dev · 乾淨", new GitBriefStatus("dev", 0, null, null).Format());
         Assert.Equal("main · ↑1", new GitBriefStatus("main", 0, 1, 0).Format());
         Assert.Equal("feat · 無遠端追蹤", new GitBriefStatus("feat", 0, null, null, false).Format());
@@ -35,15 +37,20 @@ public class DailyWorkflowTests
         Assert.Equal("提交…", commit.Label);
         Assert.Equal("github_commit", commit.Handler);
         Assert.False(commit.RequiresGithub);
+        Assert.Equal("daily", commit.Lane);
         var switchBranch = ActionCatalog.Load("github").Single(a => a.Id == "github_switch_branch");
         Assert.Equal("切換分支…", switchBranch.Label);
         Assert.False(switchBranch.RequiresGithub);
         var actions = ActionCatalog.Load("github").Single(a => a.Id == "github_actions");
         Assert.Equal("Actions 狀態…", actions.Label);
         Assert.True(actions.RequiresGithub);
+        Assert.Equal("ship", actions.Lane);
         var scaffold = ActionCatalog.Load("github").Single(a => a.Id == "github_ci_scaffold");
         Assert.Equal("補齊 CI workflow…", scaffold.Label);
         Assert.Contains("不覆蓋", scaffold.Confirm);
+        Assert.Equal("setup", ActionCatalog.Load("github").Single(a => a.Id == "github_clone").Lane);
+        Assert.Equal("collab", ActionCatalog.Load("github").Single(a => a.Id == "github_pr").Lane);
+        Assert.DoesNotContain(ActionCatalog.Load("github"), a => a.Id == "console_check_update");
         var test = ActionCatalog.Load("build").Single(a => a.Id == "build_test");
         Assert.Equal("跑測試", test.Label);
         Assert.Equal("build_test", test.Handler);

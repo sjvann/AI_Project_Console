@@ -34,7 +34,11 @@ public static class ProcessSupervisor
 
     public static async Task<bool> ProbeHealthAsync(ServiceEntry svc)
     {
-        var url = svc.Health;
+        var url = (svc.Health ?? "").Trim();
+        if (url.StartsWith("mutex:", StringComparison.OrdinalIgnoreCase))
+            return MutexHeld(url["mutex:".Length..].Trim());
+        if (url.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase))
+            return int.TryParse(url["tcp:".Length..].Trim(), out var tcpPort) && TcpOpen(tcpPort);
         if (string.IsNullOrEmpty(url))
             return svc.Port is not null && await HttpOkAsync($"http://127.0.0.1:{svc.Port}/").ConfigureAwait(false);
         if (await HttpOkAsync(url).ConfigureAwait(false))
@@ -47,6 +51,49 @@ public static class ProcessSupervisor
             return await HttpOkAsync(root).ConfigureAwait(false);
         }
         return false;
+    }
+
+    /// <summary>具名 mutex 已被其他行程持有（Photino 桌面控制台用）。殘留 abandoned 不當成在線。</summary>
+    public static bool MutexHeld(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+        try
+        {
+            if (Mutex.TryOpenExisting(name, out var existing))
+            {
+                existing.Dispose();
+                return true;
+            }
+        }
+        catch (AbandonedMutexException)
+        {
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+        return false;
+    }
+
+    public static bool TcpOpen(int port)
+    {
+        if (port <= 0)
+            return false;
+        try
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            var ar = tcp.BeginConnect("127.0.0.1", port, null, null);
+            if (!ar.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(200)))
+                return false;
+            tcp.EndConnect(ar);
+            return tcp.Connected;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static bool PidAlive(int pid)
@@ -91,6 +138,45 @@ public static class ProcessSupervisor
     public static void WritePid(ProjectRuntime rt, string stem, int pid) =>
         File.WriteAllText(rt.PidPath(stem), pid + "\n", Encoding.UTF8);
 
+    /// <summary>
+    /// 本控制台曾寫入 pid 檔、但行程已不在。用來清掉卡在「啟動中…」的列
+    ///（桌面程式沒 HTTP 時，健康檢查永遠不會變綠）。
+    /// </summary>
+    public static IReadOnlySet<string> DeadStartedIds(ProjectCatalog catalog, ProjectRuntime rt)
+    {
+        var dead = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var svc in catalog.Services)
+        {
+            if (svc.HostedBy is not null)
+                continue;
+            var path = rt.PidPath(svc.Stem);
+            if (!File.Exists(path))
+                continue;
+            if (!TryParsePidFile(path, out var pid) || !PidAlive(pid))
+                dead.Add(svc.Id);
+        }
+        foreach (var svc in catalog.Services)
+        {
+            if (svc.HostedBy is not null && dead.Contains(svc.HostedBy))
+                dead.Add(svc.Id);
+        }
+        return dead;
+    }
+
+    internal static bool TryParsePidFile(string path, out int pid)
+    {
+        pid = 0;
+        try
+        {
+            var text = File.ReadAllText(path, Encoding.UTF8).Trim().Split()[0];
+            return int.TryParse(text, out pid) && pid > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static void ClearPid(ProjectRuntime rt, string stem)
     {
         var path = rt.PidPath(stem);
@@ -103,13 +189,7 @@ public static class ProcessSupervisor
         var path = rt.PidPath(stem);
         if (!File.Exists(path))
             return false;
-        int pid;
-        try
-        {
-            var text = File.ReadAllText(path, Encoding.UTF8).Trim().Split()[0];
-            pid = int.Parse(text);
-        }
-        catch (Exception)
+        if (!TryParsePidFile(path, out var pid))
         {
             ClearPid(rt, stem);
             return false;

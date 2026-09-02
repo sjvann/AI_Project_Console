@@ -1,0 +1,54 @@
+@inject ConsoleSession S
+
+@if (S.ShowGitPulse)
+{
+    <div class="card git-pulse @(S.GitPulseBlocked ? "is-blocked" : null)" role="region" aria-label="GitHub 狀態">
+        <button type="button"
+                class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
+                title="開啟 GitHub 操作台（Ctrl+G）"
+                aria-haspopup="dialog"
+                aria-expanded="@S.GithubHubOpen"
+                @onclick="S.OpenGithubHub">
+            <svg class="git-pulse-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <circle cx="4" cy="12" r="1.6" fill="currentColor" />
+                <circle cx="4" cy="4" r="1.6" fill="currentColor" />
+                <circle cx="12" cy="8" r="1.6" fill="currentColor" />
+                <path d="M4 5.6v4.8M5.4 4.6 10.6 7.2M5.4 11.4 10.6 8.8" fill="none" stroke="currentColor" stroke-width="1.4" />
+            </svg>
+            GitHub
+        </button>
+        <button type="button"
+                class="branch-chip @(S.GitBrief!.IsClearToLeave ? "is-ok" : "is-warn")"
+                disabled="@S.JobBusy"
+                title="目前分支，點擊切換"
+                @onclick="S.OpenBranchDialogAsync">
+            <span class="branch-chip-label">分支</span>
+            <span class="branch-chip-name">@S.GitBrief.Branch</span>
+            <span class="branch-chip-caret" aria-hidden="true"></span>
+        </button>
+        <span class="git-pulse-meta">@S.GitBrief.PulseMeta()</span>
+        <span class="git-pulse-hint" title="@S.GithubNext.Hint">@S.GithubNext.Hint</span>
+        <span class="grow"></span>
+        @if (S.GithubNext.OpensHub)
+        {
+            <button type="button" class="btn-sec" @onclick="S.OpenGithubHub">@S.GithubNext.Label</button>
+        }
+        else
+        {
+            <button type="button" class="btn-primary" disabled="@S.JobBusy" @onclick="S.RunGithubNextAsync">@S.GithubNext.Label</button>
+            <button type="button" class="btn-sec" @onclick="S.OpenGithubHub">全部動作</button>
+        }
+        @if (S.ShowCiChip)
+        {
+            <button type="button" class="duty-chip is-@S.CiChipTone" title="遠端已經跑完。控制台不能修 CI；點一下到 GitHub 看 log。" @onclick="S.OpenCiDialogAsync">
+                @S.CiChipText
+            </button>
+        }
+        @if (S.ShowPrChip)
+        {
+            <button type="button" class="duty-chip is-@S.PrChipTone" title="目前分支的 PR 檢查是否通過，點一下看摘要" @onclick="S.OpenPrDialogAsync">
+                @S.PrChipText
+            </button>
+        }
+    </div>
+}
