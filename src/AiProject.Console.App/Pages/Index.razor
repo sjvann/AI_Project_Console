@@ -83,9 +83,15 @@
                 同時開啟 @S.AgentDisplayName
             </label>
         </div>
+        <ErrorBoundary>
+            <ChildContent>
+                <GitPulse />
+            </ChildContent>
+            <ErrorContent>
+                <p class="hint">GitHub 狀態列載入失敗。仍可用標題列帳號或 Ctrl+G 開啟操作台。</p>
+            </ErrorContent>
+        </ErrorBoundary>
     </div>
-
-    <GitPulse />
 
     @if (!S.IsReqWorkbench)
     {
@@ -105,7 +111,14 @@
             <span class="sep"></span>
             <ActionMenu Title="建置" Actions="S.BuildActions" Session="S" @bind-Open="openMenu" Key="build" />
             <span class="sep"></span>
-            <button type="button" class="btn-sec" title="GitHub 操作台（Ctrl+G）" @onclick="S.OpenGithubHub">GitHub</button>
+            <button type="button"
+                    class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
+                    title="開啟 GitHub 操作台（Ctrl+G）"
+                    aria-haspopup="dialog"
+                    aria-expanded="@S.GithubHubOpen"
+                    @onclick="S.OpenGithubHub">
+                GitHub 操作台
+            </button>
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
             <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
             <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
@@ -1361,11 +1374,26 @@
         if (first)
         {
             await Js.InvokeVoidAsync("aiConsole.initSplitter", "split-view");
-            _hubKeys = DotNetObjectReference.Create(this);
-            await Js.InvokeVoidAsync("aiConsole.bindGithubHubKeys", _hubKeys);
+            try
+            {
+                _hubKeys = DotNetObjectReference.Create(this);
+                await Js.InvokeVoidAsync("aiConsole.bindGithubHubKeys", _hubKeys);
+            }
+            catch (JSException)
+            {
+                // 舊的 app.js 沒有快捷鍵綁定時，仍可用畫面上的「GitHub 操作台」按鈕。
+            }
         }
         if (S.GithubHubOpen && !_hubWasOpen)
-            await Js.InvokeVoidAsync("aiConsole.focusGithubHub");
+        {
+            try
+            {
+                await Js.InvokeVoidAsync("aiConsole.focusGithubHub");
+            }
+            catch (JSException)
+            {
+            }
+        }
         _hubWasOpen = S.GithubHubOpen;
         if (S.FollowLog && S.RightTab == "log")
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "log-view");
@@ -1455,7 +1483,7 @@
     [JSInvokable]
     public void ToggleGithubHubFromJs()
     {
-        if (!string.IsNullOrEmpty(S.Dialog))
+        if (S.Dialog == "gh-login")
             return;
         S.ToggleGithubHub();
     }

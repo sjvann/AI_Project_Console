@@ -2,8 +2,8 @@
 
 @if (S.GithubHubOpen)
 {
-    <div class="overlay" @onclick="S.CloseGithubHub">
-        <div class="dialog gh-hub" @onclick:stopPropagation="true" role="dialog" aria-labelledby="gh-hub-title" aria-modal="true" tabindex="-1" @onkeydown="OnHubKey">
+    <div class="overlay" @onclick="S.DismissGithubHubOverlay">
+        <div class="dialog gh-hub" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" role="dialog" aria-labelledby="gh-hub-title" aria-modal="true" tabindex="-1" @onkeydown="OnHubKey">
             <div class="gh-hub-head">
                 <div class="gh-hub-id">
                     <h2 id="gh-hub-title">GitHub 操作台</h2>

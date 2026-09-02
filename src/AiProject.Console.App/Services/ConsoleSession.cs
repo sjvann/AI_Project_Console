@@ -279,8 +279,9 @@ public sealed partial class ConsoleSession : IDisposable
     public IReadOnlyList<ConsoleAction> DocsActions => ActionCatalog.Load("docs");
     public IEnumerable<ConsoleAction> GithubLane(string lane) =>
         GithubActions.Where(a => string.Equals(a.Lane, lane, StringComparison.OrdinalIgnoreCase));
-    public bool GithubHubOpen { get; private set; }
-    public bool ShowGitPulse => HasProject && GitBrief is not null;
+    public bool GithubHubOpen => Dialog == "github-hub";
+    public bool ShowGitPulse => HasProject;
+    private long _hubOpenedAt;
     public bool GitPulseBlocked => GitBrief is { } brief && !brief.IsClearToLeave;
     public GitHubNextStep GithubNext => GitHubNextAction.Decide(
         GitBrief,
@@ -1737,18 +1738,26 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void OpenGithubHub()
     {
-        if (!string.IsNullOrEmpty(Dialog))
+        if (Dialog == "gh-login")
             return;
-        GithubHubOpen = true;
+        Dialog = "github-hub";
+        _hubOpenedAt = Environment.TickCount64;
         Notify();
     }
 
     public void CloseGithubHub()
     {
-        if (!GithubHubOpen)
+        if (Dialog != "github-hub")
             return;
-        GithubHubOpen = false;
+        Dialog = null;
         Notify();
+    }
+
+    public void DismissGithubHubOverlay()
+    {
+        if (Environment.TickCount64 - _hubOpenedAt < 400)
+            return;
+        CloseGithubHub();
     }
 
     public void ToggleGithubHub()
@@ -4501,7 +4510,6 @@ public sealed partial class ConsoleSession : IDisposable
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
-        GithubHubOpen = false;
         _autoSyncSkippedDirty = false;
         Actions = null;
         PullRequest = null;
