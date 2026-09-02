@@ -6,9 +6,9 @@
         <button type="button"
                 class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
                 title="開啟 GitHub 操作台（Ctrl+G）"
-                aria-haspopup="dialog"
+                aria-haspopup="true"
                 aria-expanded="@S.GithubHubOpen"
-                @onclick="S.OpenGithubHub">
+                @onclick="S.ToggleGithubHub">
             GitHub 操作台
         </button>
         @if (S.GitBrief is { } brief)
@@ -32,12 +32,12 @@
         <span class="grow"></span>
         @if (S.GithubNext.OpensHub)
         {
-            <button type="button" class="btn-primary" @onclick="S.OpenGithubHub">@S.GithubNext.Label</button>
+            <button type="button" class="btn-primary" @onclick="S.ToggleGithubHub">@S.GithubNext.Label</button>
         }
         else
         {
             <button type="button" class="btn-primary" disabled="@S.JobBusy" @onclick="S.RunGithubNextAsync">@S.GithubNext.Label</button>
-            <button type="button" class="btn-sec" @onclick="S.OpenGithubHub">全部動作</button>
+            <button type="button" class="btn-sec" @onclick="S.ToggleGithubHub">全部動作</button>
         }
         @if (S.ShowCiChip)
         {

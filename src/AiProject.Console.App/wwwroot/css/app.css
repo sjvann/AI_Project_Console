@@ -97,8 +97,8 @@ button.gh-id { cursor: pointer; }
 button.gh-id:hover { border-color: var(--accent); }
 button.gh-id.is-muted { color: var(--muted); }
 .gh-id-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
-.git-pulse { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-.git-pulse.is-blocked { border-top-color: var(--wait); }
+.git-pulse { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 4px; background: var(--sel); }
+.git-pulse.is-blocked { border-color: var(--wait); background: var(--panel); }
 .git-pulse-mark { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 4px; background: var(--panel); color: var(--accent); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; cursor: pointer; }
 .git-pulse-mark:hover { background: var(--sel); }
 .git-pulse-mark.is-warn { border-color: var(--wait); color: var(--wait); }
@@ -106,7 +106,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .git-pulse-icon { flex: none; }
 .git-pulse-meta { color: var(--text); font-weight: 700; font-size: 12px; white-space: nowrap; }
 .git-pulse-hint { color: var(--muted); font-size: 12px; font-weight: 600; min-width: 0; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gh-hub { width: min(960px, 94vw); display: flex; flex-direction: column; gap: 12px; }
+.gh-hub { width: auto; display: flex; flex-direction: column; gap: 12px; flex: none; border-color: var(--accent); }
 .gh-hub-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .gh-hub-id h2 { margin: 0; }
 .gh-hub-id .hint { margin: 4px 0 0; }

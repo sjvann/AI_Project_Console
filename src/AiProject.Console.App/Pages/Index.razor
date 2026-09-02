@@ -22,7 +22,7 @@
         </button>
         <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
-        <button type="button" class="gh-id @(S.GithubLoggedIn ? null : "is-muted")" title="GitHub 操作台（Ctrl+G）" @onclick="S.OpenGithubHub">
+        <button type="button" class="gh-id @(S.GithubLoggedIn ? null : "is-muted")" title="GitHub 操作台（Ctrl+G）" @onclick="S.ToggleGithubHub">
             @if (S.GithubLoggedIn)
             {
                 <span class="gh-id-dot" aria-hidden="true"></span>
@@ -83,14 +83,7 @@
                 同時開啟 @S.AgentDisplayName
             </label>
         </div>
-        <ErrorBoundary>
-            <ChildContent>
-                <GitPulse />
-            </ChildContent>
-            <ErrorContent>
-                <p class="hint">GitHub 狀態列載入失敗。仍可用標題列帳號或 Ctrl+G 開啟操作台。</p>
-            </ErrorContent>
-        </ErrorBoundary>
+        <GitPulse />
     </div>
 
     @if (!S.IsReqWorkbench)
@@ -114,9 +107,9 @@
             <button type="button"
                     class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
                     title="開啟 GitHub 操作台（Ctrl+G）"
-                    aria-haspopup="dialog"
+                    aria-haspopup="true"
                     aria-expanded="@S.GithubHubOpen"
-                    @onclick="S.OpenGithubHub">
+                    @onclick="S.ToggleGithubHub">
                 GitHub 操作台
             </button>
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
@@ -124,6 +117,11 @@
             <button class="btn-sec row-end" @onclick="S.Doctor">環境體檢</button>
         </div>
     </div>
+    }
+
+    @if (S.GithubHubOpen)
+    {
+        <GithubHub />
     }
 
     @if (S.IsReqWorkbench)
@@ -764,8 +762,6 @@
 
     <div class="foot">關閉控制台不會停止服務 · 狀態寫入選定專案的 .ai_project/</div>
 </div>
-
-<GithubHub />
 
 @if (S.Dialog == "gh-login")
 {
