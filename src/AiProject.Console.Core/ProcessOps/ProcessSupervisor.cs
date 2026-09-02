@@ -96,6 +96,38 @@ public static class ProcessSupervisor
         }
     }
 
+    public static async Task<bool> ProbeReadyAsync(ProjectCatalog catalog, ServiceEntry svc)
+    {
+        if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
+            return true;
+        var url = ServiceStartPlanner.ReadyUrl(svc);
+        if (string.IsNullOrEmpty(url))
+            return await ProbeHealthAsync(svc).ConfigureAwait(false);
+        return await HttpOkAsync(url).ConfigureAwait(false);
+    }
+
+    public static async Task<bool> WaitUntilReadyAsync(
+        ProjectCatalog catalog,
+        ServiceEntry svc,
+        int timeoutMs,
+        CancellationToken ct = default)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(Math.Max(0, timeoutMs));
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await ProbeReadyAsync(catalog, svc).ConfigureAwait(false))
+                return true;
+            if (DateTime.UtcNow >= deadline)
+                return false;
+            var remain = deadline - DateTime.UtcNow;
+            var wait = remain < TimeSpan.FromMilliseconds(500) ? remain : TimeSpan.FromMilliseconds(500);
+            if (wait <= TimeSpan.Zero)
+                return await ProbeReadyAsync(catalog, svc).ConfigureAwait(false);
+            await Task.Delay(wait, ct).ConfigureAwait(false);
+        }
+    }
+
     public static bool PidAlive(int pid)
     {
         if (pid <= 0)
@@ -470,6 +502,20 @@ public static class ProcessSupervisor
         return list;
     }
 
+    public static Task<IReadOnlyList<(string Id, string Label, string? Error)>> StartOfflineAsync(
+        ProjectCatalog catalog,
+        ProjectRuntime rt,
+        IReadOnlyDictionary<string, bool>? health = null,
+        IReadOnlySet<string>? ids = null,
+        Action<string>? onStatus = null,
+        CancellationToken ct = default)
+    {
+        IEnumerable<string> targets = health is null && ids is null
+            ? ServiceCatalogBuilder.OrderedRunnable(catalog).Select(s => s.Id)
+            : OfflineRunnable(catalog, health ?? new Dictionary<string, bool>(), ids).Select(s => s.Id);
+        return StartTargetsAsync(catalog, rt, targets, onStatus: onStatus, ct: ct);
+    }
+
     public static IReadOnlyList<(string Id, string Label, string? Error)> StartOffline(
         ProjectCatalog catalog,
         ProjectRuntime rt,
@@ -477,15 +523,96 @@ public static class ProcessSupervisor
         IReadOnlySet<string>? ids = null,
         int delayMs = 500)
     {
+        _ = delayMs;
+        return StartOfflineAsync(catalog, rt, health, ids).GetAwaiter().GetResult();
+    }
+
+    public static async Task<IReadOnlyList<(string Id, string Label, string? Error)>> StartTargetsAsync(
+        ProjectCatalog catalog,
+        ProjectRuntime rt,
+        IEnumerable<string> targetIds,
+        bool skipOptional = false,
+        bool skipDepends = false,
+        Action<string>? onStatus = null,
+        CancellationToken ct = default)
+    {
+        var plan = ServiceStartPlanner.ForTargets(catalog, targetIds, skipOptional, skipDepends);
         var results = new List<(string Id, string Label, string? Error)>();
-        foreach (var svc in OfflineRunnable(catalog, health, ids))
+        if (plan.Errors.Count > 0)
         {
-            var err = TryStartService(catalog, rt, svc);
-            results.Add((svc.Id, svc.Label, err));
-            if (delayMs > 0)
-                Thread.Sleep(delayMs);
+            var message = string.Join("；", plan.Errors);
+            foreach (var id in plan.TargetIds)
+            {
+                var svc = ServiceCatalogBuilder.ById(catalog, id);
+                results.Add((id, svc?.Label ?? id, message));
+            }
+            if (results.Count == 0)
+                results.Add(("", "", message));
+            return results;
         }
+
+        var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var svc in plan.Order)
+        {
+            ct.ThrowIfCancellationRequested();
+            var blocked = FirstFailedHardDep(catalog, svc, failed);
+            if (blocked is not null)
+            {
+                var dep = ServiceCatalogBuilder.ById(catalog, blocked) ?? svc;
+                var err = $"相依「{dep.Label}」未就緒";
+                results.Add((svc.Id, svc.Label, err));
+                failed.Add(svc.Id);
+                continue;
+            }
+
+            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
+                continue;
+
+            onStatus?.Invoke($"檢查 {svc.Label}…");
+            if (await ProbeReadyAsync(catalog, svc).ConfigureAwait(false))
+                continue;
+
+            var prefix = plan.TargetIds.Contains(svc.Id) ? "啟動" : "先啟動";
+            onStatus?.Invoke($"{prefix} {svc.Label}…");
+            var startErr = TryStartService(catalog, rt, svc);
+            if (startErr is not null)
+            {
+                results.Add((svc.Id, svc.Label, startErr));
+                failed.Add(svc.Id);
+                continue;
+            }
+
+            var timeout = ServiceStartPlanner.ReadyTimeoutMs(svc);
+            onStatus?.Invoke($"等待 {svc.Label} 就緒…");
+            var ready = await WaitUntilReadyAsync(catalog, svc, timeout, ct).ConfigureAwait(false);
+            if (!ready)
+            {
+                var err = $"{svc.Label} 已啟動，但在 {Math.Max(1, timeout / 1000)} 秒內未就緒";
+                results.Add((svc.Id, svc.Label, err));
+                failed.Add(svc.Id);
+                continue;
+            }
+
+            results.Add((svc.Id, svc.Label, null));
+        }
+
         return results;
+    }
+
+    private static string? FirstFailedHardDep(
+        ProjectCatalog catalog,
+        ServiceEntry svc,
+        HashSet<string> failed)
+    {
+        foreach (var dep in svc.Dependencies)
+        {
+            if (dep.Optional)
+                continue;
+            var depId = ServiceStartPlanner.TryResolveRunnableId(catalog, dep.Id, out _);
+            if (depId is not null && failed.Contains(depId))
+                return depId;
+        }
+        return null;
     }
 
     public static void StopServices(
@@ -537,17 +664,13 @@ public static class ProcessSupervisor
 
     public static IReadOnlyList<string> StartAll(ProjectCatalog catalog, ProjectRuntime rt, int delayMs = 500)
     {
-        var started = new List<string>();
-        foreach (var svc in ServiceCatalogBuilder.OrderedRunnable(catalog))
-        {
-            if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
-                continue;
-            StartService(catalog, rt, svc);
-            started.Add(svc.Id);
-            if (delayMs > 0)
-                Thread.Sleep(delayMs);
-        }
-        return started;
+        _ = delayMs;
+        return StartOfflineAsync(catalog, rt)
+            .GetAwaiter()
+            .GetResult()
+            .Where(r => r.Error is null)
+            .Select(r => r.Id)
+            .ToList();
     }
 
     public static void StopAll(ProjectCatalog catalog, ProjectRuntime rt)

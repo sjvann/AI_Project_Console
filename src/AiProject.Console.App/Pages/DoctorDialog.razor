@@ -16,18 +16,18 @@
                     </div>
                 </div>
 
-                @foreach (var section in report.Sections)
+                @foreach (var block in report.Sections)
                 {
-                    <section class="doctor-section" aria-labelledby="doctor-@section.Id">
+                    <section class="doctor-section" aria-labelledby="@($"doctor-{block.Id}")">
                         <div class="doctor-section-head">
-                            <h3 id="doctor-@section.Id">@section.Title</h3>
-                            @if (!string.IsNullOrEmpty(section.Badge))
+                            <h3 id="@($"doctor-{block.Id}")">@block.Title</h3>
+                            @if (!string.IsNullOrEmpty(block.Badge))
                             {
-                                <span class="doctor-status doctor-@Css(section.Level)">@section.Badge</span>
+                                <span class="doctor-status doctor-@Css(block.Level)">@block.Badge</span>
                             }
                         </div>
                         <ul class="doctor-list">
-                            @foreach (var item in section.Items)
+                            @foreach (var item in block.Items)
                             {
                                 <li class="doctor-row">
                                     <span class="doctor-label">@item.Label</span>
@@ -49,23 +49,23 @@
                                 </li>
                             }
                         </ul>
-                        @if (!string.IsNullOrEmpty(section.Note))
+                        @if (!string.IsNullOrEmpty(block.Note))
                         {
-                            <p class="hint doctor-note">@section.Note</p>
+                            <p class="hint doctor-note">@block.Note</p>
                         }
-                        @if (section.ActionId == "prefs-agent")
+                        @if (block.ActionId == "prefs-agent")
                         {
                             <button type="button" class="btn-link doctor-action" @onclick="@(() => S.OpenDoctorSettings("agent"))">前往 Agent 設定</button>
                         }
-                        else if (section.ActionId == "prefs-mcp")
+                        else if (block.ActionId == "prefs-mcp")
                         {
                             <button type="button" class="btn-link doctor-action" @onclick="@(() => S.OpenDoctorSettings("mcp"))">前往 MCP 設定</button>
                         }
-                        else if (section.ActionId == "pick-project")
+                        else if (block.ActionId == "pick-project")
                         {
                             <button type="button" class="btn-sec doctor-action-btn" @onclick="S.PickProjectFromDoctorAsync">選擇專案目錄…</button>
                         }
-                        else if (section.ActionId == "install-docfx")
+                        else if (block.ActionId == "install-docfx")
                         {
                             <button type="button" class="btn-primary doctor-action-btn" disabled="@S.JobBusy" @onclick="S.InstallDocfxFromDoctorAsync">安裝 DocFX</button>
                         }

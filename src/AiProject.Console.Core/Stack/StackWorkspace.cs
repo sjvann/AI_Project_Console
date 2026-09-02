@@ -99,10 +99,12 @@ public sealed class StackWorkspace
             s.Label,
             s.Port,
             s.Health,
+            ready = string.IsNullOrEmpty(s.Ready) ? null : s.Ready,
             s.OpenUrl,
             s.Group,
             s.HostedBy,
             s.Project,
+            dependsOn = s.Dependencies.Select(d => new { d.Id, d.Optional }).ToList(),
         }));
 
     public string ListProjects()
@@ -182,18 +184,51 @@ public sealed class StackWorkspace
         });
     }
 
-    public string StartService(string id)
+    public async Task<string> StartServiceAsync(string id, bool skipDepends = false, bool skipOptional = false)
     {
         var svc = RequireService(id);
         if (ServiceCatalogBuilder.IsCurrentConsole(Catalog, svc))
             return Error(ProcessSupervisor.SelfConsoleStartMessage);
         if (!string.IsNullOrEmpty(svc.HostedBy))
             return Error($"「{svc.Label}」隨 {svc.HostedBy} 啟動，請啟動宿主。");
-        var err = ProcessSupervisor.TryStartService(Catalog, Runtime, svc);
-        return err is null
-            ? Json(new { ok = true, id = svc.Id, label = svc.Label })
-            : Error(err);
+        var results = await ProcessSupervisor.StartTargetsAsync(
+            Catalog,
+            Runtime,
+            [svc.Id],
+            skipOptional: skipOptional,
+            skipDepends: skipDepends).ConfigureAwait(false);
+        var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
+        var started = results.Where(r => r.Error is null).Select(r => r.Id).ToList();
+        var depFails = results
+            .Where(r => !string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase) && r.Error is not null)
+            .Select(r => new { r.Id, r.Label, error = r.Error })
+            .ToList();
+        if (self.Error is not null)
+        {
+            return Json(new
+            {
+                ok = false,
+                id = svc.Id,
+                label = svc.Label,
+                started,
+                failed = results.Where(r => r.Error is not null).Select(r => new { r.Id, r.Label, error = r.Error }),
+                error = self.Error,
+            });
+        }
+        if (results.Count == 0)
+            return Json(new { ok = true, id = svc.Id, label = svc.Label, started, alreadyReady = true });
+        return Json(new
+        {
+            ok = true,
+            id = svc.Id,
+            label = svc.Label,
+            started,
+            warnings = depFails.Count == 0 ? null : depFails,
+        });
     }
+
+    public string StartService(string id) =>
+        StartServiceAsync(id).GetAwaiter().GetResult();
 
     public string StopService(string id)
     {
@@ -206,8 +241,7 @@ public sealed class StackWorkspace
 
     public async Task<string> StartAllAsync()
     {
-        var health = await ProbeHealthAsync().ConfigureAwait(false);
-        var results = ProcessSupervisor.StartOffline(Catalog, Runtime, health);
+        var results = await ProcessSupervisor.StartOfflineAsync(Catalog, Runtime).ConfigureAwait(false);
         return Json(new
         {
             ok = results.All(r => r.Error is null),

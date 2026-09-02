@@ -353,6 +353,7 @@ public static class ServiceCatalogBuilder
         var aspnet = JsonUtil.Pick(JsonUtil.Str(item["aspnetUrls"]), JsonUtil.Str(item["aspnet_urls"]), JsonUtil.Str(item["urls"]));
         var hosted = JsonUtil.Pick(JsonUtil.Str(item["hostedBy"]), JsonUtil.Str(item["hosted_by"]));
         var preStart = JsonUtil.Pick(JsonUtil.Str(item["preStart"]), JsonUtil.Str(item["pre_start"]), JsonUtil.Str(item["ensure"]));
+        var ready = JsonUtil.Pick(JsonUtil.Str(item["ready"]), JsonUtil.Str(item["readyUrl"]), JsonUtil.Str(item["ready_url"]));
         if (project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             project = project[..^".csproj".Length];
         return new ServiceEntry(
@@ -367,7 +368,56 @@ public static class ServiceCatalogBuilder
             HostedBy: string.IsNullOrEmpty(hosted) ? null : hosted,
             AspnetUrls: string.IsNullOrEmpty(aspnet) ? null : aspnet,
             PreStart: string.IsNullOrEmpty(preStart) ? null : preStart.Replace('\\', '/'),
-            Source: "manifest");
+            Source: "manifest",
+            DependsOn: ReadDependsOn(item),
+            Ready: string.IsNullOrEmpty(ready) ? null : ready,
+            ReadyTimeoutMs: ReadReadyTimeoutMs(item));
+    }
+
+    private static IReadOnlyList<ServiceDependency> ReadDependsOn(JsonObject item)
+    {
+        var node = item["dependsOn"] ?? item["depends_on"];
+        if (node is not JsonArray arr || arr.Count == 0)
+            return [];
+        var list = new List<ServiceDependency>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var x in arr)
+        {
+            string id;
+            var optional = false;
+            if (x is JsonObject obj)
+            {
+                id = JsonUtil.Pick(JsonUtil.Str(obj["id"]), JsonUtil.Str(obj["service"]));
+                optional = IsTruthy(obj["optional"]);
+            }
+            else
+                id = JsonUtil.Str(x);
+            if (string.IsNullOrEmpty(id) || !seen.Add(id))
+                continue;
+            list.Add(new ServiceDependency(id, optional));
+        }
+        return list;
+    }
+
+    private static int? ReadReadyTimeoutMs(JsonObject item)
+    {
+        var node = item["readyTimeoutMs"] ?? item["ready_timeout_ms"];
+        if (node is JsonValue jv && jv.TryGetValue<int>(out var n) && n > 0)
+            return n;
+        return int.TryParse(JsonUtil.Str(node), out var parsed) && parsed > 0 ? parsed : null;
+    }
+
+    private static bool IsTruthy(JsonNode? node)
+    {
+        if (node is JsonValue jv)
+        {
+            if (jv.TryGetValue<bool>(out var b))
+                return b;
+            if (jv.TryGetValue<int>(out var n))
+                return n != 0;
+        }
+        var s = JsonUtil.Str(node);
+        return s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "1";
     }
 
     private static List<ServiceEntry> DedupeIds(List<ServiceEntry> services)

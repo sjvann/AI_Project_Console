@@ -306,7 +306,10 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
     {
         var port = svc.Port?.ToString() ?? "-";
         var pre = string.IsNullOrEmpty(svc.PreStart) ? "" : $" · preStart {svc.PreStart}";
-        return $"{svc.Label}  port {port}{pre}";
+        var deps = svc.Dependencies.Count == 0
+            ? ""
+            : " · 依 " + string.Join("、", svc.Dependencies.Select(d => d.Optional ? d.Id + "?" : d.Id));
+        return $"{svc.Label}  port {port}{pre}{deps}";
     }
 
     private static string FormatText(
@@ -357,7 +360,10 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         {
             var port = svc.Port?.ToString() ?? "-";
             var pre = string.IsNullOrEmpty(svc.PreStart) ? "" : $" preStart={svc.PreStart}";
-            lines.Add($"  - {svc.Label} [{svc.Id}] port={port}{pre} ({svc.Source})");
+            var deps = svc.Dependencies.Count == 0
+                ? ""
+                : " dependsOn=" + string.Join(",", svc.Dependencies.Select(d => d.Optional ? d.Id + "?" : d.Id));
+            lines.Add($"  - {svc.Label} [{svc.Id}] port={port}{pre}{deps} ({svc.Source})");
         }
         lines.Add(catalog.Manifest.Count > 0 ? "manifest: ai-project.json 已載入" : "manifest: 無（使用掃描結果）");
         lines.Add(CiWorkflow.DoctorLine(catalog.Root));

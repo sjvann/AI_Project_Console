@@ -263,6 +263,10 @@ public sealed partial class ConsoleSession : IDisposable
     public string PrChipTone => PullRequest?.ChipTone() ?? "wait";
     public bool GithubAuthBusy { get; private set; }
     public string GithubAuthHint { get; private set; } = "";
+    public string GithubLoginCode { get; private set; } = "";
+    public string GithubLoginUrl { get; private set; } = "";
+    public bool GithubLoginBrowserOpened { get; private set; }
+    public bool GithubLoginCodeCopied { get; private set; }
     public IReadOnlyList<GithubIssue> AssignedIssues { get; private set; } = [];
     public IReadOnlyList<GithubIssue> UnassignedIssues { get; private set; } = [];
     public string IssuesHint { get; private set; } = "";
@@ -432,6 +436,11 @@ public sealed partial class ConsoleSession : IDisposable
 
     public bool IsSelfService(ServiceEntry svc) =>
         Catalog is not null && ServiceCatalogBuilder.IsCurrentConsole(Catalog, svc);
+
+    public bool HasDepends(ServiceEntry svc) => svc.Dependencies.Count > 0;
+
+    public string DependsHint(ServiceEntry svc) =>
+        string.Join("、", svc.Dependencies.Select(d => d.Optional ? d.Id + "（可略過）" : d.Id));
     public int OfflineCount => Math.Max(0, ServiceCount - ReadyCount);
     public int StaleProjectCount => Projects.Count(p => p.Status is "stale" or "unbuilt");
     public string? LastAuditFailTool => AuditEntries.LastOrDefault(e => !e.Ok)?.Tool;
@@ -1442,8 +1451,10 @@ public sealed partial class ConsoleSession : IDisposable
 
         _githubLoginCts?.Cancel();
         _githubLoginCts = new CancellationTokenSource();
+        ClearGithubLoginPrompt();
+        Dialog = "gh-login";
         GithubAuthBusy = true;
-        GithubAuthHint = "正在開啟瀏覽器，請在 GitHub 完成授權…";
+        GithubAuthHint = "正在向 GitHub 取得授權碼…";
         JobText = "等待 GitHub 登入…";
         Notify();
         try
@@ -1451,10 +1462,13 @@ public sealed partial class ConsoleSession : IDisposable
             ConsoleSettingsStore.SetGitHost(ActiveGitHost);
             ConsoleSettingsStore.SetGitKind(GitKind);
             GitHostName = ActiveGitHost;
-            var (ok, message) = await GitHubAuth.LoginWebAsync(Catalog?.Root, ActiveGitHost, _githubLoginCts.Token).ConfigureAwait(false);
+            var progress = new Progress<GithubLoginPrompt>(ApplyGithubLoginPrompt);
+            var (ok, message) = await GitHubAuth.LoginWebAsync(
+                Catalog?.Root, ActiveGitHost, progress, _githubLoginCts.Token).ConfigureAwait(false);
             await RefreshGithubAuthAsync().ConfigureAwait(false);
             if (ok && GithubLoggedIn)
             {
+                ClearGithubLoginPrompt();
                 GithubAuthHint = "";
                 JobText = $"已登入 GitHub（{GithubAccount.Display()}）";
                 if (Dialog == "gh-login")
@@ -1473,26 +1487,88 @@ public sealed partial class ConsoleSession : IDisposable
                 Notify();
                 return;
             }
+            ClearGithubLoginPrompt();
             GithubAuthHint = GithubLoggedIn ? "" : (string.IsNullOrEmpty(message) ? "登入未完成。" : FirstLine(message));
             JobText = "GitHub 尚未登入";
-            if (GithubManaged && Catalog is not null)
-            {
-                Dialog = "gh-login";
-                _native.Warn("GitHub 登入", GithubAuthHint);
-            }
-            else
-                _native.Warn("GitHub 登入", GithubAuthHint);
+            Dialog = "gh-login";
+            _native.Warn("GitHub 登入", GithubAuthHint);
         }
         catch (OperationCanceledException)
         {
-            GithubAuthHint = "已取消登入。";
-            JobText = "已取消 GitHub 登入";
+            ClearGithubLoginPrompt();
+            if (Catalog is not null)
+            {
+                GithubAuthHint = "已取消登入。";
+                JobText = "已取消 GitHub 登入";
+            }
         }
         finally
         {
             GithubAuthBusy = false;
             Notify();
         }
+    }
+
+    void ClearGithubLoginPrompt()
+    {
+        GithubLoginCode = "";
+        GithubLoginUrl = "";
+        GithubLoginBrowserOpened = false;
+        GithubLoginCodeCopied = false;
+    }
+
+    void ApplyGithubLoginPrompt(GithubLoginPrompt prompt)
+    {
+        var codeArrived = !string.IsNullOrEmpty(prompt.DeviceCode) && prompt.DeviceCode != GithubLoginCode;
+        GithubLoginCode = prompt.DeviceCode;
+        GithubLoginUrl = prompt.BrowserUrl;
+        GithubLoginBrowserOpened = prompt.BrowserOpened;
+        if (!string.IsNullOrEmpty(prompt.DeviceCode) && prompt.BrowserOpened)
+            GithubAuthHint = "請把一次性代碼貼到瀏覽器的 GitHub 授權頁。";
+        else if (!string.IsNullOrEmpty(prompt.DeviceCode) && !string.IsNullOrEmpty(prompt.BrowserUrl))
+            GithubAuthHint = "瀏覽器沒有自動開啟。請按「在瀏覽器開啟」，並把代碼貼到授權頁。";
+        else if (!string.IsNullOrEmpty(prompt.DeviceCode))
+            GithubAuthHint = "已取得一次性代碼，正在開啟瀏覽器…";
+        Notify();
+        if (codeArrived)
+            _ = CopyGithubLoginCodeAsync();
+    }
+
+    public async Task CopyGithubLoginCodeAsync()
+    {
+        if (string.IsNullOrEmpty(GithubLoginCode) || Js is null)
+            return;
+        try
+        {
+            await Js.InvokeVoidAsync("aiConsole.copyText", GithubLoginCode).ConfigureAwait(false);
+            GithubLoginCodeCopied = true;
+            JobText = "已複製一次性代碼。";
+        }
+        catch
+        {
+            GithubLoginCodeCopied = false;
+            JobText = "無法複製到剪貼簿，請手動選取代碼。";
+        }
+        Notify();
+    }
+
+    public void OpenGithubLoginUrl()
+    {
+        if (string.IsNullOrEmpty(GithubLoginUrl))
+            return;
+        try
+        {
+            CliUtil.OpenUrl(GithubLoginUrl);
+            GithubLoginBrowserOpened = true;
+            GithubAuthHint = "請把一次性代碼貼到瀏覽器的 GitHub 授權頁。";
+        }
+        catch (Exception ex)
+        {
+            GithubLoginBrowserOpened = false;
+            GithubAuthHint = "無法開啟瀏覽器，請按網址手動打開。";
+            _native.Warn("開啟瀏覽器", ex.Message);
+        }
+        Notify();
     }
 
     public async Task LogoutGithubAsync()
@@ -1535,6 +1611,7 @@ public sealed partial class ConsoleSession : IDisposable
         _githubLoginCts?.Cancel();
         GithubAuthBusy = false;
         _pendingOpenCursor = false;
+        ClearGithubLoginPrompt();
         if (GithubManaged && Catalog is not null && !GithubLoggedIn)
             DropProjectAfterLoginCancel();
         else
@@ -1889,12 +1966,21 @@ public sealed partial class ConsoleSession : IDisposable
         var runtime = Runtime!;
         var health = new Dictionary<string, bool>(Health);
         var planned = ProcessSupervisor.OfflineRunnable(catalog, health);
-        MarkServiceActivity(planned, ServiceActivityMap.Starting);
+        var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
+        MarkServiceActivity(plan.Order.Count > 0 ? plan.Order : planned, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
-        await RunJobAsync("啟動中…", () =>
+        await RunJobAsync("啟動中…", async () =>
         {
-            results = ProcessSupervisor.StartOffline(catalog, runtime, health);
-            return Task.FromResult<string?>(null);
+            results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                planned.Select(s => s.Id),
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            return null;
         }).ConfigureAwait(false);
         ApplyStartResults(results);
         if (results.Count == 0 && !JobBusy)
@@ -1918,14 +2004,24 @@ public sealed partial class ConsoleSession : IDisposable
             Notify();
             return;
         }
-        if (!EnsureStartTools(planned))
+        var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
+        var toStart = plan.Order.Count > 0 ? plan.Order : planned;
+        if (!EnsureStartTools(toStart))
             return;
-        MarkServiceActivity(planned, ServiceActivityMap.Starting);
+        MarkServiceActivity(toStart, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
-        await RunJobAsync("啟動中…", () =>
+        await RunJobAsync("啟動中…", async () =>
         {
-            results = ProcessSupervisor.StartOffline(catalog, runtime, health, ids);
-            return Task.FromResult<string?>(null);
+            results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                planned.Select(s => s.Id),
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            return null;
         }).ConfigureAwait(false);
         ApplyStartResults(results);
         Notify();
@@ -1985,7 +2081,7 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("無 URL", "沒有可開啟的 openUrl。");
     }
 
-    public Task StartOneAsync(ServiceEntry svc)
+    public Task StartOneAsync(ServiceEntry svc, bool skipOptional = false, bool skipDepends = false)
     {
         if (!RequireCatalog())
             return Task.CompletedTask;
@@ -2006,16 +2102,37 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("已在線", $"「{svc.Label}」已在執行。");
             return Task.CompletedTask;
         }
-        if (!EnsureStartTools(svc))
-            return Task.CompletedTask;
+        if (skipDepends && svc.Dependencies.Any(d => !d.Optional))
+        {
+            var hard = string.Join("、", svc.Dependencies.Where(d => !d.Optional).Select(d => d.Id));
+            if (!_native.Confirm(
+                    "只起自己",
+                    $"「{svc.Label}」硬相依 {hard}。略過後可能無法連線。仍要只起自己嗎？"))
+                return Task.CompletedTask;
+        }
         var catalog = Catalog!;
         var runtime = Runtime!;
-        MarkServiceActivity([svc], ServiceActivityMap.Starting);
-        return RunJobAsync($"啟動 {svc.Label}…", () =>
+        var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id], skipOptional, skipDepends);
+        var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
+        if (!EnsureStartTools(toStart))
+            return Task.CompletedTask;
+        MarkServiceActivity(toStart, ServiceActivityMap.Starting);
+        return RunJobAsync($"啟動 {svc.Label}…", async () =>
         {
-            var err = ProcessSupervisor.TryStartService(catalog, runtime, svc);
-            ApplyStartResults([(svc.Id, svc.Label, err)]);
-            return Task.FromResult(err);
+            var results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                [svc.Id],
+                skipOptional: skipOptional,
+                skipDepends: skipDepends,
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            ApplyStartResults(results);
+            var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
+            return self.Error;
         });
     }
 
@@ -2063,12 +2180,27 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
-        MarkServiceActivity([svc], ServiceActivityMap.Restarting);
-        return RunJobAsync($"重啟 {svc.Label}…", () =>
+        var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id]);
+        var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
+        if (!EnsureStartTools(toStart))
+            return Task.CompletedTask;
+        MarkServiceActivity(toStart, ServiceActivityMap.Restarting);
+        return RunJobAsync($"重啟 {svc.Label}…", async () =>
         {
-            var err = ProcessSupervisor.RestartService(catalog, runtime, svc);
-            ApplyStartResults([(svc.Id, svc.Label, err)]);
-            return Task.FromResult(err);
+            ProcessSupervisor.StopService(catalog, runtime, svc);
+            await Task.Delay(800).ConfigureAwait(false);
+            var results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                [svc.Id],
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            ApplyStartResults(results);
+            var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
+            return self.Error;
         });
     }
 
@@ -4439,6 +4571,10 @@ public sealed partial class ConsoleSession : IDisposable
         _pendingOpenCursor = false;
         GithubAuthBusy = false;
         GithubAuthHint = "";
+        GithubLoginCode = "";
+        GithubLoginUrl = "";
+        GithubLoginBrowserOpened = false;
+        GithubLoginCodeCopied = false;
         IntakeDoc = new();
         SelectedIntakeId = null;
         IntakeHint = "";

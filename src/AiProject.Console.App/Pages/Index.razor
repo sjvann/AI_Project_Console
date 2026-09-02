@@ -229,6 +229,10 @@
                                         {
                                             <span class="svc-busy" aria-live="polite">@activity</span>
                                         }
+                                        @if (S.HasDepends(svc))
+                                        {
+                                            <span class="svc-deps" title="@S.DependsHint(svc)">依 @(string.Join("、", svc.Dependencies.Select(d => d.Id)))</span>
+                                        }
                                     </span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
                                     <span>
@@ -248,7 +252,7 @@
                                         {
                                             @if (acts.Start)
                                             {
-                                                <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.StartOneAsync(svc))">啟動</button>
+                                                <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.HasDepends(svc) ? "啟動（含相依）。Alt：略過可選相依；Shift：只起自己" : "啟動")" @onclick:stopPropagation="true" @onclick="@(e => S.StartOneAsync(svc, skipOptional: e.AltKey, skipDepends: e.ShiftKey))">啟動</button>
                                             }
                                             @if (acts.Restart)
                                             {
@@ -756,14 +760,34 @@
         <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="gh-login-title" aria-modal="true">
             <h2 id="gh-login-title">需要登入遠端 Git</h2>
             <p class="hint">@(string.IsNullOrEmpty(S.GithubAuthHint) ? "此專案由遠端 Git 主機管理。請先登入，才能讀取指派給你的任務。" : S.GithubAuthHint)</p>
-            <p class="hint">登入會開啟瀏覽器，用該主機的 CLI 完成授權。取消則不會開啟這個專案。</p>
+            @if (string.IsNullOrEmpty(S.GithubLoginCode) && !S.GithubAuthBusy)
+            {
+                <p class="hint">登入會開啟瀏覽器。請複製一次性代碼，貼到 GitHub 授權頁。取消則不會開啟這個專案。</p>
+            }
+            @if (!string.IsNullOrEmpty(S.GithubLoginCode))
+            {
+                <div class="gh-login-code">
+                    <div class="gh-login-code-main">
+                        <span class="hint">一次性代碼</span>
+                        <code class="gh-login-code-value" title="點擊複製" @onclick="S.CopyGithubLoginCodeAsync">@S.GithubLoginCode</code>
+                    </div>
+                    <button type="button" class="btn-sec" @onclick="S.CopyGithubLoginCodeAsync">@(S.GithubLoginCodeCopied ? "已複製" : "複製")</button>
+                </div>
+                @if (!string.IsNullOrEmpty(S.GithubLoginUrl))
+                {
+                    <p class="gh-login-url">@S.GithubLoginUrl</p>
+                    <div class="row">
+                        <button type="button" class="btn-sec" @onclick="S.OpenGithubLoginUrl">在瀏覽器開啟</button>
+                    </div>
+                }
+            }
             <div class="field">
                 <span>認證主機</span>
-                <input @bind="S.GitHostName" list="git-host-list" placeholder="github.com 或 ghe.corp.com" />
+                <input @bind="S.GitHostName" list="git-host-list" placeholder="github.com 或 ghe.corp.com" disabled="@S.GithubAuthBusy" />
             </div>
             <div class="field">
                 <span>種類</span>
-                <select @bind="S.GitKind">
+                <select @bind="S.GitKind" disabled="@S.GithubAuthBusy">
                     @foreach (var kind in GitHost.Kinds)
                     {
                         <option value="@kind.Id">@kind.Label@(kind.Ready ? "" : "（尚未接任務）")</option>
@@ -777,8 +801,8 @@
                 }
             </datalist>
             <div class="dialog-actions">
-                <button class="btn-sec" disabled="@S.GithubAuthBusy" @onclick="S.CancelGithubLogin">取消並關閉專案</button>
-                <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">@(S.GithubAuthBusy ? "等待瀏覽器授權…" : "登入 GitHub")</button>
+                <button class="btn-sec" @onclick="S.CancelGithubLogin">取消@(S.GithubManaged && S.Catalog is not null && !S.GithubLoggedIn ? "並關閉專案" : "")</button>
+                <button class="btn-primary" disabled="@S.GithubAuthBusy" @onclick="S.LoginGithubAsync">@(S.GithubAuthBusy ? "等待授權…" : "登入 GitHub")</button>
             </div>
         </div>
     </div>

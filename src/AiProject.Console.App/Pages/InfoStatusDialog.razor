@@ -12,20 +12,20 @@
                 }
             </div>
         </div>
-        @foreach (var section in report.Sections)
+        @foreach (var block in report.Sections)
         {
-            <section class="doctor-section" aria-labelledby="info-@section.Id">
+            <section class="doctor-section" aria-labelledby="@($"info-{block.Id}")">
                 <div class="doctor-section-head">
-                    <h3 id="info-@section.Id">@section.Title</h3>
-                    @if (!string.IsNullOrEmpty(section.Badge))
+                    <h3 id="@($"info-{block.Id}")">@block.Title</h3>
+                    @if (!string.IsNullOrEmpty(block.Badge))
                     {
-                        <span class="doctor-status doctor-@Css(section.Tone)">@section.Badge</span>
+                        <span class="doctor-status doctor-@Css(block.Tone)">@block.Badge</span>
                     }
                 </div>
-                @if (section.Fields.Count > 0)
+                @if (block.Fields.Count > 0)
                 {
                     <ul class="doctor-list">
-                        @foreach (var item in section.Fields)
+                        @foreach (var item in block.Fields)
                         {
                             <li class="doctor-row">
                                 <span class="doctor-label">@item.Label</span>
@@ -44,9 +44,9 @@
                         }
                     </ul>
                 }
-                @if (!string.IsNullOrEmpty(section.Note))
+                @if (!string.IsNullOrEmpty(block.Note))
                 {
-                    <pre class="doctor-howto">@section.Note</pre>
+                    <pre class="doctor-howto">@block.Note</pre>
                 }
             </section>
         }

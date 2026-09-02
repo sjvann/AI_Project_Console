@@ -23,6 +23,11 @@ public sealed record ScanResult(string Root, IReadOnlyList<ProjectInfo> Projects
 
 public sealed record ProductLine(string Id, string Label, string Root);
 
+/// <summary>
+/// 另一個行程的啟動相依。與 <see cref="ServiceEntry.HostedBy"/>（同一行程別名）不同。
+/// </summary>
+public sealed record ServiceDependency(string Id, bool Optional = false);
+
 public sealed record ServiceEntry(
     string Id,
     string Label,
@@ -35,7 +40,14 @@ public sealed record ServiceEntry(
     string? HostedBy = null,
     string? AspnetUrls = null,
     string? PreStart = null,
-    string Source = "scan");
+    string Source = "scan",
+    IReadOnlyList<ServiceDependency>? DependsOn = null,
+    string? Ready = null,
+    int? ReadyTimeoutMs = null)
+{
+    public IReadOnlyList<ServiceDependency> Dependencies =>
+        DependsOn is { Count: > 0 } ? DependsOn : [];
+}
 
 public sealed class ProjectCatalog
 {

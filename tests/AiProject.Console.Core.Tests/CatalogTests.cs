@@ -262,6 +262,47 @@ public class CatalogTests
             Assert.Equal(new[] { "api" }, catalog.StartOrder);
             Assert.Equal("scripts/ensure-api.ps1", catalog.Services[0].PreStart);
             Assert.Null(catalog.Services[1].PreStart);
+            Assert.Empty(catalog.Services[0].Dependencies);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_ParsesDependsOnAndReady()
+    {
+        var root = CreateTempProject();
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "ai-project.json"), """
+            {
+              "name": "Demo",
+              "services": [
+                { "id": "api", "label": "Api", "project": "src/Demo.Api", "port": 8080, "group": "Demo" },
+                {
+                  "id": "web",
+                  "label": "Web",
+                  "project": "src/Demo.Api",
+                  "port": 8081,
+                  "group": "Demo",
+                  "dependsOn": ["api", { "id": "fhir-host", "optional": true }],
+                  "ready": "http://127.0.0.1:8081/ready",
+                  "readyTimeoutMs": 90000
+                }
+              ]
+            }
+            """);
+            var catalog = ServiceCatalogBuilder.Build(root);
+            var web = Assert.Single(catalog.Services, s => s.Id == "web");
+            Assert.Equal(2, web.Dependencies.Count);
+            Assert.Equal("api", web.Dependencies[0].Id);
+            Assert.False(web.Dependencies[0].Optional);
+            Assert.Equal("fhir-host", web.Dependencies[1].Id);
+            Assert.True(web.Dependencies[1].Optional);
+            Assert.Equal("http://127.0.0.1:8081/ready", web.Ready);
+            Assert.Equal(90000, web.ReadyTimeoutMs);
         }
         finally
         {

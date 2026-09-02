@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.GitHub;
@@ -12,6 +13,8 @@ public sealed record GithubAccount(string Login, bool GhInstalled, string Host =
 
     public string Display() => GitHost.DisplayAccount(Login, Host);
 }
+
+public sealed record GithubLoginPrompt(string DeviceCode, string BrowserUrl, bool BrowserOpened);
 
 public static class GitHubAuth
 {
@@ -64,24 +67,127 @@ public static class GitHubAuth
         return login is null ? new GithubAccount("", true, hostname) : new GithubAccount(login, true, hostname);
     }
 
+    static readonly Regex AnsiEscape = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.Compiled);
+    static readonly Regex DeviceCodePattern = new(
+        @"one-time code(?:\s*\(|:\s*)([A-Z0-9]{4}-[A-Z0-9]{4})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    static readonly Regex HttpUrlPattern = new(@"https://[^\s<>""']+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    public static string StripAnsi(string? text) =>
+        string.IsNullOrEmpty(text) ? "" : AnsiEscape.Replace(text, "");
+
+    public static string? ParseDeviceCode(string? text)
+    {
+        var m = DeviceCodePattern.Match(StripAnsi(text));
+        return m.Success ? m.Groups[1].Value.ToUpperInvariant() : null;
+    }
+
+    public static string? ParseBrowserUrl(string? text)
+    {
+        var clean = StripAnsi(text);
+        var m = HttpUrlPattern.Match(clean);
+        if (!m.Success)
+            return null;
+        var url = m.Value.TrimEnd('.', ',', ')', ']', '"', '\'');
+        if (url.Contains("login/device", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("login/oauth", StringComparison.OrdinalIgnoreCase)
+            || clean.Contains("web browser", StringComparison.OrdinalIgnoreCase)
+            || clean.Contains("Open this URL", StringComparison.OrdinalIgnoreCase)
+            || clean.Contains("in your browser", StringComparison.OrdinalIgnoreCase))
+            return url;
+        return null;
+    }
+
     public static async Task<(bool Ok, string Message)> LoginWebAsync(
         string? cwd = null,
         string? host = null,
+        IProgress<GithubLoginPrompt>? progress = null,
         CancellationToken ct = default)
     {
         if (!GitHubService.GhAvailable())
             return (false, "尚未安裝 GitHub CLI（gh）。請先安裝 https://cli.github.com/ 再登入。");
         var hostname = GitHost.Normalize(host);
+        var deviceCode = "";
+        var browserUrl = "";
+        var browserOpened = false;
+        var gate = new object();
+
+        void OnLine(string line)
+        {
+            string? toOpen = null;
+            GithubLoginPrompt? prompt;
+            lock (gate)
+            {
+                var parsedCode = ParseDeviceCode(line);
+                var parsedUrl = ParseBrowserUrl(line);
+                if (parsedCode is null && parsedUrl is null)
+                    return;
+                if (parsedCode is not null)
+                    deviceCode = parsedCode;
+                if (parsedUrl is not null && browserUrl.Length == 0)
+                    browserUrl = parsedUrl;
+                if (!browserOpened && browserUrl.Length > 0)
+                {
+                    toOpen = browserUrl;
+                    browserOpened = true;
+                }
+                prompt = new GithubLoginPrompt(deviceCode, browserUrl, toOpen is not null || browserOpened);
+            }
+            progress?.Report(prompt);
+            if (toOpen is null)
+                return;
+            var opened = TryOpenBrowser(toOpen);
+            lock (gate)
+            {
+                browserOpened = opened;
+                prompt = new GithubLoginPrompt(deviceCode, browserUrl, opened);
+            }
+            progress?.Report(prompt);
+        }
+
         var (code, output) = await CliUtil.RunAsync(
             "gh",
             ["auth", "login", "--hostname", hostname, "--git-protocol", "https", "--web"],
             cwd,
             LoginTimeoutMs,
             ct,
-            stdin: "\n").ConfigureAwait(false);
+            onLine: OnLine).ConfigureAwait(false);
+
+        string fallbackUrl;
+        string fallbackCode;
+        bool alreadyOpened;
+        lock (gate)
+        {
+            deviceCode = ParseDeviceCode(output) ?? deviceCode;
+            browserUrl = string.IsNullOrEmpty(browserUrl) ? (ParseBrowserUrl(output) ?? "") : browserUrl;
+            fallbackUrl = browserUrl;
+            fallbackCode = deviceCode;
+            alreadyOpened = browserOpened;
+        }
+        if (!alreadyOpened && fallbackUrl.Length > 0)
+        {
+            var opened = TryOpenBrowser(fallbackUrl);
+            lock (gate)
+                browserOpened = opened || browserOpened;
+            progress?.Report(new GithubLoginPrompt(fallbackCode, fallbackUrl, opened || alreadyOpened));
+        }
+
         if (code == 0)
             return (true, string.IsNullOrEmpty(output) ? "已登入 " + hostname : output);
         return (false, string.IsNullOrEmpty(output) ? "登入未完成或已取消。" : output);
+    }
+
+    static bool TryOpenBrowser(string url)
+    {
+        try
+        {
+            CliUtil.OpenUrl(url);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static async Task<(bool Ok, string Message)> LogoutAsync(

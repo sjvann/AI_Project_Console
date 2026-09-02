@@ -66,6 +66,8 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 `duty_summary`、`stack_status`、`list_services`、`list_projects`、`build_freshness`、`build`、`start_service`、`stop_service`、`start_all`、`stop_all`、`get_log`、`doctor`、`git_status`、`ci_status`、`pr_status`、`list_audit`、`docs_status`、`list_docs`、`read_doc`。
 
+`start_service` 預設先起 `dependsOn` 並等到就緒；只要自己時帶 `skipDepends=true`。`start_all` 同樣會補齊相依。
+
 `ci_status` 只回最近 Actions 的通過／失敗／進行中；`pr_status` 只回目前分支能不能請人審。不要叫 Agent 在控制台裡翻 workflow 或 PR 畫面。
 
 文件工具只讀 `docs/`：看狀態、列檔、讀一頁。寫檔請用控制台編輯或 Agent 在工作區改，沒有 `write_doc`。
