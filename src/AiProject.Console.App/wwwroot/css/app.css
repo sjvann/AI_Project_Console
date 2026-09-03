@@ -173,10 +173,11 @@ button.gh-id.is-muted { color: var(--muted); }
 .warn { color: var(--wait); font-size: 12px; padding: 4px 8px; }
 .prj-list { display: grid; grid-template-columns: auto minmax(0, 1fr) 72px auto; column-gap: 8px; align-items: center; }
 .prj { display: contents; }
-.prj-name, .prj .meta, .prj .badge-stale, .prj .btn-link { padding-top: 4px; padding-bottom: 4px; }
+.prj-name, .prj .meta, .prj .badge-stale, .prj-actions { padding-top: 4px; padding-bottom: 4px; }
 .prj-name { padding-left: 8px; white-space: nowrap; }
 .prj .meta { color: var(--muted); font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prj .btn-link { padding-right: 8px; }
+.prj-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding-right: 8px; }
+.prj-actions .btn-link { padding-right: 8px; }
 .badge-stale { width: 72px; font-size: 12px; color: var(--wait); }
 .prj.prj-building > * { background: var(--sel); }
 .prj.prj-failed > * { background: var(--fail-row); }
@@ -193,7 +194,7 @@ button.gh-id.is-muted { color: var(--muted); }
     .badge-building, .svc-busy { animation: none; }
 }
 .build-progress { font-weight: 700; color: var(--accent); }
-.log-tools { display: flex; gap: 8px; align-items: center; padding: 8px 10px; flex-wrap: wrap; }
+.log-tools { display: flex; gap: 8px; align-items: center; padding: 8px 10px; flex-wrap: wrap; flex: none; }
 .log { background: var(--log-bg); color: var(--log-fg); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; white-space: pre; overflow: auto; flex: 1; margin: 0 8px 8px; padding: 10px; border-radius: 3px; min-height: 0; }
 .audit-help { margin: 0 10px 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
 .audit-help p { margin: 0 0 6px; }

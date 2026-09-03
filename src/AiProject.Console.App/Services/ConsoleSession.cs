@@ -3410,9 +3410,11 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void OpenCompileHelp()
     {
+        LeftTab = "prj";
         if (!RequireCatalog() || LastBuildFailure is null)
         {
             _native.Info("編譯求救", "目前沒有建置錯誤可送出。");
+            Notify();
             return;
         }
         AgentPrompt = CursorLauncher.BuildAgentPrompt(
@@ -3425,17 +3427,20 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void OpenRuntimeHelp()
     {
+        LeftTab = "svc";
         if (!RequireCatalog())
             return;
         var svc = SelectedService();
         if (svc is null)
         {
             _native.Info("執行求救", "請先在服務列表選取一項服務。");
+            Notify();
             return;
         }
         if (!RuntimeHelpEnabled)
         {
             _native.Info("執行求救", "目前 Log 沒有偵測到錯誤。");
+            Notify();
             return;
         }
         AgentPrompt = CursorLauncher.BuildRuntimeLogPrompt(
@@ -3445,6 +3450,17 @@ public sealed partial class ConsoleSession : IDisposable
         Dialog = "agent";
         Notify();
     }
+
+    public void OpenRuntimeHelpFor(string serviceId)
+    {
+        SelectService(serviceId);
+        OpenRuntimeHelp();
+    }
+
+    public bool IsCompileHelpFor(BuildState project) =>
+        LastBuildFailure is not null
+        && Catalog is not null
+        && BuildFreshness.SameProject(Catalog.Root, project.Path, LastBuildFailure.Target);
 
     public async Task ConfirmAgentAsync()
     {
