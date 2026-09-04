@@ -134,6 +134,11 @@ public sealed partial class ConsoleSession : IDisposable
         !string.IsNullOrWhiteSpace(GithubDraft.Host) ? GitHost.Normalize(GithubDraft.Host)
         : GitHost.Normalize(GitHostName);
     public string GithubAccountText => GithubAccount.Display();
+    public string GithubAccountLabel => GithubLoggedIn ? GithubAccountText : "未登入";
+    public bool GithubNeedsAttention =>
+        HasUncommitted || GitPulseBlocked || GitBrief is { Behind: > 0 };
+    public string GithubStatusTone => GithubAccountStatus.Tone(GithubLoggedIn, GithubNeedsAttention);
+    public string GithubStatusTitle => GithubAccountStatus.Title(GithubLoggedIn, GitBrief);
     public bool GitIssuesReady => GitHost.IssuesReady(GitKind);
     public WorkHoursView WorkHoursView { get; private set; } = WorkHoursView.Week;
     public DateOnly WorkHoursAnchor { get; private set; } = DateOnly.FromDateTime(DateTime.Now);
@@ -239,9 +244,32 @@ public sealed partial class ConsoleSession : IDisposable
     public bool ReleaseMakeLatest { get; set; } = true;
     public List<string> ReleaseAssets { get; } = [];
     public string CommitMessage { get; set; } = "";
+    public string CommitSubject { get; set; } = "";
+    public string CommitBody { get; set; } = "";
+    public string CombinedCommitMessage => CommitMessageSuggester.CombineMessage(CommitSubject, CommitBody);
     public string CommitHint { get; private set; } = "";
     public bool CommitPushAfter { get; set; }
     public IReadOnlyList<GitChange> CommitChanges { get; private set; } = [];
+    public HashSet<string> CommitSelected { get; } = new(StringComparer.Ordinal);
+    public string CommitFileQuery { get; set; } = "";
+    public IReadOnlyList<GitChange> VisibleCommitChanges
+    {
+        get
+        {
+            var q = CommitFileQuery.Trim();
+            if (string.IsNullOrEmpty(q))
+                return CommitChanges;
+            return [.. CommitChanges.Where(c =>
+                c.Path.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (c.OriginalPath?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false)
+                || c.KindLabel.Contains(q, StringComparison.OrdinalIgnoreCase))];
+        }
+    }
+    public IReadOnlyList<GitChange> SelectedCommitChanges =>
+        [.. CommitChanges.Where(c => CommitSelected.Contains(c.Path))];
+    public string? CommitPreviewPath { get; private set; }
+    public string CommitPreviewDiff { get; private set; } = "";
+    public bool CommitPreviewBusy { get; private set; }
     public string CommitSuggestHint { get; private set; } = "";
     public GitBriefStatus? GitBrief { get; private set; }
     public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
@@ -3274,11 +3302,87 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         }
         CommitChanges = changes;
+        CommitSelected.Clear();
+        foreach (var c in changes)
+            CommitSelected.Add(c.Path);
+        CommitSubject = "";
+        CommitBody = "";
         CommitMessage = "";
         CommitPushAfter = false;
         CommitSuggestHint = "";
-        CommitHint = $"{changes.Count} 筆未提交變更（將全部加入後提交）";
+        CommitFileQuery = "";
+        CommitPreviewPath = null;
+        CommitPreviewDiff = "";
+        RefreshCommitHint();
         Dialog = "commit";
+        Notify();
+    }
+
+    public bool IsCommitSelected(GitChange change) => CommitSelected.Contains(change.Path);
+
+    public bool AllCommitSelected =>
+        CommitChanges.Count > 0 && CommitChanges.All(c => CommitSelected.Contains(c.Path));
+
+    public void ToggleCommitChange(GitChange change, bool selected)
+    {
+        if (selected)
+            CommitSelected.Add(change.Path);
+        else
+            CommitSelected.Remove(change.Path);
+        RefreshCommitHint();
+        Notify();
+    }
+
+    public void SetCommitSelectionAll(bool selected)
+    {
+        CommitSelected.Clear();
+        if (selected)
+        {
+            foreach (var c in CommitChanges)
+                CommitSelected.Add(c.Path);
+        }
+        RefreshCommitHint();
+        Notify();
+    }
+
+    public void SetCommitFileQuery(string value)
+    {
+        CommitFileQuery = value ?? "";
+        Notify();
+    }
+
+    void RefreshCommitHint()
+    {
+        var branch = GitBrief?.Branch ?? "目前分支";
+        CommitHint = $"分支 {branch} · {CommitChanges.Count} 筆異動 · 已選 {CommitSelected.Count} 筆將提交";
+    }
+
+    public async Task PreviewCommitChangeAsync(GitChange change)
+    {
+        if (!RequireCatalog())
+            return;
+        if (string.Equals(CommitPreviewPath, change.Path, StringComparison.Ordinal)
+            && !string.IsNullOrEmpty(CommitPreviewDiff)
+            && !CommitPreviewBusy)
+        {
+            CommitPreviewPath = null;
+            CommitPreviewDiff = "";
+            Notify();
+            return;
+        }
+        CommitPreviewPath = change.Path;
+        CommitPreviewBusy = true;
+        CommitPreviewDiff = "";
+        Notify();
+        try
+        {
+            CommitPreviewDiff = await GitHubService.PreviewDiffAsync(Catalog!.Root, change).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            CommitPreviewDiff = "無法預覽：" + FirstLine(ex.Message);
+        }
+        CommitPreviewBusy = false;
         Notify();
     }
 
@@ -3286,16 +3390,20 @@ public sealed partial class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return;
-        if (CommitChanges.Count == 0)
+        var selected = SelectedCommitChanges;
+        if (selected.Count == 0)
+        {
+            _native.Warn("尚未選擇檔案", "請先勾選要提交的檔案，再產生說明。");
             return;
-        if (!string.IsNullOrWhiteSpace(CommitMessage)
-            && !_native.Confirm("取代說明", "將用 AI 建議覆蓋目前說明。確定？"))
+        }
+        if ((!string.IsNullOrWhiteSpace(CommitSubject) || !string.IsNullOrWhiteSpace(CommitBody))
+            && !_native.Confirm("取代說明", "將用 AI 建議覆蓋目前的標題與交付說明。確定？"))
             return;
 
         CommitSuggestion? suggestion = null;
         await RunJobAsync("AI 建議說明…", async () =>
         {
-            suggestion = await CommitMessageSuggester.SuggestAsync(Catalog!.Root, CommitChanges).ConfigureAwait(false);
+            suggestion = await CommitMessageSuggester.SuggestAsync(Catalog!.Root, selected).ConfigureAwait(false);
             return (string?)null;
         }).ConfigureAwait(false);
         if (suggestion is null || string.IsNullOrWhiteSpace(suggestion.Message))
@@ -3303,6 +3411,9 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Warn("無法產生建議", "請手動填寫提交說明。");
             return;
         }
+        var (subject, body) = CommitMessageSuggester.SplitMessage(suggestion.Message);
+        CommitSubject = subject;
+        CommitBody = body;
         CommitMessage = suggestion.Message;
         CommitSuggestHint = suggestion.Hint;
         Dialog = "commit";
@@ -3313,21 +3424,29 @@ public sealed partial class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return;
-        var message = CommitMessage;
-        if (string.IsNullOrWhiteSpace(message))
+        var selected = SelectedCommitChanges;
+        if (selected.Count == 0)
         {
-            _native.Warn("請填寫說明", "提交說明不可空白。");
+            _native.Warn("尚未選擇檔案", "請勾選要提交的檔案。未勾選的檔案會留在工作區。");
             return;
         }
-        var n = CommitChanges.Count;
+        var message = CombinedCommitMessage;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            _native.Warn("請填寫說明", "請填寫本次交付標題。");
+            return;
+        }
+        var n = selected.Count;
+        var skipped = CommitChanges.Count - n;
         var push = CommitPushAfter;
+        var extra = skipped > 0 ? $"\n另有 {skipped} 筆異動不會提交。" : "";
         if (!_native.Confirm(
             "提交",
-            $"將提交 {n} 筆變更到目前分支。{(push ? "\n提交後會再 push。" : "")}\n\n確定？"))
+            $"將提交 {n} 筆變更到目前分支。{extra}{(push ? "\n提交後會再 push。" : "")}\n\n{CommitSubject}\n\n確定？"))
             return;
         CloseDialog();
         await RunJobAsync("提交中…", async () =>
-            await GitHubService.CommitAsync(Catalog!.Root, message).ConfigureAwait(false)).ConfigureAwait(false);
+            await GitHubService.CommitSelectedAsync(Catalog!.Root, message, selected).ConfigureAwait(false)).ConfigureAwait(false);
         await RefreshGitStatusAsync().ConfigureAwait(false);
         if (push && JobText != "錯誤")
             await PublishCurrentBranchAsync().ConfigureAwait(false);
@@ -4592,10 +4711,16 @@ public sealed partial class ConsoleSession : IDisposable
         NewBranchName = "";
         BranchDialogHint = "";
         CommitMessage = "";
+        CommitSubject = "";
+        CommitBody = "";
         CommitHint = "";
         CommitSuggestHint = "";
         CommitPushAfter = false;
         CommitChanges = [];
+        CommitSelected.Clear();
+        CommitFileQuery = "";
+        CommitPreviewPath = null;
+        CommitPreviewDiff = "";
         LogFilter = "";
         LogTitle = "Log · （未選服務）";
         LogText = "";

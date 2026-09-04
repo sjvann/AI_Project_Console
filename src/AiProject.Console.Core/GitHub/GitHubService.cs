@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -292,12 +293,30 @@ public sealed class ReleaseInspect
 
 public sealed record GitChange(string Code, string Path, string? OriginalPath = null)
 {
+    public string KindLabel => Describe(Code);
+
+    public string KindTone => KindLabel switch
+    {
+        "新增" or "未追蹤" or "複製" => "add",
+        "刪除" => "del",
+        "衝突" => "conflict",
+        "重新命名" => "rename",
+        _ => "mod",
+    };
+
     public string Display()
     {
-        var kind = Describe(Code);
+        var kind = KindLabel;
         return OriginalPath is null
             ? $"{kind}  {Path}"
             : $"{kind}  {OriginalPath} → {Path}";
+    }
+
+    public IReadOnlyList<string> StagePaths()
+    {
+        if (string.IsNullOrEmpty(OriginalPath))
+            return [Path];
+        return [OriginalPath, Path];
     }
 
     public static string Describe(string code)
@@ -456,6 +475,106 @@ public static class GitHubService
         if (!string.IsNullOrEmpty(output))
             lines.Add(output);
         return string.Join('\n', lines);
+    }
+
+    public static async Task StageSelectedAsync(string root, IReadOnlyList<GitChange> selected)
+    {
+        if (selected is null || selected.Count == 0)
+            throw new InvalidOperationException("請至少選擇一個檔案。");
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+
+        var (headCode, _) = await CliUtil.RunAsync("git", ["rev-parse", "--verify", "HEAD"], root).ConfigureAwait(false);
+        if (headCode == 0)
+        {
+            var (resetCode, resetOut) = await CliUtil.RunAsync("git", ["reset", "-q", "HEAD"], root).ConfigureAwait(false);
+            if (resetCode != 0 && !string.IsNullOrWhiteSpace(resetOut))
+                throw new InvalidOperationException(resetOut);
+        }
+        else
+        {
+            await CliUtil.RunAsync("git", ["rm", "-r", "--cached", "-f", "."], root).ConfigureAwait(false);
+        }
+
+        foreach (var change in selected)
+        {
+            foreach (var rel in change.StagePaths())
+            {
+                var path = (rel ?? "").Trim().Replace('\\', '/');
+                if (string.IsNullOrEmpty(path) || path.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(path))
+                    continue;
+                var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "-A", "--", path], root).ConfigureAwait(false);
+                if (addCode == 0)
+                    continue;
+                if (change.KindLabel == "刪除")
+                {
+                    var (rmCode, rmOut) = await CliUtil.RunAsync("git", ["rm", "--cached", "--ignore-unmatch", "--", path], root).ConfigureAwait(false);
+                    if (rmCode == 0)
+                        continue;
+                    throw new InvalidOperationException(string.IsNullOrEmpty(rmOut) ? addOut : rmOut);
+                }
+                throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? $"無法暫存 {path}" : addOut);
+            }
+        }
+    }
+
+    public static async Task<string> CommitSelectedAsync(string root, string message, IReadOnlyList<GitChange> selected)
+    {
+        await StageSelectedAsync(root, selected).ConfigureAwait(false);
+        return await CommitAsync(root, message, stageAll: false).ConfigureAwait(false);
+    }
+
+    public static async Task<string> PreviewDiffAsync(string root, GitChange change, int maxLines = 200)
+    {
+        if (change.Code.Contains('?'))
+            return PreviewUntracked(root, change, maxLines);
+
+        var args = new List<string> { "-c", "core.quotepath=false", "diff", "HEAD", "-U3", "--" };
+        if (!string.IsNullOrEmpty(change.OriginalPath))
+            args.Add(change.OriginalPath);
+        args.Add(change.Path);
+        var (_, stdout, stderr) = await CliUtil.RunCaptureAsync("git", args, root, trim: false).ConfigureAwait(false);
+        var text = string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+        if (string.IsNullOrWhiteSpace(text))
+            return $"（{change.KindLabel} {change.Path}：沒有可顯示的 diff，可能是二進位或與 HEAD 相同）";
+        return TruncateLines(text.Replace("\r\n", "\n").TrimEnd(), maxLines);
+    }
+
+    private static string PreviewUntracked(string root, GitChange change, int maxLines)
+    {
+        var full = Path.GetFullPath(Path.Combine(root, change.Path.Replace('/', Path.DirectorySeparatorChar)));
+        var rootFull = Path.GetFullPath(root);
+        if (!full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(full, rootFull, StringComparison.OrdinalIgnoreCase))
+            return $"（未追蹤 {change.Path}：路徑無效）";
+        if (Directory.Exists(full))
+            return $"（未追蹤 {change.Path}：這是資料夾，提交時會一併加入內容）";
+        if (!File.Exists(full))
+            return $"（未追蹤 {change.Path}：檔案不存在）";
+        var info = new FileInfo(full);
+        if (info.Length > 256_000)
+            return $"（未追蹤 {change.Path}：檔案過大，不預覽）";
+        var bytes = File.ReadAllBytes(full);
+        if (Array.IndexOf(bytes, (byte)0) >= 0)
+            return $"（未追蹤 {change.Path}：二進位檔，不預覽）";
+        var lines = Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n").Split('\n');
+        var sb = new StringBuilder();
+        sb.AppendLine("--- /dev/null");
+        sb.AppendLine("+++ b/" + change.Path);
+        var n = Math.Min(lines.Length, maxLines);
+        for (var i = 0; i < n; i++)
+            sb.AppendLine("+" + lines[i]);
+        if (lines.Length > maxLines)
+            sb.AppendLine($"…（其餘 {lines.Length - maxLines} 行已省略）");
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string TruncateLines(string text, int maxLines)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        if (lines.Length <= maxLines)
+            return text;
+        return string.Join('\n', lines.Take(maxLines)) + $"\n…（其餘 {lines.Length - maxLines} 行已省略）";
     }
 
     public static async Task<string?> CommitPathsIfDirtyAsync(string root, string message, IEnumerable<string> relPaths)

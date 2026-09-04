@@ -3,14 +3,6 @@
 @if (S.ShowGitPulse)
 {
     <div class="git-pulse @(S.GitPulseBlocked ? "is-blocked" : null)" role="region" aria-label="GitHub 狀態">
-        <button type="button"
-                class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
-                title="開啟 GitHub 操作台（Ctrl+G）"
-                aria-haspopup="true"
-                aria-expanded="@S.GithubHubOpen"
-                @onclick="S.ToggleGithubHub">
-            GitHub 操作台
-        </button>
         @if (S.GitBrief is { } brief)
         {
             <button type="button"

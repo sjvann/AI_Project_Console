@@ -100,6 +100,13 @@ button.gh-id { cursor: pointer; }
 button.gh-id:hover { border-color: var(--accent); }
 button.gh-id.is-muted { color: var(--muted); }
 .gh-id-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.gh-id.is-ok .gh-id-dot { background: var(--ok); }
+.gh-id.is-wait { border-color: var(--wait); color: var(--wait); }
+.gh-id.is-wait .gh-id-dot { background: var(--wait); }
+.gh-id.is-danger { border-color: var(--danger); color: var(--danger); }
+.gh-id.is-danger .gh-id-dot { background: var(--danger); }
+.gh-cluster { display: inline-flex; align-items: center; gap: 8px; }
+.gh-hub-badge { min-width: 16px; height: 16px; padding: 0 5px; border-radius: 999px; background: var(--wait); color: #fff; font: 700 10px/16px "Segoe UI", "Noto Sans TC", sans-serif; text-align: center; }
 .git-pulse { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 4px; background: var(--sel); }
 .git-pulse.is-blocked { border-color: var(--wait); background: var(--panel); }
 .git-pulse-mark { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 4px; background: var(--panel); color: var(--accent); font: 600 12px "Segoe UI", "Noto Sans TC", sans-serif; cursor: pointer; }
@@ -222,6 +229,37 @@ button.gh-id.is-muted { color: var(--muted); }
 .overlay { position: fixed; inset: 0; background: rgba(28, 36, 48, .35); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .dialog { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 18px; width: min(520px, 92vw); max-height: 88vh; overflow: auto; }
 .dialog-lg { width: min(720px, 94vw); }
+.dialog-commit { width: min(980px, 96vw); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+.commit-head { flex: none; }
+.commit-head h2 { margin: 0; }
+.commit-head .hint { margin: 4px 0 0; }
+.commit-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 14px; min-height: 0; flex: 1; overflow: hidden; margin-top: 10px; }
+.commit-files, .commit-msg { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.commit-files-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.commit-filter { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: var(--panel); color: var(--text); margin-bottom: 6px; }
+.commit-file-list { flex: 1; min-height: 160px; max-height: min(420px, 46vh); overflow: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+.commit-file { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.commit-file:last-child { border-bottom: none; }
+.commit-file.is-on { background: var(--sel); }
+.commit-file.is-preview { border-left: 3px solid var(--accent); }
+.commit-file-main { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; cursor: pointer; }
+.commit-path { font: 600 12px "Cascadia Mono", Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-kind { flex: none; font: 700 11px "Segoe UI", "Noto Sans TC", sans-serif; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--border); color: var(--muted); }
+.commit-kind.is-mod { color: var(--wait); border-color: var(--wait); }
+.commit-kind.is-add { color: var(--ok); border-color: var(--ok); }
+.commit-kind.is-del { color: var(--danger); border-color: var(--danger); }
+.commit-kind.is-rename { color: var(--accent); border-color: var(--accent); }
+.commit-kind.is-conflict { color: var(--danger); border-color: var(--danger); background: var(--fail-row); }
+.commit-diff { margin: 0 8px 8px; max-height: 180px; overflow: auto; padding: 8px 10px; border-radius: 3px; font: 12px/1.4 "Cascadia Mono", Consolas, monospace; background: var(--log-bg); color: var(--log-fg); white-space: pre-wrap; }
+.commit-field { grid-template-columns: 108px 1fr; }
+.commit-msg textarea { min-height: 120px; }
+.commit-preview-msg { margin: 10px 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.commit-preview-msg strong { display: block; font-size: 12px; margin-bottom: 6px; }
+.commit-preview-msg pre { margin: 0; white-space: pre-wrap; font: 12px/1.45 "Segoe UI", "Noto Sans TC", sans-serif; }
+@media (max-width: 840px) {
+    .commit-layout { grid-template-columns: 1fr; overflow: auto; }
+    .commit-file-list { max-height: 240px; }
+}
 .dialog.ask-dialog { display: flex; flex-direction: column; width: min(860px, 94vw); height: min(72vh, 720px); max-height: 88vh; padding: 16px 0 0; overflow: hidden; }
 .ask-dialog-head { display: flex; align-items: flex-start; gap: 10px; padding: 0 16px 10px; }
 .ask-dialog-head h2 { margin: 0; }

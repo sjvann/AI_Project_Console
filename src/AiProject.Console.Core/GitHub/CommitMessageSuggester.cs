@@ -128,8 +128,14 @@ public static class CommitMessageSuggester
     public static async Task<CommitContext> CollectAsync(string root, IReadOnlyList<GitChange> changes)
     {
         var quote = new[] { "-c", "core.quotepath=false" };
-        var (_, stat) = await CliUtil.RunAsync("git", [.. quote, "diff", "--stat", "HEAD"], root).ConfigureAwait(false);
-        var (_, patch) = await CliUtil.RunAsync("git", [.. quote, "diff", "HEAD"], root, 60_000).ConfigureAwait(false);
+        var paths = changes
+            .SelectMany(c => c.StagePaths())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        string[] spec = paths.Length == 0 ? [] : ["--", .. paths];
+        var (_, stat) = await CliUtil.RunAsync("git", [.. quote, "diff", "--stat", "HEAD", .. spec], root).ConfigureAwait(false);
+        var (_, patch) = await CliUtil.RunAsync("git", [.. quote, "diff", "HEAD", .. spec], root, 60_000).ConfigureAwait(false);
         if (patch.Length > MaxPatchChars)
             patch = patch[..MaxPatchChars] + "\n…（diff 過長，已截斷）";
         var (_, log) = await CliUtil.RunAsync("git", ["log", "-8", "--pretty=format:%s"], root).ConfigureAwait(false);
@@ -234,6 +240,38 @@ public static class CommitMessageSuggester
         if (text.Length > 800)
             text = text[..800].TrimEnd() + "…";
         return text;
+    }
+
+    public static (string Subject, string Body) SplitMessage(string message)
+    {
+        var text = (message ?? "").Replace("\r\n", "\n").Trim();
+        if (string.IsNullOrEmpty(text))
+            return ("", "");
+        var blank = text.IndexOf("\n\n", StringComparison.Ordinal);
+        if (blank >= 0)
+            return (FirstLine(text[..blank]), text[(blank + 2)..].Trim());
+        var nl = text.IndexOf('\n');
+        if (nl < 0)
+            return (text, "");
+        return (text[..nl].Trim(), text[(nl + 1)..].Trim());
+    }
+
+    public static string CombineMessage(string subject, string body)
+    {
+        var s = FirstLine(subject);
+        var b = (body ?? "").Replace("\r\n", "\n").Trim();
+        if (string.IsNullOrEmpty(s))
+            return b;
+        return string.IsNullOrEmpty(b) ? s : s + "\n\n" + b;
+    }
+
+    static string FirstLine(string text)
+    {
+        var t = (text ?? "").Replace("\r\n", "\n").Trim();
+        if (string.IsNullOrEmpty(t))
+            return "";
+        var nl = t.IndexOf('\n');
+        return (nl < 0 ? t : t[..nl]).Trim();
     }
 
     /// <summary>

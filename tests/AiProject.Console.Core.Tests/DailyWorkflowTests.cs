@@ -72,6 +72,10 @@ public class DailyWorkflowTests
         Assert.Equal("重新命名  old.txt → new-name.txt", changes[3].Display());
         Assert.Equal(" M", changes[0].Code);
         Assert.Equal("src/a.cs", changes[0].Path);
+        Assert.Equal("mod", changes[0].KindTone);
+        Assert.Equal("add", changes[2].KindTone);
+        Assert.Equal("rename", changes[3].KindTone);
+        Assert.Equal(["old.txt", "new-name.txt"], changes[3].StagePaths());
     }
 
     [Fact]
@@ -170,6 +174,10 @@ public class DailyWorkflowTests
     {
         var text = CommitMessageSuggester.CleanMessage("```\n提交說明：更新需求文件\n```");
         Assert.Equal("更新需求文件", text);
+        var (subject, body) = CommitMessageSuggester.SplitMessage("修正搜尋條件\n\n- 補上必填\n- 調整錯誤訊息");
+        Assert.Equal("修正搜尋條件", subject);
+        Assert.Contains("補上必填", body);
+        Assert.Equal("修正搜尋條件\n\n- 補上必填", CommitMessageSuggester.CombineMessage("修正搜尋條件", "- 補上必填"));
     }
 
     [Fact]
@@ -302,6 +310,48 @@ public class DailyWorkflowTests
             Assert.Equal(0, code);
             Assert.Contains("docs/product/intake.json", stdout);
             Assert.DoesNotContain("secret.txt", stdout);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task CommitSelectedAsync_CommitsOnlyCheckedFilesIncludingDeletes()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-commit-sel-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            File.WriteAllText(Path.Combine(root, "keep.txt"), "keep");
+            File.WriteAllText(Path.Combine(root, "gone.txt"), "gone");
+            Assert.Contains("已提交", await GitHubService.CommitAsync(root, "seed"));
+            File.WriteAllText(Path.Combine(root, "keep.txt"), "changed");
+            File.Delete(Path.Combine(root, "gone.txt"));
+            File.WriteAllText(Path.Combine(root, "extra.txt"), "new");
+
+            var changes = await GitHubService.ListChangesAsync(root);
+            var gone = Assert.Single(changes, c => c.Path == "gone.txt");
+            var extra = Assert.Single(changes, c => c.Path == "extra.txt");
+            var result = await GitHubService.CommitSelectedAsync(root, "remove gone and add extra", [gone, extra]);
+            Assert.Contains("已提交", result);
+
+            var leftover = await GitHubService.ListChangesAsync(root);
+            var onlyKeep = Assert.Single(leftover);
+            Assert.Equal("keep.txt", onlyKeep.Path);
+            var files = (await CliUtil.RunAsync("git", ["ls-files"], root)).Output;
+            Assert.Contains("keep.txt", files);
+            Assert.Contains("extra.txt", files);
+            Assert.DoesNotContain("gone.txt", files);
+
+            var diff = await GitHubService.PreviewDiffAsync(root, onlyKeep);
+            Assert.Contains("changed", diff);
         }
         finally
         {

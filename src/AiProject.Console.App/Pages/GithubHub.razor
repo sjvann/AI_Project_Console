@@ -9,7 +9,7 @@
         <span class="grow"></span>
         @if (S.GithubLoggedIn)
         {
-            <span class="gh-id" title="目前遠端帳號">
+            <span class="gh-id is-@S.GithubStatusTone" title="@S.GithubStatusTitle">
                 <span class="gh-id-dot" aria-hidden="true"></span>
                 <span>@S.GithubAccountText</span>
             </span>

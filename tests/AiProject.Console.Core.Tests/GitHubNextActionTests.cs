@@ -106,4 +106,17 @@ public class GitHubNextActionTests
         Assert.True(GitHubNextAction.IsDefaultBranch("HEAD", "develop"));
         Assert.False(GitHubNextAction.IsDefaultBranch("feat", "main"));
     }
+
+    [Fact]
+    public void AccountStatus_RedWhenLoggedOut_YellowWhenDirty_GreenWhenClean()
+    {
+        Assert.Equal(GithubAccountStatus.Danger, GithubAccountStatus.Tone(loggedIn: false, needsAttention: false));
+        Assert.Equal(GithubAccountStatus.Wait, GithubAccountStatus.Tone(loggedIn: false, needsAttention: true));
+        Assert.Equal(GithubAccountStatus.Wait, GithubAccountStatus.Tone(loggedIn: true, needsAttention: true));
+        Assert.Equal(GithubAccountStatus.Ok, GithubAccountStatus.Tone(loggedIn: true, needsAttention: false));
+        Assert.Contains("3 筆未提交", GithubAccountStatus.Title(true, new GitBriefStatus("feat", 3, 0, 0)));
+        Assert.Equal("已登入 GitHub", GithubAccountStatus.Title(true, new GitBriefStatus("main", 0, 0, 0)));
+        Assert.Equal("尚未登入 GitHub", GithubAccountStatus.Title(false, null));
+        Assert.Contains("落後遠端 2", GithubAccountStatus.Title(true, new GitBriefStatus("main", 0, 0, 2)));
+    }
 }

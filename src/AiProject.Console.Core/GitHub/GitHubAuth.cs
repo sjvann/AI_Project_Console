@@ -14,6 +14,28 @@ public sealed record GithubAccount(string Login, bool GhInstalled, string Host =
     public string Display() => GitHost.DisplayAccount(Login, Host);
 }
 
+public static class GithubAccountStatus
+{
+    public const string Ok = "ok";
+    public const string Wait = "wait";
+    public const string Danger = "danger";
+
+    public static string Tone(bool loggedIn, bool needsAttention) =>
+        needsAttention ? Wait : loggedIn ? Ok : Danger;
+
+    public static string Title(bool loggedIn, GitBriefStatus? brief)
+    {
+        if (brief is { DirtyCount: > 0 } dirty)
+            return $"有 {dirty.DirtyCount} 筆未提交變更，請到操作台提交";
+        var reason = brief?.LeaveBlockReason();
+        if (!string.IsNullOrEmpty(reason))
+            return reason;
+        if (brief is { Behind: > 0 } behind)
+            return $"目前分支落後遠端 {behind.Behind} 個提交，請先同步";
+        return loggedIn ? "已登入 GitHub" : "尚未登入 GitHub";
+    }
+}
+
 public sealed record GithubLoginPrompt(string DeviceCode, string BrowserUrl, bool BrowserOpened);
 
 public static class GitHubAuth

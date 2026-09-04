@@ -22,17 +22,24 @@
         </button>
         <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
         <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
-        <button type="button" class="gh-id @(S.GithubLoggedIn ? null : "is-muted")" title="GitHub 操作台（Ctrl+G）" @onclick="S.ToggleGithubHub">
-            @if (S.GithubLoggedIn)
-            {
+        <div class="gh-cluster">
+            <button type="button"
+                    class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
+                    title="開啟 GitHub 操作台（Ctrl+G）"
+                    aria-haspopup="true"
+                    aria-expanded="@S.GithubHubOpen"
+                    @onclick="S.ToggleGithubHub">
+                GitHub 操作台
+                @if (S.HasUncommitted)
+                {
+                    <span class="gh-hub-badge">@S.GitBrief!.DirtyCount</span>
+                }
+            </button>
+            <button type="button" class="gh-id is-@S.GithubStatusTone" title="@S.GithubStatusTitle" @onclick="S.ToggleGithubHub">
                 <span class="gh-id-dot" aria-hidden="true"></span>
-                <span>@S.GithubAccountText</span>
-            }
-            else
-            {
-                <span>GitHub</span>
-            }
-        </button>
+                <span>@S.GithubAccountLabel</span>
+            </button>
+        </div>
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
 
@@ -109,15 +116,7 @@
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
             <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
             <button type="button"
-                    class="git-pulse-mark row-end @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
-                    title="開啟 GitHub 操作台（Ctrl+G）"
-                    aria-haspopup="true"
-                    aria-expanded="@S.GithubHubOpen"
-                    @onclick="S.ToggleGithubHub">
-                GitHub 操作台
-            </button>
-            <button type="button"
-                    class="btn-sec @(S.AskPanelOpen ? "is-open" : null)"
+                    class="btn-sec row-end @(S.AskPanelOpen ? "is-open" : null)"
                     title="用本機堆疊事實回答專案問題"
                     aria-haspopup="dialog"
                     aria-expanded="@S.AskPanelOpen"
@@ -751,34 +750,7 @@
 
 @if (S.Dialog == "commit")
 {
-    <div class="overlay" @onclick="S.CloseDialog">
-        <div class="dialog dialog-lg" @onclick:stopPropagation="true">
-            <h2>提交變更</h2>
-            <p class="hint">@S.CommitHint</p>
-            <div class="field" style="align-items:start">
-                <span>檔案</span>
-                <pre class="change-list">@string.Join('\n', S.CommitChanges.Select(c => c.Display()))</pre>
-            </div>
-            <div class="field" style="align-items:start">
-                <span>說明</span>
-                <div>
-                    <textarea @bind="S.CommitMessage" placeholder="例如：修正搜尋條件驗證。也可按「AI 建議」。" style="min-height:110px"></textarea>
-                    <div class="btn-row">
-                        <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.SuggestCommitMessageAsync">AI 建議</button>
-                    </div>
-                    @if (!string.IsNullOrEmpty(S.CommitSuggestHint))
-                    {
-                        <p class="hint">@S.CommitSuggestHint</p>
-                    }
-                </div>
-            </div>
-            <label class="check"><input type="checkbox" checked="@S.CommitPushAfter" @onchange="e => S.CommitPushAfter = (bool)(e.Value ?? false)" /> 提交後發布（push）目前分支</label>
-            <div class="dialog-actions">
-                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
-                <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ConfirmCommitAsync">提交</button>
-            </div>
-        </div>
-    </div>
+    <CommitDialog />
 }
 
 @if (S.Dialog == "release")
