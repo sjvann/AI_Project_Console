@@ -56,6 +56,27 @@ public class SelfUpdateTests
     }
 
     [Fact]
+    public void ParseLatest_EmptyAssets_OpensReleasesForInstalled()
+    {
+        const string json = """
+            {
+              "tag_name": "v0.6.10",
+              "name": "v0.6.10",
+              "html_url": "https://github.com/sjvann/AI_Project_Console/releases/tag/v0.6.10",
+              "assets": []
+            }
+            """;
+        var update = SelfUpdate.ParseLatest(json, "0.6.9", "win-x64");
+        Assert.NotNull(update);
+        Assert.Null(update!.SetupAsset);
+        Assert.Null(update.ZipAsset);
+        Assert.Equal(UpdateApplyMode.OpenReleases, SelfUpdate.ResolveApplyMode(update, InstallKind.Installed));
+        var hint = SelfUpdate.CannotApplyHint(update, InstallKind.Installed);
+        Assert.Contains("沒有適用於 win-x64 的安裝檔", hint);
+        Assert.Contains("-setup.exe", hint);
+    }
+
+    [Fact]
     public void DetectInstallKind_RecognizesDevBinFolder()
     {
         var root = Path.Combine(Path.GetTempPath(), "ai-console-upd-" + Guid.NewGuid().ToString("N"));

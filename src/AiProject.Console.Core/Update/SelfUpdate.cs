@@ -249,6 +249,14 @@ public static class SelfUpdate
     public static string DevelopmentHint(AvailableUpdate update) =>
         $"發現新版本 {update.Tag}（目前 v{AppInfo.Version}）。\n\n目前是從原始碼／開發目錄執行，無法直接覆蓋。\n請 git pull 後重新編譯，或從 Releases 下載安裝包：\n{update.HtmlUrl}";
 
+    public static string CannotApplyHint(AvailableUpdate update, InstallKind kind)
+    {
+        if (kind == InstallKind.Development)
+            return DevelopmentHint(update);
+        var rid = RuntimeId();
+        return $"Release {update.Tag} 沒有適用於 {rid} 的安裝檔（需要檔名含 {rid} 且以 -setup.exe 或 .zip 結尾）。\n\n自動更新因此改開 GitHub 頁。請用 GitHub 操作台發行此控制台時附加安裝包。\n{update.HtmlUrl}";
+    }
+
     public static bool IsSetupAsset(string name, string runtimeId) =>
         name.Contains(runtimeId, StringComparison.OrdinalIgnoreCase)
         && name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase);

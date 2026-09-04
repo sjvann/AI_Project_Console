@@ -243,6 +243,16 @@ public sealed partial class ConsoleSession : IDisposable
     public bool ReleaseGenerateNotes { get; set; } = true;
     public bool ReleaseMakeLatest { get; set; } = true;
     public List<string> ReleaseAssets { get; } = [];
+    public bool ReleasePackable { get; private set; }
+    public bool ReleaseHasSetup => ConsoleReleasePack.HasSetupAsset(ReleaseAssets);
+    public string ReleasePackHint =>
+        !ReleasePackable
+            ? ""
+            : ReleaseHasSetup
+                ? "已附上 *-win-x64-setup.exe。已安裝使用者按「立即更新」會啟動安裝程式。"
+                : ReleaseDraft
+                    ? "草稿可不附安裝包。正式發行前請打包，否則自動更新會改開 GitHub 頁。"
+                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先執行 scripts/pack-win.ps1 再上傳。沒有這個檔，自動更新只能開 GitHub 頁。";
     public string CommitMessage { get; set; } = "";
     public string CommitSubject { get; set; } = "";
     public string CommitBody { get; set; } = "";
@@ -2442,7 +2452,9 @@ public sealed partial class ConsoleSession : IDisposable
         if (mode is UpdateApplyMode.None or UpdateApplyMode.OpenReleases)
         {
             SelfUpdate.OpenReleases(update.HtmlUrl);
-            _native.Info("無法自動覆蓋", SelfUpdate.DevelopmentHint(update));
+            _native.Info(
+                kind == InstallKind.Development ? "無法自動覆蓋" : "找不到安裝包",
+                SelfUpdate.CannotApplyHint(update, kind));
             return;
         }
 
@@ -2450,7 +2462,7 @@ public sealed partial class ConsoleSession : IDisposable
         if (asset is null)
         {
             SelfUpdate.OpenReleases(update.HtmlUrl);
-            _native.Info("找不到安裝包", $"Release {update.Tag} 沒有適用於 {SelfUpdate.RuntimeId()} 的安裝檔。請從 Releases 頁手動下載。");
+            _native.Info("找不到安裝包", SelfUpdate.CannotApplyHint(update, kind));
             return;
         }
 
@@ -3217,9 +3229,13 @@ public sealed partial class ConsoleSession : IDisposable
         if (string.IsNullOrEmpty(source.Prefix))
             source = source with { Prefix = "v" };
         var next = ReleaseVersion.Bump(source, part).ToTag();
-        if (string.IsNullOrWhiteSpace(ReleaseTitle) || ReleaseTitle == ReleaseTag)
-            ReleaseTitle = next;
+        var oldTag = ReleaseTag;
+        if (string.IsNullOrWhiteSpace(ReleaseTitle)
+            || ReleaseTitle == oldTag
+            || ReleaseTitle == oldTag + " " + AppInfo.Product)
+            ReleaseTitle = ReleasePackable ? next + " " + AppInfo.Product : next;
         ReleaseTag = next;
+        AttachReleaseDistAssets();
         Notify();
     }
 
@@ -3245,6 +3261,39 @@ public sealed partial class ConsoleSession : IDisposable
         Notify();
     }
 
+    public async Task PackReleaseAssetsAsync()
+    {
+        if (Catalog is null || !ReleasePackable)
+            return;
+        var tag = ReleaseTag.Trim();
+        if (!ReleaseVersion.IsValidTag(tag))
+        {
+            _native.Warn("版號無效", "請先填寫版號／Tag，例如 v1.2.3。");
+            return;
+        }
+        PackedReleaseAssets? packed = null;
+        await RunJobAsync("打包 Windows 安裝包…", async () =>
+        {
+            var progress = new Progress<string>(text =>
+            {
+                JobText = text;
+                Notify();
+            });
+            packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
+            return packed.HasSetup
+                ? "已附上 " + Path.GetFileName(packed.SetupPath) + "。"
+                : "打包完成。";
+        }).ConfigureAwait(false);
+        if (packed is null)
+            return;
+        foreach (var p in packed.ExistingPaths())
+        {
+            if (!ReleaseAssets.Contains(p))
+                ReleaseAssets.Add(p);
+        }
+        Notify();
+    }
+
     public async Task ConfirmReleaseAsync()
     {
         if (Catalog is null)
@@ -3260,22 +3309,60 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Error("需要 GitHub CLI", "請安裝 gh：https://cli.github.com/ 並執行 gh auth login。");
             return;
         }
+        var packable = ReleasePackable;
+        var draft = ReleaseDraft;
+        var needsPack = ConsoleReleasePack.RequiresInstaller(packable, draft)
+            && !ConsoleReleasePack.HasSetupAsset(ReleaseAssets);
         var title = string.IsNullOrWhiteSpace(ReleaseTitle) ? tag : ReleaseTitle.Trim();
-        var kind = ReleaseDraft ? "草稿" : ReleasePrerelease ? "預發行" : "正式發行";
-        if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}\n\n確定發行？"))
+        var kind = draft ? "草稿" : ReleasePrerelease ? "預發行" : "正式發行";
+        var extra = ConsoleReleasePack.RequiresInstaller(packable, draft)
+            ? "\n\n會附加 Windows 安裝包（沒有則先執行 pack-win.ps1，並把版號寫進 AppInfo 等檔案）。已安裝使用者才能自動啟動安裝程式。"
+            : "";
+        if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}{extra}\n\n確定發行？"))
             return;
-        var req = new ReleaseRequest(
-            Tag: tag,
-            Title: title,
-            Notes: ReleaseNotes,
-            Target: ReleaseTarget,
-            Draft: ReleaseDraft,
-            Prerelease: ReleasePrerelease,
-            GenerateNotes: ReleaseGenerateNotes,
-            MakeLatest: ReleaseMakeLatest,
-            Assets: [.. ReleaseAssets]);
+        var notes = ReleaseNotes;
+        var assets = ReleaseAssets.ToList();
+        var target = ReleaseTarget;
+        var prerelease = ReleasePrerelease;
+        var generateNotes = ReleaseGenerateNotes;
+        var makeLatest = ReleaseMakeLatest;
         CloseDialog();
-        await RunJobAsync("發行 Release…", async () => await GitHubService.CreateReleaseAsync(Catalog, req)).ConfigureAwait(false);
+        await RunJobAsync(needsPack ? "打包並發行 Release…" : "發行 Release…", async () =>
+        {
+            if (ConsoleReleasePack.RequiresInstaller(packable, draft))
+            {
+                if (!ConsoleReleasePack.HasSetupAsset(assets))
+                {
+                    var progress = new Progress<string>(text =>
+                    {
+                        JobText = text;
+                        Notify();
+                    });
+                    var packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
+                    foreach (var p in packed.ExistingPaths())
+                    {
+                        if (!assets.Contains(p))
+                            assets.Add(p);
+                    }
+                    notes = ConsoleReleasePack.MergeNotes(notes, packed);
+                }
+                else
+                    notes = ConsoleReleasePack.MergeNotes(notes, ConsoleReleasePack.FromAssetPaths(tag, assets));
+                if (!ConsoleReleasePack.HasSetupAsset(assets))
+                    throw new InvalidOperationException("正式發行此控制台必須附加 *-win-x64-setup.exe，否則已安裝使用者的自動更新會改開 GitHub 頁。");
+            }
+            var req = new ReleaseRequest(
+                Tag: tag,
+                Title: title,
+                Notes: notes,
+                Target: target,
+                Draft: draft,
+                Prerelease: prerelease,
+                GenerateNotes: generateNotes,
+                MakeLatest: makeLatest,
+                Assets: assets);
+            return await GitHubService.PublishReleaseAsync(Catalog, req).ConfigureAwait(false);
+        }).ConfigureAwait(false);
         StampReleaseOnIntake(tag);
     }
 
@@ -3923,8 +4010,13 @@ public sealed partial class ConsoleSession : IDisposable
         }).ConfigureAwait(false);
         if (inspect is null)
             return;
-        ReleaseTag = inspect.SuggestedTag;
-        ReleaseTitle = inspect.SuggestedTag;
+        ReleasePackable = inspect.Packable;
+        ReleaseLatestTag = inspect.LatestGithubTag;
+        if (inspect.Packable && !inspect.LatestHasSetup && !string.IsNullOrEmpty(inspect.LatestGithubTag))
+            ReleaseTag = inspect.LatestGithubTag;
+        else
+            ReleaseTag = inspect.SuggestedTag;
+        ReleaseTitle = inspect.Packable ? ReleaseTag + " " + AppInfo.Product : ReleaseTag;
         ReleaseNotes = "";
         ReleaseTarget = inspect.CurrentBranch;
         ReleaseDraft = false;
@@ -3933,9 +4025,21 @@ public sealed partial class ConsoleSession : IDisposable
         ReleaseMakeLatest = true;
         ReleaseAssets.Clear();
         ReleaseHint = inspect.Summary;
-        ReleaseLatestTag = inspect.LatestGithubTag;
+        AttachReleaseDistAssets();
         Dialog = "release";
         Notify();
+    }
+
+    void AttachReleaseDistAssets()
+    {
+        if (Catalog is null || !ReleasePackable)
+            return;
+        ReleaseAssets.RemoveAll(ConsoleReleasePack.IsConsoleDistAsset);
+        foreach (var p in ConsoleReleasePack.FindExisting(Catalog.Root, ReleaseTag).ExistingPaths())
+        {
+            if (!ReleaseAssets.Contains(p))
+                ReleaseAssets.Add(p);
+        }
     }
 
     private async Task PublishCurrentBranchAsync()
@@ -4774,6 +4878,7 @@ public sealed partial class ConsoleSession : IDisposable
         ReleasePrerelease = false;
         ReleaseGenerateNotes = true;
         ReleaseMakeLatest = true;
+        ReleasePackable = false;
         ReleaseAssets.Clear();
         _pendingOpenCursor = false;
         GithubAuthBusy = false;

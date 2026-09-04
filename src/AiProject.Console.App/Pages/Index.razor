@@ -780,7 +780,11 @@
             <div class="field" style="align-items:start">
                 <span>附加檔案</span>
                 <div>
-                    @if (S.ReleaseAssets.Count == 0)
+                    @if (S.ReleasePackable)
+                    {
+                        <p class="hint">@S.ReleasePackHint</p>
+                    }
+                    else if (S.ReleaseAssets.Count == 0)
                     {
                         <p class="hint">選填。可附加安裝包、zip 等資產。</p>
                     }
@@ -788,7 +792,13 @@
                     {
                         <div class="row"><span class="grow hint">@f</span><button class="btn-link" @onclick="@(() => S.RemoveReleaseAsset(f))">移除</button></div>
                     }
-                    <button class="btn-sec" @onclick="S.AddReleaseAssetAsync">加入檔案…</button>
+                    <div class="btn-row">
+                        @if (S.ReleasePackable)
+                        {
+                            <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.PackReleaseAssetsAsync">打包 Windows 安裝包</button>
+                        }
+                        <button class="btn-sec" @onclick="S.AddReleaseAssetAsync">加入檔案…</button>
+                    </div>
                 </div>
             </div>
             <div class="dialog-actions">

@@ -81,6 +81,7 @@
 
 - 開發模式（`dotnet run`）不能用「立即更新」覆蓋。
 - 橫幅被「稍後再說」略過後，同一版號不會再煩你，直到更新的 tag。
+- 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少 `*-win-x64-setup.exe`。請用 GitHub 操作台「發行 Release…」打包並補上安裝包。
 - 可手動按「檢查更新」。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。
 
 ## MCP 審計是空的

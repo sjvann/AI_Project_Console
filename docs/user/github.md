@@ -79,7 +79,7 @@ Pulse 有未提交時會直接出現「提交…」。
 
 | 動作 | 說明 |
 |------|------|
-| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案 |
+| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 `*-win-x64-setup.exe`／zip（沒有安裝程式時，已安裝使用者的「立即更新」只能開 GitHub 頁） |
 | **Release 列表** | `gh release list` |
 | **開啟 Releases** | 瀏覽器開 GitHub Releases |
 | **開啟倉庫** | 瀏覽器開倉庫首頁 |
@@ -89,4 +89,4 @@ Pulse 有未提交時會直接出現「提交…」。
 
 這些項目在操作台「遠端協作」與「發行與 CI」。推送（含「提交後再 push」）之後，Pulse 會監看這次 CI。目前分支若有 PR（或不是預設分支），Pulse 也會顯示檢查是否通過。設定裡可勾「發布前先跑本機測試」。
 
-發行此控制台自己的安裝包，是維護者流程，見 [scripts/README.md](../../scripts/README.md)。
+發行**此控制台**自己的安裝包：在操作台按「發行 Release…」。會執行 `scripts/pack-win.ps1`、把 setup.exe 與 zip 附上；若該 tag 已存在則改為補上傳資產。手動指令見 [scripts/README.md](../../scripts/README.md)。

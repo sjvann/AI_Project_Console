@@ -289,6 +289,9 @@ public sealed class ReleaseInspect
     public string CurrentBranch { get; init; } = "";
     public string Summary { get; init; } = "";
     public bool GhOk { get; init; }
+    public IReadOnlyList<string> LatestAssetNames { get; init; } = [];
+    public bool LatestHasSetup { get; init; }
+    public bool Packable { get; init; }
 }
 
 public sealed record GitChange(string Code, string Path, string? OriginalPath = null)
@@ -1165,6 +1168,20 @@ public static class GitHubService
         if (cBranch != 0 || branch == "HEAD")
             branch = cfg.DefaultBranch;
         var suggested = ReleaseVersion.SuggestTag(latestGh, gitTag, projectVer);
+        var packable = ConsoleReleasePack.LooksPackable(catalog.Root);
+        IReadOnlyList<string> latestAssets = [];
+        if (ghOk && !string.IsNullOrEmpty(latestGh))
+        {
+            try
+            {
+                latestAssets = await ListReleaseAssetNamesAsync(catalog, cfg, latestGh).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                recentLines.Add("無法讀取最新 Release 資產：" + FirstLine(ex.Message));
+            }
+        }
+        var latestHasSetup = ConsoleReleasePack.HasSetupAsset(latestAssets);
 
         var summary = new List<string>
         {
@@ -1174,7 +1191,24 @@ public static class GitHubService
             $"建議下一版：{suggested}",
             "",
         };
+        if (packable)
+        {
+            if (string.IsNullOrEmpty(latestGh))
+                summary.Add("自動更新需要附加 *-win-x64-setup.exe。正式發行時會先打包再上傳。");
+            else if (!latestHasSetup)
+                summary.Add($"最新 {latestGh} 沒有 *-win-x64-setup.exe。已安裝使用者的自動更新會改開 GitHub 頁。發行時會打包並補上。");
+            else
+                summary.Add($"最新 {latestGh} 已附安裝程式。");
+            summary.Add("");
+        }
         summary.AddRange(recentLines);
+        if (latestAssets.Count > 0)
+        {
+            summary.Add("");
+            summary.Add("最新資產：");
+            foreach (var name in latestAssets)
+                summary.Add("  " + name);
+        }
 
         return new ReleaseInspect
         {
@@ -1185,6 +1219,9 @@ public static class GitHubService
             CurrentBranch = branch,
             Summary = string.Join('\n', summary),
             GhOk = ghOk,
+            LatestAssetNames = latestAssets,
+            LatestHasSetup = latestHasSetup,
+            Packable = packable,
         };
     }
 
@@ -1255,10 +1292,110 @@ public static class GitHubService
             args.Add(asset);
         }
 
-        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 300_000).ConfigureAwait(false);
+        var timeout = req.Assets is { Count: > 0 } ? 600_000 : 300_000;
+        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, timeout).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"建立 Release {tag} 失敗。" : output);
         return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
+    }
+
+    public static async Task<string> PublishReleaseAsync(ProjectCatalog catalog, ReleaseRequest req, GithubConfig? cfg = null)
+    {
+        try
+        {
+            return await CreateReleaseAsync(catalog, req, cfg).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (LooksLikeReleaseExists(ex.Message) && req.Assets is { Count: > 0 })
+        {
+            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, req.Assets, cfg).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(uploaded)
+                ? $"Release {req.Tag.Trim()} 已存在，已補上安裝包。"
+                : uploaded;
+        }
+    }
+
+    public static async Task<string> UploadReleaseAssetsAsync(
+        ProjectCatalog catalog,
+        string tag,
+        IReadOnlyList<string> assets,
+        GithubConfig? cfg = null)
+    {
+        if (!GhAvailable())
+            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
+        var name = (tag ?? "").Trim();
+        if (!ReleaseVersion.IsValidTag(name))
+            throw new InvalidOperationException("請填寫有效版號／Tag，例如 v1.2.3。");
+        if (ReleaseVersion.TryParse(name, out var parsed))
+            name = string.IsNullOrEmpty(parsed.Prefix) ? "v" + parsed.ToTag() : parsed.ToTag();
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var args = new List<string> { "release", "upload", name };
+        GhCli.AddRepo(args, cfg);
+        args.Add("--clobber");
+        var any = false;
+        foreach (var asset in assets)
+        {
+            if (string.IsNullOrWhiteSpace(asset))
+                continue;
+            if (!File.Exists(asset))
+                throw new InvalidOperationException("找不到附加檔案：" + asset);
+            args.Add(asset);
+            any = true;
+        }
+        if (!any)
+            throw new InvalidOperationException("沒有可上傳的安裝包。");
+        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 600_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"上傳 Release {name} 資產失敗。" : output);
+        return string.IsNullOrEmpty(output) ? $"已補上 Release {name} 的安裝包。" : output;
+    }
+
+    public static bool LooksLikeReleaseExists(string? text)
+    {
+        var t = text ?? "";
+        return t.Contains("already exists", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("already_exists", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("HTTP 422", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static async Task<IReadOnlyList<string>> ListReleaseAssetNamesAsync(
+        ProjectCatalog catalog,
+        GithubConfig cfg,
+        string tag)
+    {
+        var name = (tag ?? "").Trim();
+        if (string.IsNullOrEmpty(name))
+            return [];
+        var args = new List<string> { "release", "view", name, "--json", "assets" };
+        GhCli.AddRepo(args, cfg);
+        var (code, stdout, stderr) = await GhCli.RunCaptureAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(stderr) ? (string.IsNullOrEmpty(stdout) ? "無法讀取 Release 資產。" : stdout) : stderr);
+        return ParseReleaseAssetNames(stdout);
+    }
+
+    public static IReadOnlyList<string> ParseReleaseAssetNames(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+                return [];
+            var list = new List<string>();
+            foreach (var el in assets.EnumerateArray())
+            {
+                var name = el.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                if (!string.IsNullOrWhiteSpace(name))
+                    list.Add(name);
+            }
+            return list;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     public static async Task<IReadOnlyList<ReleaseItem>> ListReleaseItemsAsync(ProjectCatalog catalog, GithubConfig cfg, int limit)

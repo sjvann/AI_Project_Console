@@ -57,6 +57,8 @@ dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained 
 
 macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
 
+也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節打包，並把兩個檔附上 Release。沒有 `*-win-x64-setup.exe` 時，已安裝使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。
+
 ## 4. 建立 GitHub Release
 
 ```powershell
