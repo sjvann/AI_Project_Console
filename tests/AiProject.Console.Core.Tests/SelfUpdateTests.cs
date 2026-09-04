@@ -72,7 +72,7 @@ public class SelfUpdateTests
         Assert.Null(update.ZipAsset);
         Assert.Equal(UpdateApplyMode.OpenReleases, SelfUpdate.ResolveApplyMode(update, InstallKind.Installed));
         var hint = SelfUpdate.CannotApplyHint(update, InstallKind.Installed);
-        Assert.Contains("沒有適用於 win-x64 的安裝檔", hint);
+        Assert.Contains("沒有適用於 " + SelfUpdate.RuntimeId() + " 的安裝檔", hint);
         Assert.Contains("-setup.exe", hint);
     }
 
