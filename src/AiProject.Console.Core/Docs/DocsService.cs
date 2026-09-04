@@ -711,13 +711,13 @@ public static class DocsService
             ct.ThrowIfCancellationRequested();
             if (!handle.IsRunning)
                 throw new InvalidOperationException(ServeFailMessage(handle.Output));
-            if (handle.LooksReady || await IsHttpUpAsync(handle.Url, ct).ConfigureAwait(false))
+            if (await IsHttpUpAsync(handle.Url, ct).ConfigureAwait(false))
                 return;
             await Task.Delay(400, ct).ConfigureAwait(false);
         }
         if (!handle.IsRunning)
             throw new InvalidOperationException(ServeFailMessage(handle.Output));
-        if (await IsHttpUpAsync(handle.Url, ct).ConfigureAwait(false) || handle.LooksReady)
+        if (await IsHttpUpAsync(handle.Url, ct).ConfigureAwait(false))
             return;
         throw new InvalidOperationException(
             "DocFX 預覽逾時，網站還沒回應。第一次建置 API 文件可能較久，請稍後再按「網站預覽」。"
