@@ -15,6 +15,11 @@
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- Windows 會擋未簽名的 Debug apphost（dotnet run → 存取被拒）。改由已簽名的 dotnet.exe 載入 DLL。 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Markdig" Version="0.41.3" />
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />

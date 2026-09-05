@@ -12,6 +12,8 @@
 dotnet run --project src/AiProject.Console.App
 ```
 
+Debug 建置不產生 `AI_Project_Console.exe`（改由 `dotnet.exe` 載入 DLL）。Windows 若擋未簽名的 apphost，會出現「存取被拒」；這是為了避開該限制。Release／安裝包仍用 exe。
+
 發布單檔執行檔：
 
 ```powershell
