@@ -3,12 +3,12 @@ using System.Text.RegularExpressions;
 namespace AiProject.Console.Core.GitHub;
 
 /// <summary>
-/// 完成 Issue 的兩步：留言回報 ≠ 建立 PR。後者要在功能分支上，合併才關閉任務。
+/// 完成 Issue：看內容 → 討論。不是問題就結案；自己做得到就開分支／建 PR；處理不了才請 Agent。
 /// </summary>
 public static class IssueCompletion
 {
     public const string DialogHint =
-        "先看這則任務的內容，再請 Agent 協助。做完之後才留言回報或開 PR。";
+        "先看內容與圖，再討論。不是問題就結案；自己做得到就開分支、建 PR。處理不了才請 Agent。";
 
     public static string? CreatePrBlockReason(
         GitBriefStatus? brief,
@@ -26,7 +26,7 @@ public static class IssueCompletion
         if (GitHubNextAction.IsDefaultBranch(brief.Branch, defaultBranch))
             return $"目前在預設分支「{brief.Branch}」，不能對自己開 PR。請先為此任務建立功能分支，再提交、發布，然後建立 PR。";
         if (brief.DirtyCount > 0)
-            return $"工作區有 {brief.DirtyCount} 筆未提交變更。「送出回應」只會寫進 Issue 討論，不會把程式改動送上 GitHub。請先提交，再發布並建立 PR。";
+            return $"工作區有 {brief.DirtyCount} 筆未提交變更。討論留言不會把程式改動送上 GitHub。請先提交，再發布並建立 PR。";
         if (brief.Behind is > 0)
             return $"目前分支落後遠端 {brief.Behind} 個提交。請先同步，再建立 PR。";
         if (!brief.HasUpstream)

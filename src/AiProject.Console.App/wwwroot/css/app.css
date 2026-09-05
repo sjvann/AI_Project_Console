@@ -279,7 +279,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .prefs-body .check { margin: 10px 0; }
 .prefs-body > .hint:first-child, .prefs-body .mcp-block:first-child, .prefs-body .mcp-prefs > .hint:first-child, .prefs-body .mcp-prefs > .mcp-block:first-child { margin-top: 0; }
 .prefs-dialog .dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); }
-.prefs-sub { margin: 16px 0 6px; font-size: 13px; color: var(--text); }
+.prefs-sub { margin: 16px 0 6px; font-size: 13px; font-weight: 700; color: var(--text); }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
 .field-inline { display: flex; gap: 8px; align-items: center; }
 .field-inline input, .field-inline select { flex: 1; min-width: 0; }
@@ -397,8 +397,10 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-empty { padding: 12px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .issue-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .issue-section-title { margin: 10px 0 6px; font: 700 13px "Segoe UI", "Noto Sans TC", sans-serif; }
-.issue-body { margin: 0; max-height: min(42vh, 360px); overflow: auto; }
-.issue-body img { max-width: 100%; height: auto; }
+.issue-body { margin: 0; max-height: min(48vh, 420px); overflow: auto; }
+.issue-body img, .issue-comment-body img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
+.issue-discuss { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.issue-discuss-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .issue-comments { display: flex; flex-direction: column; gap: 8px; }
 .issue-comment { padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
 .issue-comment-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }

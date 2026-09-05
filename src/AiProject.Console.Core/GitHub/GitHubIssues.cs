@@ -38,6 +38,9 @@ public sealed record GithubIssue(
         !string.IsNullOrEmpty(login)
         && Assignees.Any(a => string.Equals(a, login, StringComparison.OrdinalIgnoreCase));
 
+    public bool IsOpen =>
+        !string.Equals(State, "CLOSED", StringComparison.OrdinalIgnoreCase);
+
     public string WhenText() => FormatWhen(UpdatedAt);
 
     public static string FormatWhen(string? iso)

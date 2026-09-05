@@ -215,7 +215,11 @@ public static class CursorLauncher
         return string.Join('\n', lines) + "\n" + AgentPlaybook.VerificationHint();
     }
 
-    public static string BuildIssueAgentPrompt(string root, GithubIssue issue)
+    public static string BuildIssueAgentPrompt(
+        string root,
+        GithubIssue issue,
+        IReadOnlyList<GithubIssueComment>? comments = null,
+        string? confirmedNotes = null)
     {
         var title = string.IsNullOrWhiteSpace(issue.Title) ? "（未命名）" : issue.Title.Trim();
         var body = string.IsNullOrWhiteSpace(issue.Body) ? "（沒有內文）" : issue.Body.Trim();
@@ -223,17 +227,38 @@ public static class CursorLauncher
             body = body[..MaxLogChars].TrimEnd() + "\n…（內文過長，已截斷）";
         var labels = issue.Labels.Count == 0 ? "（無）" : string.Join(", ", issue.Labels);
         var url = string.IsNullOrEmpty(issue.Url) ? "（無）" : issue.Url;
-        return
-            "請協助處理指派給我的 GitHub Issue。先理解需求，再直接在此工作區實作；優先完成任務，不要只做說明。"
-            + "改完後簡短說明改了什麼、如何驗證。\n\n"
-            + $"專案根目錄：{root}\n"
-            + $"Issue：{issue.NumberText} {title}\n"
-            + $"網址：{url}\n"
-            + $"標籤：{labels}\n\n"
-            + "Issue 內容：\n"
-            + body
-            + "\n"
-            + AgentPlaybook.VerificationHint();
+        var lines = new List<string>
+        {
+            "請協助處理指派給我的 GitHub Issue。這是我自己處理不了、才請你實作的。先理解需求與討論紀錄，再直接在此工作區實作；優先完成任務，不要只做說明。",
+            "改完後簡短說明改了什麼、如何驗證。",
+            "",
+            $"專案根目錄：{root}",
+            $"Issue：{issue.NumberText} {title}",
+            $"網址：{url}",
+            $"標籤：{labels}",
+            "",
+            "Issue 內容：",
+            body,
+        };
+        if (comments is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("討論紀錄：");
+            foreach (var comment in comments.TakeLast(8))
+            {
+                var text = string.IsNullOrWhiteSpace(comment.Body) ? "（無）" : comment.Body.Trim();
+                if (text.Length > 800)
+                    text = text[..800].TrimEnd() + "…";
+                lines.Add($"- {comment.AuthorText}：{text}");
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(confirmedNotes))
+        {
+            lines.Add("");
+            lines.Add("確認補充：");
+            lines.Add(confirmedNotes.Trim());
+        }
+        return string.Join('\n', lines) + "\n" + AgentPlaybook.VerificationHint();
     }
 
     public static string PromptDeeplinkUrl(string promptText) =>

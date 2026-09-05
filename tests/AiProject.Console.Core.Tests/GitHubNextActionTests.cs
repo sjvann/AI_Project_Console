@@ -108,10 +108,12 @@ public class GitHubNextActionTests
     }
 
     [Fact]
-    public void DialogHint_StartsWithReadingThenAgent()
+    public void DialogHint_DiscussThenCloseOrSelfOrAgent()
     {
-        Assert.Contains("先看", IssueCompletion.DialogHint);
-        Assert.Contains("請 Agent", IssueCompletion.DialogHint);
+        Assert.Contains("討論", IssueCompletion.DialogHint);
+        Assert.Contains("結案", IssueCompletion.DialogHint);
+        Assert.Contains("PR", IssueCompletion.DialogHint);
+        Assert.Contains("Agent", IssueCompletion.DialogHint);
         Assert.DoesNotContain("兩者不是同一件事", IssueCompletion.DialogHint);
     }
 
@@ -143,7 +145,7 @@ public class GitHubNextActionTests
     {
         var reason = IssueCompletion.CreatePrBlockReason(
             new GitBriefStatus("issue-4", 3, 0, 0), "main", hasPr: false);
-        Assert.Contains("送出回應", reason);
+        Assert.Contains("討論留言", reason);
         Assert.Contains("未提交", reason);
     }
 
