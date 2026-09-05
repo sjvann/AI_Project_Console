@@ -9,7 +9,7 @@
 ## 前置需求
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [Inno Setup 6](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，用於 `*-setup.exe`）
+- [Inno Setup 6 或 7](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，用於 `*-setup.exe`）
 - [GitHub CLI](https://cli.github.com/) 已登入：`gh auth login`
 - 在倉庫根目錄執行下列指令
 
@@ -57,7 +57,7 @@ dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained 
 
 macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
 
-也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節打包，並把兩個檔附上 Release。沒有 `*-win-x64-setup.exe` 時，已安裝使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。
+也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節打包，並把兩個檔附上 Release。畫面會顯示步驟與紀錄（編譯可能要數分鐘）。沒有 `*-win-x64-setup.exe` 時，已安裝使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。
 
 ## 4. 建立 GitHub Release
 

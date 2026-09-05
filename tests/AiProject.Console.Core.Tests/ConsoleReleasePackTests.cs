@@ -125,12 +125,75 @@ public class ConsoleReleasePackTests
     }
 
     [Fact]
-    public void LooksLikeReleaseExists_FromGhError()
+    public void InterpretPackLine_MapsStagesAndSkipsNoise()
     {
-        Assert.True(GitHubService.LooksLikeReleaseExists("Release.tag_name already exists"));
-        Assert.True(GitHubService.LooksLikeReleaseExists("{\"code\":\"already_exists\"}"));
-        Assert.True(GitHubService.LooksLikeReleaseExists("HTTP 422: Validation Failed"));
-        Assert.False(GitHubService.LooksLikeReleaseExists("not found"));
+        var (stage, user) = ConsoleReleasePack.InterpretPackLine("PACK:publish");
+        Assert.Equal("publish", stage);
+        Assert.Contains("編譯", user);
+
+        var noise = ConsoleReleasePack.InterpretPackLine("Workload updates are available. For more information, run:");
+        Assert.Null(noise.UserLine);
+
+        var restore = ConsoleReleasePack.InterpretPackLine("  Determining projects to restore...");
+        Assert.Equal("publish", restore.StageId);
+        Assert.Contains("還原", restore.UserLine);
+
+        var error = ConsoleReleasePack.InterpretPackLine("error CS0001: bad");
+        Assert.Contains("error CS0001", error.UserLine);
+    }
+
+    [Fact]
+    public void FormatPackError_KeepsFullLogAndMapsInno()
+    {
+        var full = ConsoleReleasePack.FormatPackError("line1\nline2\nline3", "");
+        Assert.Contains("line3", full);
+        Assert.DoesNotContain("請先填寫有效版號", full);
+
+        var inno = ConsoleReleasePack.FormatPackError("", "找不到 Inno Setup 6（ISCC.exe）。請先安裝 https://jrsoftware.org/isinfo.php");
+        Assert.Contains("jrsoftware.org", inno);
+        Assert.Contains('\n', inno);
+    }
+
+    [Fact]
+    public void ReleaseRunState_TracksStepsAndLog()
+    {
+        var run = ReleaseRunState.PackAndPublish();
+        run.Begin();
+        Assert.Equal(ReleaseStepStatus.Active, run.Steps[0].Status);
+        run.Apply(ReleaseRunState.StageLine("publish", "正在編譯 Windows 執行檔（可能要 1–3 分鐘）…"));
+        Assert.Equal(ReleaseStepStatus.Done, run.Steps.First(s => s.Id == "version").Status);
+        Assert.Equal(ReleaseStepStatus.Active, run.Steps.First(s => s.Id == "publish").Status);
+        Assert.Contains("編譯", run.Log);
+        run.Apply("正在編譯 Windows 執行檔（可能要 1–3 分鐘）…");
+        Assert.Single(run.Log.Split('\n'));
+        run.Fail("找不到 Inno Setup（ISCC.exe）。\n請安裝。");
+        Assert.False(run.Busy);
+        Assert.Equal("error", run.Tone);
+        Assert.Equal(ReleaseStepStatus.Error, run.Steps.First(s => s.Id == "publish").Status);
+        Assert.Equal(ReleaseStepStatus.Skipped, run.Steps.First(s => s.Id == "upload").Status);
+        Assert.Equal("找不到 Inno Setup（ISCC.exe）。", run.Headline);
+        Assert.Contains("請安裝。", run.CopyText);
+    }
+
+    [Fact]
+    public void ReleaseRunState_PublishOnlySkipsPack()
+    {
+        var run = ReleaseRunState.PublishOnly();
+        run.Begin();
+        Assert.Equal(ReleaseStepStatus.Skipped, run.Steps.First(s => s.Id == "publish").Status);
+        Assert.Equal(ReleaseStepStatus.Active, run.Steps.First(s => s.Id == "upload").Status);
+        run.Succeed("https://github.com/sjvann/AI_Project_Console/releases/tag/v0.6.10");
+        Assert.Equal(ReleaseStepStatus.Done, run.Steps.First(s => s.Id == "upload").Status);
+        Assert.False(run.Busy);
+    }
+
+    [Fact]
+    public void InterpretGhLine_MapsUpload()
+    {
+        var line = ConsoleReleasePack.InterpretGhLine("Uploading AI_Project_Console-0.6.10-win-x64-setup.exe");
+        Assert.Contains("PACKSTAGE:upload", line);
+        var url = ConsoleReleasePack.InterpretGhLine("https://github.com/sjvann/AI_Project_Console/releases/tag/v0.6.10");
+        Assert.Contains("Release 已建立", url);
     }
 
     static string NewTemp()

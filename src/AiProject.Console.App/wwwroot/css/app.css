@@ -374,6 +374,17 @@ button.gh-id.is-muted { color: var(--muted); }
 .release-badges { display: inline-flex; gap: 8px; white-space: nowrap; }
 .release-when { color: var(--muted); font: 600 12px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .job-log { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--log-bg); color: var(--log-fg); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; overflow: auto; max-height: 280px; }
+.release-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.release-step { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 6px; }
+.release-step.is-active { background: var(--sel); }
+.release-step.is-error { background: var(--fail-row); }
+.release-step.is-skipped { opacity: .55; }
+.release-step-mark { width: 22px; height: 22px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 2px solid var(--border); color: var(--muted); line-height: 1; }
+.release-step.is-done .release-step-mark { background: var(--ok); border-color: var(--ok); color: #fff; }
+.release-step.is-active .release-step-mark { border-color: var(--accent); color: var(--accent); animation: prj-pulse 1.4s ease-in-out infinite; }
+.release-step.is-error .release-step-mark { background: var(--danger); border-color: var(--danger); color: #fff; }
+.release-step strong { font-size: 14px; }
+.release-step .hint { margin: 2px 0 0; }
 .doctor-note { margin: 6px 0 0; }
 .doctor-action { margin-top: 6px; padding: 0; }
 .doctor-action-btn { margin-top: 8px; }

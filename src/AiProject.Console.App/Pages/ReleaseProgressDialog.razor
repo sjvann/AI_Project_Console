@@ -1,0 +1,86 @@
+@if (S.ReleaseRun is { } run)
+{
+    <AppDialog Title="@run.Title"
+               Hint="@(run.Busy ? "請稍候，不要關閉控制台。" : null)"
+               TitleId="release-progress-title"
+               DismissOnOverlay="@(!run.Busy)"
+               OnClose="S.CloseDialog">
+        <ChildContent>
+            <ol class="release-steps" aria-label="發行步驟">
+                @foreach (var step in run.Steps)
+                {
+                    <li class="release-step is-@Css(step.Status)">
+                        <span class="release-step-mark" aria-hidden="true">@Mark(step.Status)</span>
+                        <div>
+                            <strong>@step.Label</strong>
+                            @if (step.Status == ReleaseStepStatus.Active)
+                            {
+                                <p class="hint">@step.Hint　@run.ElapsedText</p>
+                            }
+                            else if (step.Status == ReleaseStepStatus.Skipped)
+                            {
+                                <p class="hint">略過</p>
+                            }
+                        </div>
+                    </li>
+                }
+            </ol>
+            @if (!string.IsNullOrEmpty(run.Headline))
+            {
+                <div class="doctor-summary doctor-@Css(run.Tone)" role="status" aria-atomic="true">
+                    <span class="doctor-summary-dot" aria-hidden="true"></span>
+                    <div class="doctor-summary-text">
+                        <strong>@run.Headline</strong>
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(run.Log))
+            {
+                <pre class="job-log" id="release-log">@run.Log</pre>
+            }
+        </ChildContent>
+        <Actions>
+            @if (run.Busy)
+            {
+                <span class="hint">進行中，請稍候…</span>
+            }
+            else
+            {
+                <button type="button" class="btn-sec" @onclick="S.CopyInfoAsync">@(S.InfoCopied ? "已複製" : "複製紀錄")</button>
+                <span class="grow"></span>
+                <button type="button" class="btn-primary" @onclick="S.CloseDialog">@(S.ReleaseProgressReturnsToForm ? "回到發行表單" : "關閉")</button>
+            }
+        </Actions>
+    </AppDialog>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+
+    static string Css(ReleaseStepStatus status) => status switch
+    {
+        ReleaseStepStatus.Done => "done",
+        ReleaseStepStatus.Active => "active",
+        ReleaseStepStatus.Error => "error",
+        ReleaseStepStatus.Skipped => "skipped",
+        _ => "pending",
+    };
+
+    static string Css(string tone) => tone switch
+    {
+        "ok" => "ok",
+        "error" => "missing",
+        "warn" => "warn",
+        _ => "info",
+    };
+
+    static string Mark(ReleaseStepStatus status) => status switch
+    {
+        ReleaseStepStatus.Done => "✓",
+        ReleaseStepStatus.Active => "●",
+        ReleaseStepStatus.Error => "!",
+        ReleaseStepStatus.Skipped => "–",
+        _ => "",
+    };
+}

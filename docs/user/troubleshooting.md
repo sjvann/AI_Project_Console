@@ -84,6 +84,7 @@
 - 開發模式（`dotnet run`）不能用「立即更新」覆蓋。
 - 橫幅被「稍後再說」略過後，同一版號不會再煩你，直到更新的 tag。
 - 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少 `*-win-x64-setup.exe`。請用 GitHub 操作台「發行 Release…」打包並補上安裝包。
+- 發行進度停在「編譯 Windows 執行檔」：這一步可能要 1–3 分鐘，視窗會顯示已過時間與紀錄。找不到 Inno Setup 會立刻失敗並附上安裝連結。
 - 可到設定按「檢查更新」（會問是否包含 RC）。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。也可「從檔案更新…」選已下載的 setup／zip。
 
 ## MCP 審計是空的

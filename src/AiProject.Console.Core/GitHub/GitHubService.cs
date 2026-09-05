@@ -1300,7 +1300,11 @@ public static class GitHubService
         return true;
     }
 
-    public static async Task<string> CreateReleaseAsync(ProjectCatalog catalog, ReleaseRequest req, GithubConfig? cfg = null)
+    public static async Task<string> CreateReleaseAsync(
+        ProjectCatalog catalog,
+        ReleaseRequest req,
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
     {
         if (!GhAvailable())
             throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
@@ -1340,22 +1344,36 @@ public static class GitHubService
             args.Add(asset);
         }
 
-        var timeout = req.Assets is { Count: > 0 } ? 600_000 : 300_000;
-        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, timeout).ConfigureAwait(false);
+        var hasAssets = req.Assets is { Count: > 0 };
+        progress?.Report(ReleaseRunState.StageLine(
+            "upload",
+            hasAssets ? "正在建立 GitHub Release 並上傳安裝包…" : "正在建立 GitHub Release…"));
+        var timeout = hasAssets ? 600_000 : 300_000;
+        var (code, output) = await GhCli.RunAsync(
+            args,
+            catalog.Root,
+            cfg,
+            timeout,
+            onLine: progress is null ? null : line => ForwardGhLine(progress, line)).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"建立 Release {tag} 失敗。" : output);
         return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
     }
 
-    public static async Task<string> PublishReleaseAsync(ProjectCatalog catalog, ReleaseRequest req, GithubConfig? cfg = null)
+    public static async Task<string> PublishReleaseAsync(
+        ProjectCatalog catalog,
+        ReleaseRequest req,
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
     {
         try
         {
-            return await CreateReleaseAsync(catalog, req, cfg).ConfigureAwait(false);
+            return await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex) when (LooksLikeReleaseExists(ex.Message) && req.Assets is { Count: > 0 })
         {
-            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, req.Assets, cfg).ConfigureAwait(false);
+            progress?.Report(ReleaseRunState.StageLine("upload", "Release 已存在，改為補上傳安裝包…"));
+            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, req.Assets, cfg, progress).ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(uploaded)
                 ? $"Release {req.Tag.Trim()} 已存在，已補上安裝包。"
                 : uploaded;
@@ -1366,7 +1384,8 @@ public static class GitHubService
         ProjectCatalog catalog,
         string tag,
         IReadOnlyList<string> assets,
-        GithubConfig? cfg = null)
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
     {
         if (!GhAvailable())
             throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
@@ -1391,10 +1410,23 @@ public static class GitHubService
         }
         if (!any)
             throw new InvalidOperationException("沒有可上傳的安裝包。");
-        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 600_000).ConfigureAwait(false);
+        progress?.Report(ReleaseRunState.StageLine("upload", "正在上傳安裝包到 GitHub…"));
+        var (code, output) = await GhCli.RunAsync(
+            args,
+            catalog.Root,
+            cfg,
+            600_000,
+            onLine: progress is null ? null : line => ForwardGhLine(progress, line)).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"上傳 Release {name} 資產失敗。" : output);
         return string.IsNullOrEmpty(output) ? $"已補上 Release {name} 的安裝包。" : output;
+    }
+
+    static void ForwardGhLine(IProgress<string> progress, string line)
+    {
+        var user = ConsoleReleasePack.InterpretGhLine(line);
+        if (!string.IsNullOrEmpty(user))
+            progress.Report(user);
     }
 
     public static bool LooksLikeReleaseExists(string? text)

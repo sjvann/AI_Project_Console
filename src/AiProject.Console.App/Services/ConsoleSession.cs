@@ -36,6 +36,7 @@ public sealed partial class ConsoleSession : IDisposable
     private readonly WorkHoursStore _workHours = new();
     private int _timesheetGen;
     private TaskCompletionSource<bool>? _leaveGateTcs;
+    private string? _releaseReturnDialog;
 
     public ConsoleSession(NativeUi native)
     {
@@ -215,6 +216,8 @@ public sealed partial class ConsoleSession : IDisposable
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
     public JobResultView? JobResult { get; private set; }
+    public ReleaseRunState? ReleaseRun { get; private set; }
+    public bool ReleaseProgressReturnsToForm => _releaseReturnDialog == "release";
     public bool InfoCopied { get; private set; }
     public string AlertTitle { get; private set; } = "";
     public string AlertBody { get; private set; } = "";
@@ -257,7 +260,7 @@ public sealed partial class ConsoleSession : IDisposable
                 ? "已附上 *-win-x64-setup.exe。已安裝使用者按「立即更新」會啟動安裝程式。"
                 : ReleaseDraft
                     ? "草稿可不附安裝包。正式發行前請打包，否則自動更新會改開 GitHub 頁。"
-                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先執行 scripts/pack-win.ps1 再上傳。沒有這個檔，自動更新只能開 GitHub 頁。";
+                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先打包再上傳，畫面會顯示步驟與紀錄（編譯可能要 1–3 分鐘）。沒有這個檔，自動更新只能開 GitHub 頁。";
     public string CommitMessage { get; set; } = "";
     public string CommitSubject { get; set; } = "";
     public string CommitBody { get; set; } = "";
@@ -3378,19 +3381,17 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         }
         PackedReleaseAssets? packed = null;
-        await RunJobAsync("打包 Windows 安裝包…", async () =>
-        {
-            var progress = new Progress<string>(text =>
+        var ok = await RunReleaseProgressAsync(
+            ReleaseRunState.PackOnly(),
+            returnDialog: "release",
+            fn: async progress =>
             {
-                JobText = text;
-                Notify();
-            });
-            packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
-            return packed.HasSetup
-                ? "已附上 " + Path.GetFileName(packed.SetupPath) + "。"
-                : "打包完成。";
-        }).ConfigureAwait(false);
-        if (packed is null)
+                packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
+                return packed.HasSetup
+                    ? "已附上 " + Path.GetFileName(packed.SetupPath) + "。"
+                    : "打包完成。";
+            }).ConfigureAwait(false);
+        if (!ok || packed is null)
             return;
         foreach (var p in packed.ExistingPaths())
         {
@@ -3422,7 +3423,7 @@ public sealed partial class ConsoleSession : IDisposable
         var title = string.IsNullOrWhiteSpace(ReleaseTitle) ? tag : ReleaseTitle.Trim();
         var kind = draft ? "草稿" : ReleasePrerelease ? "預發行" : "正式發行";
         var extra = ConsoleReleasePack.RequiresInstaller(packable, draft)
-            ? "\n\n會附加 Windows 安裝包（沒有則先執行 pack-win.ps1，並把版號寫進 AppInfo 等檔案）。已安裝使用者才能自動啟動安裝程式。"
+            ? "\n\n會附加 Windows 安裝包（沒有則先打包，並把版號寫進 AppInfo 等檔案）。畫面會顯示步驟與紀錄，編譯可能要數分鐘。已安裝使用者才能自動啟動安裝程式。"
             : "";
         if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}{extra}\n\n確定發行？"))
             return;
@@ -3432,18 +3433,13 @@ public sealed partial class ConsoleSession : IDisposable
         var prerelease = ReleasePrerelease;
         var generateNotes = ReleaseGenerateNotes;
         var makeLatest = ReleaseMakeLatest;
-        CloseDialog();
-        await RunJobAsync(needsPack ? "打包並發行 Release…" : "發行 Release…", async () =>
+        var run = needsPack ? ReleaseRunState.PackAndPublish() : ReleaseRunState.PublishOnly();
+        var ok = await RunReleaseProgressAsync(run, returnDialog: null, fn: async progress =>
         {
             if (ConsoleReleasePack.RequiresInstaller(packable, draft))
             {
                 if (!ConsoleReleasePack.HasSetupAsset(assets))
                 {
-                    var progress = new Progress<string>(text =>
-                    {
-                        JobText = text;
-                        Notify();
-                    });
                     var packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
                     foreach (var p in packed.ExistingPaths())
                     {
@@ -3467,9 +3463,10 @@ public sealed partial class ConsoleSession : IDisposable
                 GenerateNotes: generateNotes,
                 MakeLatest: makeLatest,
                 Assets: assets);
-            return await GitHubService.PublishReleaseAsync(Catalog, req).ConfigureAwait(false);
+            return await GitHubService.PublishReleaseAsync(Catalog, req, progress: progress).ConfigureAwait(false);
         }).ConfigureAwait(false);
-        StampReleaseOnIntake(tag);
+        if (ok)
+            StampReleaseOnIntake(tag);
     }
 
     public async Task OpenCommitDialogAsync()
@@ -3823,6 +3820,19 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void CloseDialog()
     {
+        if (ReleaseRun is { Busy: true })
+            return;
+        if (Dialog == "release-progress")
+        {
+            var ret = _releaseReturnDialog;
+            _releaseReturnDialog = null;
+            ReleaseRun = null;
+            InfoCopied = false;
+            Dialog = ret == "release" ? "release" : null;
+            Notify();
+            return;
+        }
+
         var resumeIssue = Dialog is "branch" or "agent" ? _resumeIssueAfterBranch : null;
         _resumeIssueAfterBranch = null;
         CompleteLeaveGate(false);
@@ -3831,6 +3841,8 @@ public sealed partial class ConsoleSession : IDisposable
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
+        ReleaseRun = null;
+        _releaseReturnDialog = null;
         InfoCopied = false;
         if (resumeIssue is not null)
         {
@@ -3936,6 +3948,7 @@ public sealed partial class ConsoleSession : IDisposable
     {
         var text = InfoReport?.Text
             ?? ReleaseList?.ToText()
+            ?? ReleaseRun?.CopyText
             ?? JobResult?.Detail
             ?? JobResult?.Summary;
         if (string.IsNullOrWhiteSpace(text) || Js is null)
@@ -3959,6 +3972,8 @@ public sealed partial class ConsoleSession : IDisposable
         InfoReport = report;
         ReleaseList = null;
         JobResult = null;
+        ReleaseRun = null;
+        _releaseReturnDialog = null;
         InfoCopied = false;
         Dialog = "info";
         Notify();
@@ -3969,6 +3984,8 @@ public sealed partial class ConsoleSession : IDisposable
         JobResult = new JobResultView(JobResultView.CleanTitle(title), tone, summary, detail);
         InfoReport = null;
         ReleaseList = null;
+        ReleaseRun = null;
+        _releaseReturnDialog = null;
         InfoCopied = false;
         Dialog = "job-result";
         Notify();
@@ -4834,6 +4851,61 @@ public sealed partial class ConsoleSession : IDisposable
             return false;
         }
         return true;
+    }
+
+    private async Task<bool> RunReleaseProgressAsync(
+        ReleaseRunState run,
+        string? returnDialog,
+        Func<IProgress<string>, Task<string?>> fn)
+    {
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return false;
+        }
+        ReleaseRun = run;
+        _releaseReturnDialog = returnDialog;
+        JobResult = null;
+        InfoReport = null;
+        ReleaseList = null;
+        InfoCopied = false;
+        Dialog = "release-progress";
+        JobBusy = true;
+        run.Begin();
+        JobText = run.Title + "…";
+        Notify();
+        var progress = new Progress<string>(text =>
+        {
+            run.Apply(text);
+            if (!string.IsNullOrWhiteSpace(run.StatusText))
+                JobText = run.StatusText;
+            Notify();
+        });
+        string? err = null;
+        string? msg = null;
+        try
+        {
+            msg = await Task.Run(() => fn(progress)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            err = ex.Message;
+        }
+        JobBusy = false;
+        if (err is not null)
+        {
+            run.Fail(err);
+            JobText = "錯誤";
+        }
+        else
+        {
+            run.Succeed(msg);
+            JobText = string.IsNullOrWhiteSpace(run.Headline) ? "完成" : run.Headline;
+        }
+        Notify();
+        UpdateReady();
+        await RefreshBuildStatesAsync().ConfigureAwait(false);
+        return err is null;
     }
 
     private async Task RunJobAsync(string title, Func<Task<string?>> fn, bool refreshBuilds = true)
