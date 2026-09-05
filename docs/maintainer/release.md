@@ -1,6 +1,6 @@
 # 發版
 
-給控制台維護者。一般使用者請用 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 下載，並用標題列「檢查更新」。
+給控制台維護者。一般使用者請用 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 下載，並用設定裡的「檢查更新」。
 
 完整指令（改版號、打包、`gh release create`、圖示）寫在 [`scripts/README.md`](../../scripts/README.md)。也可在控制台 GitHub 操作台按「發行 Release…」：會打包並附加 `*-win-x64-setup.exe`（自動更新靠這個檔啟動安裝程式）。摘要：
 

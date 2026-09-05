@@ -139,6 +139,30 @@ public class GitHubTasksTests
         Assert.Contains("服務起不來", prompt);
         Assert.Contains("C:\\proj", prompt);
         Assert.Contains("stack_status", prompt);
+        Assert.Contains("處理不了", prompt);
+    }
+
+    [Fact]
+    public void BuildIssueAgentPrompt_IncludesDiscussionAndNotes()
+    {
+        var issue = new GithubIssue(
+            12,
+            "修好啟動",
+            "OPEN",
+            "https://github.com/acme/app/issues/12",
+            "服務起不來",
+            "2026-08-26T02:00:00Z",
+            ["bug"],
+            ["sjvann"]);
+        var comments = new[]
+        {
+            new GithubIssueComment("me", "範圍只改啟動腳本", "2026-09-05T10:00:00Z"),
+        };
+        var prompt = CursorLauncher.BuildIssueAgentPrompt(@"C:\proj", issue, comments, "已確認：只改啟動");
+        Assert.Contains("討論紀錄", prompt);
+        Assert.Contains("範圍只改啟動腳本", prompt);
+        Assert.Contains("確認補充", prompt);
+        Assert.Contains("已確認：只改啟動", prompt);
     }
 
     [Fact]
@@ -171,6 +195,7 @@ public class GitHubTasksTests
             """;
         var (issue, comments) = GitHubIssues.ParseView(json);
         Assert.NotNull(issue);
+        Assert.True(issue.IsOpen);
         Assert.Equal(3, issue.Number);
         Assert.Equal("關於我的任務", issue.Title);
         Assert.Equal("enhancement", issue.LabelText);

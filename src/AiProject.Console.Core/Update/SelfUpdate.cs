@@ -30,7 +30,8 @@ public sealed record AvailableUpdate(
     string Title,
     string HtmlUrl,
     ReleaseAsset? SetupAsset,
-    ReleaseAsset? ZipAsset);
+    ReleaseAsset? ZipAsset,
+    bool Prerelease = false);
 
 public static class SelfUpdate
 {
@@ -91,10 +92,28 @@ public static class SelfUpdate
         return UpdateApplyMode.OpenReleases;
     }
 
-    public static AvailableUpdate? ParseLatest(string json, string currentVersion, string? runtimeId = null)
+    public static UpdateApplyMode ResolveLocalFileMode(string path, InstallKind kind)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return UpdateApplyMode.None;
+        var name = Path.GetFileName(path);
+        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return UpdateApplyMode.Installer;
+        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            return UpdateApplyMode.PortableZip;
+        return UpdateApplyMode.None;
+    }
+
+    public static AvailableUpdate? ParseLatest(
+        string json,
+        string currentVersion,
+        string? runtimeId = null,
+        bool includePrerelease = false)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
+        if (root.ValueKind == JsonValueKind.Array)
+            return PickNewest(root, currentVersion, runtimeId, includePrerelease);
         if (root.ValueKind != JsonValueKind.Object)
             return null;
         if (root.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String)
@@ -104,41 +123,22 @@ public static class SelfUpdate
                 throw new InvalidOperationException("GitHub API：" + text);
         }
 
-        var tag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
-        if (string.IsNullOrWhiteSpace(tag) || !ReleaseVersion.IsNewer(tag, currentVersion))
+        var update = TryReadRelease(root, runtimeId);
+        if (update is null)
             return null;
-
-        var title = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
-        var html = root.TryGetProperty("html_url", out var htmlEl) ? htmlEl.GetString() ?? "" : "";
-        var rid = string.IsNullOrWhiteSpace(runtimeId) ? RuntimeId() : runtimeId;
-        ReleaseAsset? setup = null;
-        ReleaseAsset? zip = null;
-        if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var el in assets.EnumerateArray())
-            {
-                var asset = ReadAsset(el);
-                if (asset is null)
-                    continue;
-                if (IsSetupAsset(asset.Name, rid))
-                    setup = asset;
-                else if (IsZipAsset(asset.Name, rid))
-                    zip = asset;
-            }
-        }
-
-        return new AvailableUpdate(
-            Tag: tag,
-            Title: string.IsNullOrWhiteSpace(title) ? tag : title,
-            HtmlUrl: string.IsNullOrWhiteSpace(html) ? AppInfo.ReleasesUrl : html,
-            SetupAsset: setup,
-            ZipAsset: zip);
+        if (update.Prerelease && !includePrerelease)
+            return null;
+        return ReleaseVersion.IsNewer(update.Tag, currentVersion) ? update : null;
     }
 
-    public static async Task<AvailableUpdate?> CheckLatestAsync(CancellationToken ct = default)
+    public static async Task<AvailableUpdate?> CheckLatestAsync(CancellationToken ct = default, bool includePrerelease = false)
     {
-        var body = await FetchLatestJsonAsync(ct).ConfigureAwait(false);
-        return string.IsNullOrWhiteSpace(body) ? null : ParseLatest(body, AppInfo.Version);
+        var body = includePrerelease
+            ? await FetchReleasesJsonAsync(ct).ConfigureAwait(false)
+            : await FetchLatestJsonAsync(ct).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(body)
+            ? null
+            : ParseLatest(body, AppInfo.Version, includePrerelease: includePrerelease);
     }
 
     public static async Task<string> DownloadAssetAsync(
@@ -202,15 +202,16 @@ public static class SelfUpdate
         return dest;
     }
 
-    public static string LaunchApply(string downloadedPath, UpdateApplyMode mode, string? installDir = null)
+    public static string LaunchApply(string downloadedPath, UpdateApplyMode mode, string? installDir = null, bool silent = true)
     {
         var target = Path.GetFullPath(installDir ?? AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : "AI_Project_Console");
         if (mode == UpdateApplyMode.Installer)
         {
-            var script = WriteInstallerRestartScript(downloadedPath, target, Environment.ProcessId, exe);
-            StartHelperScript(script);
-            return "已啟動安裝程式，控制台即將關閉並重開。";
+            StartInstaller(downloadedPath, target, silent);
+            return silent
+                ? "已啟動安裝程式，控制台即將關閉並重開。"
+                : "已啟動安裝程式。";
         }
 
         if (mode != UpdateApplyMode.PortableZip)
@@ -224,19 +225,67 @@ public static class SelfUpdate
         return "已準備覆蓋檔案，控制台即將關閉並重開。";
     }
 
-    public static string BuildInstallerRestartScript(string setupPath, string installDir, int pid, string exePath)
+    public static string BuildInstallerArguments(string installDir, bool silent, bool pinDirectory)
+    {
+        var dir = "/DIR=\"" + Path.GetFullPath(installDir) + "\"";
+        if (silent)
+            return "/SILENT /CLOSEAPPLICATIONS /NORESTART /SUPPRESSMSGBOXES " + dir;
+        return pinDirectory ? "/NORESTART " + dir : "/NORESTART";
+    }
+
+    public static int StartInstaller(string setupPath, string installDir, bool silent)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new InvalidOperationException("目前只支援在 Windows 啟動安裝程式。");
+        var staged = StageUpdateFile(setupPath);
+        var pinDir = DetectInstallKind() != InstallKind.Development;
+        var args = BuildInstallerArguments(installDir, silent, pinDir);
+        var pid = DetachedProcess.Start(staged, args, showWindow: !silent, workingDirectory: Path.GetDirectoryName(staged));
+        Thread.Sleep(400);
+        return pid;
+    }
+
+    public static string StageUpdateFile(string path)
+    {
+        var src = Path.GetFullPath(path);
+        if (!File.Exists(src))
+            throw new InvalidOperationException("找不到檔案：" + src);
+        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(dir);
+        var dest = Path.Combine(dir, Path.GetFileName(src));
+        File.Copy(src, dest, overwrite: true);
+        TryUnblock(dest);
+        return dest;
+    }
+
+    public static void TryUnblock(string path)
+    {
+        try
+        {
+            File.Delete(path + ":Zone.Identifier");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // ignore: no MOTW or cannot remove
+        }
+    }
+
+    public static string BuildInstallerRestartScript(string setupPath, string installDir, int pid, string exePath, bool silent = true)
     {
         var setup = PsQuote(Path.GetFullPath(setupPath));
         var target = PsQuote(Path.GetFullPath(installDir));
         var exe = PsQuote(Path.GetFullPath(exePath));
         var exeName = PsQuote(Path.GetFileNameWithoutExtension(exePath));
+        var setupArgs = silent
+            ? "@('/SILENT','/CLOSEAPPLICATIONS','/NORESTART','/SUPPRESSMSGBOXES',('/DIR=\"' + $target + '\"'))"
+            : "@('/NORESTART',('/DIR=\"' + $target + '\"'))";
         return
             "$ErrorActionPreference = 'Stop'\r\n" +
             "while (Get-Process -Id " + pid + " -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }\r\n" +
             "Start-Sleep -Seconds 1\r\n" +
             "$setup = " + setup + "\r\n" +
             "$target = " + target + "\r\n" +
-            "Start-Process -FilePath $setup -ArgumentList @('/SILENT','/CLOSEAPPLICATIONS','/NORESTART','/SUPPRESSMSGBOXES',('/DIR=' + $target)) -Wait\r\n" +
+            "Start-Process -FilePath $setup -ArgumentList " + setupArgs + " -Wait\r\n" +
             "Start-Sleep -Seconds 1\r\n" +
             "if (-not (Get-Process -Name " + exeName + " -ErrorAction SilentlyContinue)) {\r\n" +
             "  Start-Process -FilePath " + exe + "\r\n" +
@@ -255,6 +304,14 @@ public static class SelfUpdate
             return DevelopmentHint(update);
         var rid = RuntimeId();
         return $"Release {update.Tag} 沒有適用於 {rid} 的安裝檔（需要檔名含 {rid} 且以 -setup.exe 或 .zip 結尾）。\n\n自動更新因此改開 GitHub 頁。請用 GitHub 操作台發行此控制台時附加安裝包。\n{update.HtmlUrl}";
+    }
+
+    public static string CannotApplyLocalFileHint(InstallKind kind, string path)
+    {
+        if (kind == InstallKind.Development)
+            return "目前是從原始碼／開發目錄執行，無法用安裝檔覆蓋。\n請 git pull 後重新編譯，或改用已安裝／zip 版。";
+        var name = Path.GetFileName(path);
+        return $"無法從「{name}」安裝。請選擇安裝程式（.exe）或 zip 壓縮包。";
     }
 
     public static bool IsSetupAsset(string name, string runtimeId) =>
@@ -278,23 +335,32 @@ public static class SelfUpdate
 
     private static void StartHelperScript(string script)
     {
-        Process.Start(new ProcessStartInfo
+        var scriptPath = Path.GetFullPath(script);
+        if (!OperatingSystem.IsWindows())
         {
-            FileName = OperatingSystem.IsWindows() ? "powershell" : "/bin/bash",
-            Arguments = OperatingSystem.IsWindows()
-                ? "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\""
-                : "\"" + script + "\"",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        });
+            var started = Process.Start(new ProcessStartInfo
+            {
+                FileName = "/bin/bash",
+                Arguments = "\"" + scriptPath + "\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            if (started is null)
+                throw new InvalidOperationException("無法啟動更新輔助程式。");
+            return;
+        }
+
+        DetachedProcess.Start(
+            PowerShellExe(),
+            "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\"",
+            showWindow: false,
+            workingDirectory: Path.GetDirectoryName(scriptPath));
     }
 
-    private static string WriteInstallerRestartScript(string setupPath, string installDir, int pid, string exePath)
+    private static string PowerShellExe()
     {
-        var script = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", "restart-after-install.ps1");
-        Directory.CreateDirectory(Path.GetDirectoryName(script)!);
-        File.WriteAllText(script, BuildInstallerRestartScript(setupPath, installDir, pid, exePath));
-        return script;
+        var system = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+        return File.Exists(system) ? system : "powershell.exe";
     }
 
     private static string WriteSwapScript(string extractDir, string targetDir, int pid, string exePath)
@@ -315,13 +381,89 @@ public static class SelfUpdate
 
     private static string PsQuote(string path) => "'" + path.Replace("'", "''") + "'";
 
-    private static async Task<string?> FetchLatestJsonAsync(CancellationToken ct)
+    private static AvailableUpdate? PickNewest(
+        JsonElement releases,
+        string currentVersion,
+        string? runtimeId,
+        bool includePrerelease)
+    {
+        AvailableUpdate? best = null;
+        SemVer? bestVer = null;
+        foreach (var el in releases.EnumerateArray())
+        {
+            var update = TryReadRelease(el, runtimeId);
+            if (update is null)
+                continue;
+            if (update.Prerelease && !includePrerelease)
+                continue;
+            if (!ReleaseVersion.TryParse(update.Tag, out var ver))
+                continue;
+            if (!ReleaseVersion.IsNewer(update.Tag, currentVersion))
+                continue;
+            if (bestVer is not null && ReleaseVersion.Compare(ver, bestVer.Value) <= 0)
+                continue;
+            best = update;
+            bestVer = ver;
+        }
+        return best;
+    }
+
+    private static AvailableUpdate? TryReadRelease(JsonElement root, string? runtimeId)
+    {
+        if (root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+            return null;
+        var tag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(tag))
+            return null;
+
+        var title = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
+        var html = root.TryGetProperty("html_url", out var htmlEl) ? htmlEl.GetString() ?? "" : "";
+        var rid = string.IsNullOrWhiteSpace(runtimeId) ? RuntimeId() : runtimeId;
+        ReleaseAsset? setup = null;
+        ReleaseAsset? zip = null;
+        if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var el in assets.EnumerateArray())
+            {
+                var asset = ReadAsset(el);
+                if (asset is null)
+                    continue;
+                if (IsSetupAsset(asset.Name, rid))
+                    setup = asset;
+                else if (IsZipAsset(asset.Name, rid))
+                    zip = asset;
+            }
+        }
+
+        return new AvailableUpdate(
+            Tag: tag,
+            Title: string.IsNullOrWhiteSpace(title) ? tag : title,
+            HtmlUrl: string.IsNullOrWhiteSpace(html) ? AppInfo.ReleasesUrl : html,
+            SetupAsset: setup,
+            ZipAsset: zip,
+            Prerelease: IsPrereleaseRelease(root, tag));
+    }
+
+    private static bool IsPrereleaseRelease(JsonElement root, string tag)
+    {
+        if (root.TryGetProperty("prerelease", out var flag) && flag.ValueKind == JsonValueKind.True)
+            return true;
+        return ReleaseVersion.TryParse(tag, out var ver) && ver.HasPreRelease;
+    }
+
+    private static Task<string?> FetchLatestJsonAsync(CancellationToken ct) =>
+        FetchReleaseApiAsync($"repos/{AppInfo.GitHubSlug}/releases/latest", AppInfo.LatestReleaseApiUrl, ct);
+
+    private static Task<string?> FetchReleasesJsonAsync(CancellationToken ct) =>
+        FetchReleaseApiAsync($"repos/{AppInfo.GitHubSlug}/releases?per_page=30", AppInfo.ReleasesApiUrl, ct);
+
+    private static async Task<string?> FetchReleaseApiAsync(string ghPath, string httpUrl, CancellationToken ct)
     {
         if (CliUtil.CommandExists("gh"))
         {
             var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
                 "gh",
-                ["api", $"repos/{AppInfo.GitHubSlug}/releases/latest"],
+                ["api", ghPath],
                 timeoutMs: 30_000,
                 ct: ct).ConfigureAwait(false);
             if (code != 0)
@@ -336,7 +478,7 @@ public static class SelfUpdate
             return stdout;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, AppInfo.LatestReleaseApiUrl);
+        using var req = new HttpRequestMessage(HttpMethod.Get, httpUrl);
         AttachToken(req);
         using var resp = await Http.SendAsync(req, ct).ConfigureAwait(false);
         var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
