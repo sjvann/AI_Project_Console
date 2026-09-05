@@ -108,6 +108,52 @@ public class GitHubNextActionTests
     }
 
     [Fact]
+    public void CreatePr_OnDefaultBranch_ExplainsInsteadOfCallingGh()
+    {
+        var reason = IssueCompletion.CreatePrBlockReason(
+            new GitBriefStatus("main", 0, 0, 0), "main", hasPr: false);
+        Assert.Contains("預設分支", reason);
+        Assert.True(IssueCompletion.NeedsTaskBranch(new GitBriefStatus("main", 2, 0, 0), "main"));
+        Assert.False(IssueCompletion.NeedsTaskBranch(new GitBriefStatus("issue-4", 0, 0, 0), "main"));
+        Assert.Null(IssueCompletion.CreatePrBlockReason(
+            new GitBriefStatus("feat/login", 0, 0, 0), "main", hasPr: false));
+    }
+
+    [Fact]
+    public void CreatePr_DirtyFeatureBranch_TellsCommentIsNotCommit()
+    {
+        var reason = IssueCompletion.CreatePrBlockReason(
+            new GitBriefStatus("issue-4", 3, 0, 0), "main", hasPr: false);
+        Assert.Contains("送出回應", reason);
+        Assert.Contains("未提交", reason);
+    }
+
+    [Fact]
+    public void CreatePr_UnpublishedBranch_AsksToPublishFirst()
+    {
+        var reason = IssueCompletion.CreatePrBlockReason(
+            new GitBriefStatus("issue-4", 0, null, null, false), "main", hasPr: false);
+        Assert.Contains("尚未發布", reason);
+    }
+
+    [Fact]
+    public void ExplainCreatePrFailure_TranslatesNoCommits()
+    {
+        var msg = IssueCompletion.ExplainCreatePrFailure(
+            "could not compute title or body defaults: could not find any commits between origin/main and HEAD");
+        Assert.Contains("沒有新提交", msg);
+        Assert.True(IssueCompletion.LooksLikeNoCommits("No commits between main and main"));
+    }
+
+    [Fact]
+    public void SuggestIssueBranchName_SlugsAsciiAndFallsBack()
+    {
+        Assert.Equal("issue-4", IssueCompletion.SuggestIssueBranchName(4, "完成issue的過程"));
+        Assert.Equal("issue-12-fix-login", IssueCompletion.SuggestIssueBranchName(12, "Fix login"));
+        Assert.Equal("issue-3", IssueCompletion.SuggestIssueBranchName(3, ""));
+    }
+
+    [Fact]
     public void AccountStatus_RedWhenLoggedOut_YellowWhenDirty_GreenWhenClean()
     {
         Assert.Equal(GithubAccountStatus.Danger, GithubAccountStatus.Tone(loggedIn: false, needsAttention: false));

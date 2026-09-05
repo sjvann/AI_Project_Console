@@ -38,14 +38,27 @@ public sealed record GithubIssue(
         !string.IsNullOrEmpty(login)
         && Assignees.Any(a => string.Equals(a, login, StringComparison.OrdinalIgnoreCase));
 
-    public string WhenText()
+    public string WhenText() => FormatWhen(UpdatedAt);
+
+    public static string FormatWhen(string? iso)
     {
-        if (string.IsNullOrWhiteSpace(UpdatedAt))
+        if (string.IsNullOrWhiteSpace(iso))
             return "";
-        return DateTimeOffset.TryParse(UpdatedAt, out var dt)
+        return DateTimeOffset.TryParse(iso, out var dt)
             ? dt.ToLocalTime().ToString("M/d HH:mm")
             : "";
     }
+}
+
+public sealed record GithubIssueComment(
+    string Author,
+    string Body,
+    string CreatedAt,
+    string Url = "")
+{
+    public string AuthorText => string.IsNullOrEmpty(Author) ? "未知" : Author;
+
+    public string WhenText() => GithubIssue.FormatWhen(CreatedAt);
 }
 
 public static class GitHubIssues
@@ -62,21 +75,9 @@ public static class GitHubIssues
             var list = new List<GithubIssue>();
             foreach (var item in arr)
             {
-                var obj = JsonUtil.Obj(item);
-                if (obj is null)
-                    continue;
-                if (!int.TryParse(JsonUtil.Str(obj["number"]), out var number) || number <= 0)
-                    continue;
-                list.Add(new GithubIssue(
-                    number,
-                    JsonUtil.Str(obj["title"]),
-                    JsonUtil.Str(obj["state"]),
-                    JsonUtil.Str(obj["url"]),
-                    JsonUtil.Str(obj["body"]),
-                    JsonUtil.Str(obj["updatedAt"]),
-                    ReadNames(obj["labels"], "name"),
-                    ReadNames(obj["assignees"], "login"),
-                    JsonUtil.Pick(JsonUtil.Str(obj["closedAt"]), JsonUtil.Str(obj["closed_at"]))));
+                var issue = ReadIssue(JsonUtil.Obj(item));
+                if (issue is not null)
+                    list.Add(issue);
             }
             return list;
         }
@@ -135,6 +136,51 @@ public static class GitHubIssues
             throw new InvalidOperationException(string.IsNullOrEmpty(err) ? "無法讀取遠端 Issue。" : err);
         }
         return ParseIssues(stdout);
+    }
+
+    public static (GithubIssue? Issue, IReadOnlyList<GithubIssueComment> Comments) ParseView(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return (null, []);
+        try
+        {
+            var obj = JsonUtil.Obj(JsonNode.Parse(json));
+            if (obj is null)
+                return (null, []);
+            return (ReadIssue(obj), ReadComments(JsonUtil.Arr(obj["comments"])));
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return (null, []);
+        }
+    }
+
+    public static async Task<(GithubIssue Issue, IReadOnlyList<GithubIssueComment> Comments)> ViewAsync(
+        string cwd,
+        GithubConfig cfg,
+        int number,
+        CancellationToken ct = default)
+    {
+        if (number <= 0)
+            throw new InvalidOperationException("Issue 編號無效。");
+        if (!GitHubService.GhAvailable())
+            throw new InvalidOperationException("尚未安裝 GitHub CLI（gh）。");
+        var args = new List<string>
+        {
+            "issue", "view", number.ToString(),
+            "--json", "number,title,state,labels,url,assignees,updatedAt,body,closedAt,comments",
+        };
+        GhCli.AddRepo(args, cfg);
+        var (code, stdout, stderr) = await GhCli.RunCaptureAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
+        if (code != 0)
+        {
+            var err = string.IsNullOrEmpty(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrEmpty(err) ? $"無法讀取 Issue #{number}。" : err);
+        }
+        var (issue, comments) = ParseView(stdout);
+        if (issue is null)
+            throw new InvalidOperationException($"無法解析 Issue #{number}。");
+        return (issue, comments);
     }
 
     public static async Task AcceptAsync(
@@ -275,6 +321,58 @@ public static class GitHubIssues
         if (hash >= 0 && int.TryParse(url[(hash + 1)..].Trim(), out var number) && number > 0)
             return (number, url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? url : (cfg?.WebUrl() + "/issues/" + number));
         throw new InvalidOperationException("已建立 Issue，但無法解析編號：\n" + text);
+    }
+
+    private static GithubIssue? ReadIssue(JsonObject? obj)
+    {
+        if (obj is null)
+            return null;
+        if (!int.TryParse(JsonUtil.Str(obj["number"]), out var number) || number <= 0)
+            return null;
+        return new GithubIssue(
+            number,
+            JsonUtil.Str(obj["title"]),
+            JsonUtil.Str(obj["state"]),
+            JsonUtil.Str(obj["url"]),
+            JsonUtil.Str(obj["body"]),
+            JsonUtil.Str(obj["updatedAt"]),
+            ReadNames(obj["labels"], "name"),
+            ReadNames(obj["assignees"], "login"),
+            JsonUtil.Pick(JsonUtil.Str(obj["closedAt"]), JsonUtil.Str(obj["closed_at"])));
+    }
+
+    private static IReadOnlyList<GithubIssueComment> ReadComments(JsonArray? arr)
+    {
+        if (arr is null || arr.Count == 0)
+            return [];
+        var list = new List<GithubIssueComment>();
+        foreach (var item in arr)
+        {
+            var obj = JsonUtil.Obj(item);
+            if (obj is null)
+                continue;
+            var body = JsonUtil.Str(obj["body"]);
+            var author = ReadAuthor(obj["author"]);
+            var created = JsonUtil.Pick(JsonUtil.Str(obj["createdAt"]), JsonUtil.Str(obj["created_at"]));
+            if (string.IsNullOrEmpty(body) && string.IsNullOrEmpty(author))
+                continue;
+            list.Add(new GithubIssueComment(
+                author,
+                body,
+                created,
+                JsonUtil.Str(obj["url"])));
+        }
+        return list;
+    }
+
+    private static string ReadAuthor(JsonNode? node)
+    {
+        if (node is null)
+            return "";
+        if (node is JsonValue)
+            return JsonUtil.Str(node);
+        var obj = JsonUtil.Obj(node);
+        return JsonUtil.Pick(JsonUtil.Str(obj?["login"]), JsonUtil.Str(obj?["name"]));
     }
 
     private static IReadOnlyList<string> ReadNames(JsonNode? node, string key)

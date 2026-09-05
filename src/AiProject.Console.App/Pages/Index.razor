@@ -1063,6 +1063,16 @@
     <JobResultDialog S="S" />
 }
 
+@if (S.Dialog == "leave-gate")
+{
+    <LeaveGateDialog S="S" />
+}
+
+@if (S.Dialog == "issue")
+{
+    <IssueDialog S="S" />
+}
+
 @code {
     string? openMenu;
     DotNetObjectReference<Index>? _hubKeys;

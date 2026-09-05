@@ -442,6 +442,47 @@ public static class GitHubService
         return ParsePorcelain(stdout);
     }
 
+    public static bool LooksLikeIndexLock(string? text)
+    {
+        var t = text ?? "";
+        return t.Contains("index.lock", StringComparison.OrdinalIgnoreCase)
+            && (t.Contains("File exists", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Unable to create", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Another git process", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public const string IndexLockHint =
+        "剛才有另一個 git 動作還在跑（或上次沒清掉鎖檔）。請關閉此視窗後再提交一次。";
+
+    public static bool TryClearStaleIndexLock(string root)
+    {
+        var path = Path.Combine(root, ".git", "index.lock");
+        if (!File.Exists(path))
+            return false;
+        try
+        {
+            File.Delete(path);
+            return !File.Exists(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    static async Task<(int Code, string Output)> RunGitWriteAsync(string root, params string[] args)
+    {
+        var (code, output) = await CliUtil.RunAsync("git", args, root).ConfigureAwait(false);
+        if (code == 0 || !LooksLikeIndexLock(output))
+            return (code, output);
+        await Task.Delay(400).ConfigureAwait(false);
+        TryClearStaleIndexLock(root);
+        (code, output) = await CliUtil.RunAsync("git", args, root).ConfigureAwait(false);
+        if (code != 0 && LooksLikeIndexLock(output))
+            return (code, IndexLockHint);
+        return (code, output);
+    }
+
     public static async Task<string> CommitAsync(string root, string message, bool stageAll = true)
     {
         if (!await IsGitRepoAsync(root).ConfigureAwait(false))
@@ -452,7 +493,7 @@ public static class GitHubService
 
         if (stageAll)
         {
-            var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "-A"], root).ConfigureAwait(false);
+            var (addCode, addOut) = await RunGitWriteAsync(root, "add", "-A").ConfigureAwait(false);
             if (addCode != 0)
                 throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? "git add 失敗。" : addOut);
         }
@@ -463,7 +504,7 @@ public static class GitHubService
         if (diffCode != 1)
             throw new InvalidOperationException(string.IsNullOrEmpty(diffOut) ? "無法判斷暫存區狀態。" : diffOut);
 
-        var (code, output) = await CliUtil.RunAsync("git", ["commit", "-m", msg], root).ConfigureAwait(false);
+        var (code, output) = await RunGitWriteAsync(root, "commit", "-m", msg).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "git commit 失敗。" : output);
 
@@ -490,13 +531,13 @@ public static class GitHubService
         var (headCode, _) = await CliUtil.RunAsync("git", ["rev-parse", "--verify", "HEAD"], root).ConfigureAwait(false);
         if (headCode == 0)
         {
-            var (resetCode, resetOut) = await CliUtil.RunAsync("git", ["reset", "-q", "HEAD"], root).ConfigureAwait(false);
+            var (resetCode, resetOut) = await RunGitWriteAsync(root, "reset", "-q", "HEAD").ConfigureAwait(false);
             if (resetCode != 0 && !string.IsNullOrWhiteSpace(resetOut))
                 throw new InvalidOperationException(resetOut);
         }
         else
         {
-            await CliUtil.RunAsync("git", ["rm", "-r", "--cached", "-f", "."], root).ConfigureAwait(false);
+            await RunGitWriteAsync(root, "rm", "-r", "--cached", "-f", ".").ConfigureAwait(false);
         }
 
         foreach (var change in selected)
@@ -506,12 +547,12 @@ public static class GitHubService
                 var path = (rel ?? "").Trim().Replace('\\', '/');
                 if (string.IsNullOrEmpty(path) || path.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(path))
                     continue;
-                var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "-A", "--", path], root).ConfigureAwait(false);
+                var (addCode, addOut) = await RunGitWriteAsync(root, "add", "-A", "--", path).ConfigureAwait(false);
                 if (addCode == 0)
                     continue;
                 if (change.KindLabel == "刪除")
                 {
-                    var (rmCode, rmOut) = await CliUtil.RunAsync("git", ["rm", "--cached", "--ignore-unmatch", "--", path], root).ConfigureAwait(false);
+                    var (rmCode, rmOut) = await RunGitWriteAsync(root, "rm", "--cached", "--ignore-unmatch", "--", path).ConfigureAwait(false);
                     if (rmCode == 0)
                         continue;
                     throw new InvalidOperationException(string.IsNullOrEmpty(rmOut) ? addOut : rmOut);
@@ -600,7 +641,7 @@ public static class GitHubService
                 continue;
             if (!File.Exists(full) && !Directory.Exists(full))
                 continue;
-            var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "--", rel], root).ConfigureAwait(false);
+            var (addCode, addOut) = await RunGitWriteAsync(root, "add", "--", rel).ConfigureAwait(false);
             if (addCode != 0)
                 throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? "git add 失敗。" : addOut);
             added++;
@@ -970,15 +1011,34 @@ public static class GitHubService
         return true;
     }
 
-    public static async Task<string> CreatePullRequestAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    public static string PullRequestClosesBody(int issueNumber) =>
+        issueNumber > 0 ? "Closes #" + issueNumber : "";
+
+    public static IReadOnlyList<string> BuildCreatePrArgs(GithubConfig cfg, int? closesIssue = null)
     {
-        if (!GhAvailable())
-            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
-        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
         var args = new List<string> { "pr", "create" };
         if (!string.IsNullOrEmpty(cfg.Slug()))
             args.AddRange(["--repo", cfg.Slug()]);
         args.AddRange(["--base", string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch, "--fill"]);
+        var closes = closesIssue is > 0 ? PullRequestClosesBody(closesIssue.Value) : "";
+        if (!string.IsNullOrEmpty(closes))
+            args.AddRange(["--body", closes]);
+        return args;
+    }
+
+    public static async Task<string> CreatePullRequestAsync(
+        ProjectCatalog catalog,
+        GithubConfig? cfg = null,
+        int? closesIssue = null)
+    {
+        if (!GhAvailable())
+            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var brief = await TryBriefStatusAsync(catalog.Root).ConfigureAwait(false);
+        var block = IssueCompletion.CreatePrBlockReason(brief, cfg.DefaultBranch, hasPr: false);
+        if (!string.IsNullOrEmpty(block))
+            throw new InvalidOperationException(block);
+        var args = BuildCreatePrArgs(cfg, closesIssue);
         var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg).ConfigureAwait(false);
         if (code != 0)
         {
@@ -988,7 +1048,7 @@ public static class GitHubService
             var (code2, out2) = await GhCli.RunAsync(viewArgs, catalog.Root, cfg, 60_000).ConfigureAwait(false);
             if (code2 == 0)
                 return string.IsNullOrEmpty(out2) ? "已開啟既有 PR。" : out2;
-            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "建立 PR 失敗。" : output);
+            throw new InvalidOperationException(IssueCompletion.ExplainCreatePrFailure(output));
         }
         return string.IsNullOrEmpty(output) ? "PR 已建立。" : output;
     }

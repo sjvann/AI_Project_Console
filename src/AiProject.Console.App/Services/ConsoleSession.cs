@@ -35,6 +35,7 @@ public sealed partial class ConsoleSession : IDisposable
     private DocsServeHandle? _docsServe;
     private readonly WorkHoursStore _workHours = new();
     private int _timesheetGen;
+    private TaskCompletionSource<bool>? _leaveGateTcs;
 
     public ConsoleSession(NativeUi native)
     {
@@ -205,6 +206,10 @@ public sealed partial class ConsoleSession : IDisposable
     public BuildFailure? LastBuildFailure { get; private set; }
 
     public string? Dialog { get; private set; }
+    public string LeaveGateAction { get; private set; } = "";
+    public string? LeaveGateReason { get; private set; }
+    public string LeaveGateTitle => GitBriefStatus.LeaveGateTitle(string.IsNullOrEmpty(LeaveGateAction) ? "離開" : LeaveGateAction);
+    public string LeaveGateForceLabel => GitBriefStatus.LeaveGateForceLabel(LeaveGateAction);
     public DoctorSnapshot? DoctorView { get; private set; }
     public bool DoctorCopied { get; private set; }
     public ReleaseListView? ReleaseList { get; private set; }
@@ -1455,10 +1460,14 @@ public sealed partial class ConsoleSession : IDisposable
         var reason = GitBrief?.LeaveBlockReason();
         if (reason is null)
             return true;
-        _native.Warn(
-            $"還不能{action}",
-            reason + "\n\n請先在 Pulse 提交，或開 GitHub 操作台發布。專案列的「分支」可確認目前分支。");
-        return false;
+
+        _leaveGateTcs?.TrySetResult(false);
+        _leaveGateTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        LeaveGateAction = action;
+        LeaveGateReason = reason;
+        Dialog = "leave-gate";
+        Notify();
+        return await _leaveGateTcs.Task.ConfigureAwait(false);
     }
 
     public async Task RefreshGithubAuthAsync()
@@ -1759,17 +1768,6 @@ public sealed partial class ConsoleSession : IDisposable
             CliUtil.OpenUrl(issue.Url);
     }
 
-    public void OpenIssueHelp(GithubIssue issue)
-    {
-        if (!RequireCatalog())
-            return;
-        AgentPrompt = CursorLauncher.BuildIssueAgentPrompt(Catalog!.Root, issue);
-        AgentTitle = $"請 Agent 協助 · {issue.NumberText}";
-        AgentIntro = AgentLaunchIntro();
-        Dialog = "agent";
-        Notify();
-    }
-
     public void ShowTasks()
     {
         OpenGithubHub();
@@ -1833,6 +1831,7 @@ public sealed partial class ConsoleSession : IDisposable
         UnassignedCollapsed = true;
         _unassignedCollapseUserSet = false;
         GithubManaged = false;
+        ClearIssueView();
     }
 
     private static string FirstLine(string text)
@@ -2689,7 +2688,9 @@ public sealed partial class ConsoleSession : IDisposable
         await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
     }
 
-    public async Task OpenBranchDialogAsync()
+    public Task OpenBranchDialogAsync() => OpenBranchDialogAsync(null);
+
+    public async Task OpenBranchDialogAsync(string? suggestedName)
     {
         if (!RequireCatalog())
             return;
@@ -2698,8 +2699,10 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("忙碌中", "請等待目前工作完成。");
             return;
         }
-        NewBranchName = "";
-        BranchDialogHint = "";
+        NewBranchName = (suggestedName ?? "").Trim();
+        BranchDialogHint = _resumeIssueAfterBranch is not null
+            ? "為此任務建立功能分支。未提交的改動會跟著走；建立後請提交、發布，再回到任務視窗按「建立 PR」。"
+            : "";
         Dialog = "branch";
         Notify();
         await RefreshBranchListAsync().ConfigureAwait(false);
@@ -2752,6 +2755,12 @@ public sealed partial class ConsoleSession : IDisposable
         await RefreshGitStatusAsync().ConfigureAwait(false);
         await RefreshBuildStatesAsync().ConfigureAwait(false);
         NewBranchName = "";
+        if (_resumeIssueAfterBranch is { } issue)
+        {
+            _resumeIssueAfterBranch = null;
+            OpenIssueDialog(issue);
+            return;
+        }
         if (Dialog == "branch")
             CloseDialog();
     }
@@ -3717,14 +3726,42 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void CloseDialog()
     {
+        var resumeIssue = Dialog == "branch" ? _resumeIssueAfterBranch : null;
+        _resumeIssueAfterBranch = null;
+        CompleteLeaveGate(false);
         Dialog = null;
+        ClearIssueView();
         DoctorView = null;
         DoctorCopied = false;
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
         InfoCopied = false;
+        if (resumeIssue is not null)
+        {
+            OpenIssueDialog(resumeIssue);
+            return;
+        }
         Notify();
+    }
+
+    public void ForceLeaveGate()
+    {
+        CompleteLeaveGate(true);
+        Notify();
+    }
+
+    void CompleteLeaveGate(bool force)
+    {
+        if (_leaveGateTcs is null && Dialog != "leave-gate")
+            return;
+        var tcs = _leaveGateTcs;
+        _leaveGateTcs = null;
+        LeaveGateAction = "";
+        LeaveGateReason = null;
+        if (Dialog == "leave-gate")
+            Dialog = null;
+        tcs?.TrySetResult(force);
     }
 
     public async Task OpenReleaseListAsync()
@@ -4081,7 +4118,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
-    public async Task OpenOrCreatePrAsync()
+    public async Task OpenOrCreatePrAsync(int? closesIssue = null)
     {
         if (!RequireCatalog())
             return;
@@ -4092,16 +4129,38 @@ public sealed partial class ConsoleSession : IDisposable
             Notify();
             return;
         }
-        if (PullRequest is { Error: not null and not "" })
+        var block = IssueCompletion.CreatePrBlockReason(
+            GitBrief,
+            GithubDraft.DefaultBranch,
+            hasPr: false,
+            PullRequest?.Error);
+        if (!string.IsNullOrEmpty(block))
         {
-            _native.Warn("PR", PullRequest.Error);
+            if (ActiveIssue is not null)
+            {
+                IssueViewHint = block;
+                Notify();
+            }
+            if (IssueCompletion.NeedsTaskBranch(GitBrief, GithubDraft.DefaultBranch)
+                && ActiveIssue is { } issue
+                && _native.Confirm(
+                    "還不能建立 PR",
+                    block + "\n\n「送出回應」只是 Issue 留言，不會關閉任務。要先為此任務建立功能分支嗎？未提交的改動會跟著新分支。"))
+            {
+                _resumeIssueAfterBranch = issue;
+                await OpenBranchDialogAsync(
+                    IssueCompletion.SuggestIssueBranchName(issue.Number, issue.Title)).ConfigureAwait(false);
+                return;
+            }
+            _native.Info("還不能建立 PR", block);
             return;
         }
-        if (!_native.Confirm(
-            "建立 PR",
-            "目前分支還沒有 PR。要用提交說明自動建立嗎？\n審查、留言與合併請到 GitHub。"))
+        var confirm = closesIssue is > 0
+            ? $"目前分支還沒有 PR。要用提交說明自動建立，並在說明寫入 Closes #{closesIssue} 嗎？\n合併後才會關閉這則 Issue。審查、留言與合併請到 GitHub。"
+            : "目前分支還沒有 PR。要用提交說明自動建立嗎？\n審查、留言與合併請到 GitHub。";
+        if (!_native.Confirm("建立 PR", confirm))
             return;
-        await RunJobAsync("建立 PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!)).ConfigureAwait(false);
+        await RunJobAsync("建立 PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!, closesIssue: closesIssue)).ConfigureAwait(false);
         await RefreshPullRequestAsync().ConfigureAwait(false);
         if (PullRequest is { HasPr: true })
         {
@@ -4814,6 +4873,7 @@ public sealed partial class ConsoleSession : IDisposable
         BranchList = [];
         NewBranchName = "";
         BranchDialogHint = "";
+        _resumeIssueAfterBranch = null;
         CommitMessage = "";
         CommitSubject = "";
         CommitBody = "";
@@ -4846,6 +4906,7 @@ public sealed partial class ConsoleSession : IDisposable
         LeftTab = "svc";
         AskPanelOpen = false;
         AuditPanelOpen = false;
+        CompleteLeaveGate(false);
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;

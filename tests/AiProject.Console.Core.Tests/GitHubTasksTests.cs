@@ -140,4 +140,68 @@ public class GitHubTasksTests
         Assert.Contains("C:\\proj", prompt);
         Assert.Contains("stack_status", prompt);
     }
+
+    [Fact]
+    public void ParseView_ReadsIssueAndComments()
+    {
+        const string json = """
+            {
+              "number": 3,
+              "title": "關於我的任務",
+              "state": "OPEN",
+              "url": "https://github.com/acme/app/issues/3",
+              "body": "點選任務時，會回到 Github issue 去",
+              "updatedAt": "2026-09-05T10:00:00Z",
+              "labels": [{"name": "enhancement"}],
+              "assignees": [{"login": "sjvann"}],
+              "comments": [
+                {
+                  "author": {"login": "sjvann"},
+                  "body": "先在控制台回應",
+                  "createdAt": "2026-09-05T11:00:00Z",
+                  "url": "https://github.com/acme/app/issues/3#issuecomment-1"
+                },
+                {
+                  "author": "octocat",
+                  "body": "再用 PR",
+                  "createdAt": "2026-09-05T12:00:00Z"
+                }
+              ]
+            }
+            """;
+        var (issue, comments) = GitHubIssues.ParseView(json);
+        Assert.NotNull(issue);
+        Assert.Equal(3, issue.Number);
+        Assert.Equal("關於我的任務", issue.Title);
+        Assert.Equal("enhancement", issue.LabelText);
+        Assert.Equal(2, comments.Count);
+        Assert.Equal("sjvann", comments[0].Author);
+        Assert.Equal("先在控制台回應", comments[0].Body);
+        Assert.Equal("octocat", comments[1].Author);
+        Assert.Equal("再用 PR", comments[1].Body);
+    }
+
+    [Fact]
+    public void ParseView_EmptyOrInvalid_ReturnsNone()
+    {
+        Assert.Null(GitHubIssues.ParseView("").Issue);
+        Assert.Empty(GitHubIssues.ParseView("").Comments);
+        Assert.Null(GitHubIssues.ParseView("not-json").Issue);
+        Assert.Null(GitHubIssues.ParseView("[]").Issue);
+    }
+
+    [Fact]
+    public void PullRequestClosesBody_WritesKeyword()
+    {
+        Assert.Equal("Closes #3", GitHubService.PullRequestClosesBody(3));
+        Assert.Equal("", GitHubService.PullRequestClosesBody(0));
+    }
+
+    [Fact]
+    public void BuildCreatePrArgs_AddsClosesBody()
+    {
+        var cfg = new GithubConfig { Owner = "acme", Repo = "app", DefaultBranch = "main" };
+        var args = GitHubService.BuildCreatePrArgs(cfg, 4);
+        Assert.Equal(["pr", "create", "--repo", "acme/app", "--base", "main", "--fill", "--body", "Closes #4"], args);
+    }
 }

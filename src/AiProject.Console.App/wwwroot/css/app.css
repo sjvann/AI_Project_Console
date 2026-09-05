@@ -364,7 +364,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .app-dialog-head h2 { margin: 0; }
 .app-dialog-head .hint { margin: 6px 0 0; }
 .app-dialog-body { flex: 1; overflow: auto; padding: 12px 18px 4px; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-.app-dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; }
+.app-dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
 .release-list { max-height: 360px; overflow: auto; margin: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
 .release-row { display: grid; grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 8px 10px; font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
 .release-row:last-child { border-bottom: none; }
@@ -395,6 +395,21 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-title:hover { color: var(--accent); text-decoration: underline; }
 .task-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; min-width: 0; overflow: hidden; }
 .task-empty { padding: 12px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.issue-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.issue-body { margin: 0; max-height: 220px; overflow: auto; }
+.issue-body img { max-width: 100%; height: auto; }
+.issue-comments { display: flex; flex-direction: column; gap: 8px; }
+.issue-comment { padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.issue-comment-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.issue-comment-author { font-weight: 700; }
+.issue-comment-when { color: var(--muted); font-size: 12px; }
+.issue-comment-body { font-size: 13px; overflow-wrap: anywhere; }
+.issue-comment-body p, .issue-comment-body ul, .issue-comment-body ol { margin: 0.35em 0; }
+.issue-steps { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.issue-steps ol { margin: 0 0 6px; padding-left: 1.3em; }
+.issue-steps li { margin: 0.3em 0; }
+.issue-pr-block { margin: 0; color: var(--wait); font-size: 13px; }
+.issue-reply textarea { width: 100%; min-height: 88px; resize: vertical; }
 .doc-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; }
 .doc-tree { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; min-height: 160px; }
 .doc-tree-root { padding: 8px 10px 4px; font: 700 12px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--muted); }

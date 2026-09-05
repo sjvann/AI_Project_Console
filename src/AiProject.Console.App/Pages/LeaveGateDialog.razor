@@ -1,0 +1,24 @@
+@if (!string.IsNullOrEmpty(S.LeaveGateReason))
+{
+    <AppDialog Title="@S.LeaveGateTitle" TitleId="leave-gate-title" Large="false" OnClose="S.CloseDialog">
+        <ChildContent>
+        <div class="doctor-summary doctor-warn" role="status">
+            <span class="doctor-summary-dot" aria-hidden="true"></span>
+            <div class="doctor-summary-text">
+                <strong>@S.LeaveGateReason</strong>
+                <span>@GitBriefStatus.LeaveGateHint</span>
+            </div>
+        </div>
+        </ChildContent>
+        <Actions>
+            <button type="button" class="btn-sec" @onclick="S.CloseDialog">留下</button>
+            <span class="grow"></span>
+            <button type="button" class="btn-danger" @onclick="S.ForceLeaveGate">@S.LeaveGateForceLabel</button>
+        </Actions>
+    </AppDialog>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ConsoleSession S { get; set; } = default!;
+}
