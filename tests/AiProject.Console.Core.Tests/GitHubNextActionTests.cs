@@ -108,6 +108,14 @@ public class GitHubNextActionTests
     }
 
     [Fact]
+    public void DialogHint_StartsWithReadingThenAgent()
+    {
+        Assert.Contains("先看", IssueCompletion.DialogHint);
+        Assert.Contains("請 Agent", IssueCompletion.DialogHint);
+        Assert.DoesNotContain("兩者不是同一件事", IssueCompletion.DialogHint);
+    }
+
+    [Fact]
     public void CreatePr_IgnoresRepoFlagReadError()
     {
         var reason = IssueCompletion.CreatePrBlockReason(

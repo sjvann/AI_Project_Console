@@ -36,7 +36,7 @@ else
             <div class="task-row">
                 <span class="task-num">@issue.NumberText</span>
                 <div class="task-main">
-                    <button type="button" class="task-title" title="在控制台開啟" @onclick="@(() => S.OpenIssueDialog(issue))">@issue.Title</button>
+                    <button type="button" class="task-title" title="查看任務內容" @onclick="@(() => S.OpenIssueDialog(issue))">@issue.Title</button>
                     <span class="task-meta">
                         @if (!string.IsNullOrEmpty(issue.LabelText))
                         {
@@ -52,7 +52,6 @@ else
                         }
                     </span>
                 </div>
-                <button class="btn-primary btn-compact" title="請後端 Agent 協助處理此 Issue" @onclick="@(() => S.OpenIssueHelp(issue))">請 Agent 協助</button>
             </div>
         }
     </section>

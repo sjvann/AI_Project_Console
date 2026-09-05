@@ -386,9 +386,9 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-section { margin-top: 6px; }
 .task-heading { display: flex; align-items: center; gap: 8px; margin: 8px 4px 6px; font: 700 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
 .task-heading .group-count { margin-left: auto; font-weight: 600; font-size: 11px; color: var(--muted); }
-.task-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border-radius: 4px; }
+.task-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px; border-radius: 4px; }
 .task-row:hover { background: var(--row-alt); }
-.task-row.task-open { opacity: .92; }
+.task-row.task-open { opacity: .92; grid-template-columns: 52px minmax(0, 1fr) auto; }
 .task-num { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .task-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .task-title { appearance: none; background: none; border: none; padding: 0; color: var(--text); font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -396,7 +396,8 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; min-width: 0; overflow: hidden; }
 .task-empty { padding: 12px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .issue-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.issue-body { margin: 0; max-height: 220px; overflow: auto; }
+.issue-section-title { margin: 10px 0 6px; font: 700 13px "Segoe UI", "Noto Sans TC", sans-serif; }
+.issue-body { margin: 0; max-height: min(42vh, 360px); overflow: auto; }
 .issue-body img { max-width: 100%; height: auto; }
 .issue-comments { display: flex; flex-direction: column; gap: 8px; }
 .issue-comment { padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
@@ -405,11 +406,11 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .issue-comment-when { color: var(--muted); font-size: 12px; }
 .issue-comment-body { font-size: 13px; overflow-wrap: anywhere; }
 .issue-comment-body p, .issue-comment-body ul, .issue-comment-body ol { margin: 0.35em 0; }
-.issue-steps { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
-.issue-steps ol { margin: 0 0 6px; padding-left: 1.3em; }
+.issue-steps { margin: 8px 0 0; padding: 8px 10px 8px 1.4em; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
 .issue-steps li { margin: 0.3em 0; }
-.issue-pr-block { margin: 0; color: var(--wait); font-size: 13px; }
-.issue-reply textarea { width: 100%; min-height: 88px; resize: vertical; }
+.issue-after { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 4px; }
+.issue-pr-block { margin: 0 0 8px; color: var(--wait); font-size: 13px; }
+.issue-reply textarea { width: 100%; min-height: 72px; resize: vertical; }
 .doc-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; }
 .doc-tree { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; min-height: 160px; }
 .doc-tree-root { padding: 8px 10px 4px; font: 700 12px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--muted); }

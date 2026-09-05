@@ -8,7 +8,7 @@ namespace AiProject.Console.Core.GitHub;
 public static class IssueCompletion
 {
     public const string DialogHint =
-        "「送出回應」是在這則 Issue 留言回報進度；「建立 PR」是用目前分支交作業。兩者不是同一件事，合併 PR 才會關閉任務。";
+        "先看這則任務的內容，再請 Agent 協助。做完之後才留言回報或開 PR。";
 
     public static string? CreatePrBlockReason(
         GitBriefStatus? brief,

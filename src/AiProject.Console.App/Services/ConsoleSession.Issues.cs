@@ -60,6 +60,7 @@ public sealed partial class ConsoleSession
     {
         if (!RequireCatalog())
             return;
+        _resumeIssueAfterBranch = issue;
         AgentPrompt = CursorLauncher.BuildIssueAgentPrompt(Catalog!.Root, issue);
         AgentTitle = $"請 Agent 協助 · {issue.NumberText}";
         AgentIntro = AgentLaunchIntro();
@@ -146,7 +147,7 @@ public sealed partial class ConsoleSession
                 PrState = listed.PrState,
             };
             IssueComments = comments;
-            IssueViewHint = comments.Count == 0 ? "還沒有討論。可在下方回應。" : "";
+            IssueViewHint = comments.Count == 0 ? "還沒有討論。" : "";
         }
         catch (Exception ex)
         {

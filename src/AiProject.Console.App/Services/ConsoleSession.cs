@@ -3726,7 +3726,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void CloseDialog()
     {
-        var resumeIssue = Dialog == "branch" ? _resumeIssueAfterBranch : null;
+        var resumeIssue = Dialog is "branch" or "agent" ? _resumeIssueAfterBranch : null;
         _resumeIssueAfterBranch = null;
         CompleteLeaveGate(false);
         Dialog = null;
