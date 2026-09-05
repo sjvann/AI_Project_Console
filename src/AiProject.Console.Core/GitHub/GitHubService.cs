@@ -116,15 +116,9 @@ public static class GithubConfigResolver
             cfg.Host = GitHost.HostFromUrl(url);
             cfg.Kind = GitHost.InferKind(cfg.Host, url);
         }
-        (code, var branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root, 60_000).ConfigureAwait(false);
-        if (code == 0 && !string.IsNullOrEmpty(branch) && branch != "HEAD")
-            cfg.DefaultBranch = branch;
-        else
-        {
-            (code, var sym) = await CliUtil.RunAsync("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], root, 60_000).ConfigureAwait(false);
-            if (code == 0 && !string.IsNullOrEmpty(sym))
-                cfg.DefaultBranch = sym.Split('/')[^1];
-        }
+        (code, var sym) = await CliUtil.RunAsync("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], root, 60_000).ConfigureAwait(false);
+        if (code == 0 && !string.IsNullOrEmpty(sym))
+            cfg.DefaultBranch = sym.Split('/')[^1];
         return cfg;
     }
 
@@ -1017,8 +1011,6 @@ public static class GitHubService
     public static IReadOnlyList<string> BuildCreatePrArgs(GithubConfig cfg, int? closesIssue = null)
     {
         var args = new List<string> { "pr", "create" };
-        if (!string.IsNullOrEmpty(cfg.Slug()))
-            args.AddRange(["--repo", cfg.Slug()]);
         args.AddRange(["--base", string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch, "--fill"]);
         var closes = closesIssue is > 0 ? PullRequestClosesBody(closesIssue.Value) : "";
         if (!string.IsNullOrEmpty(closes))
@@ -1043,8 +1035,6 @@ public static class GitHubService
         if (code != 0)
         {
             var viewArgs = new List<string> { "pr", "view", "--web" };
-            if (!string.IsNullOrEmpty(cfg.Slug()))
-                viewArgs.AddRange(["--repo", cfg.Slug()]);
             var (code2, out2) = await GhCli.RunAsync(viewArgs, catalog.Root, cfg, 60_000).ConfigureAwait(false);
             if (code2 == 0)
                 return string.IsNullOrEmpty(out2) ? "已開啟既有 PR。" : out2;
@@ -1173,8 +1163,6 @@ public static class GitHubService
             "pr", "view",
             "--json", "title,url,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup",
         };
-        if (!string.IsNullOrEmpty(cfg.Slug()))
-            args.AddRange(["--repo", cfg.Slug()]);
         var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
         if (code != 0)
             return PrStatus.LooksLikeNoPr(output)

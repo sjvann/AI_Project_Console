@@ -108,6 +108,17 @@ public class GitHubNextActionTests
     }
 
     [Fact]
+    public void CreatePr_IgnoresRepoFlagReadError()
+    {
+        var reason = IssueCompletion.CreatePrBlockReason(
+            new GitBriefStatus("issue-4", 0, 0, 0),
+            "main",
+            hasPr: false,
+            prReadError: "argument required when using the --repo flag");
+        Assert.Null(reason);
+    }
+
+    [Fact]
     public void CreatePr_OnDefaultBranch_ExplainsInsteadOfCallingGh()
     {
         var reason = IssueCompletion.CreatePrBlockReason(

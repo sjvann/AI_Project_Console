@@ -85,6 +85,7 @@ public class PrStatusTests
         Assert.Equal("無 PR", PullRequestStatus.None().ChipText());
         Assert.Equal("PR 無法讀取", PullRequestStatus.Unavailable("需要 gh").ChipText());
         Assert.True(PrStatus.LooksLikeNoPr("no pull requests found for branch \"feat\""));
+        Assert.True(PrStatus.LooksLikeNoPr("argument required when using the --repo flag"));
         Assert.False(PrStatus.LooksLikeNoPr("HTTP 403"));
     }
 }
