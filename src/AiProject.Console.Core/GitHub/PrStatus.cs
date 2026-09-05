@@ -115,7 +115,8 @@ public static class PrStatus
         var text = output ?? "";
         return text.Contains("no pull requests found", StringComparison.OrdinalIgnoreCase)
             || text.Contains("no open pull requests", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("Could not find a pull request", StringComparison.OrdinalIgnoreCase);
+            || text.Contains("Could not find a pull request", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("argument required when using the --repo flag", StringComparison.OrdinalIgnoreCase);
     }
 
     public static PullRequestStatus Parse(string json)

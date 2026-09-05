@@ -18,7 +18,8 @@ public static class IssueCompletion
     {
         if (hasPr)
             return null;
-        if (!string.IsNullOrWhiteSpace(prReadError))
+        if (!string.IsNullOrWhiteSpace(prReadError)
+            && !PrStatus.LooksLikeNoPr(prReadError))
             return ExplainCreatePrFailure(prReadError);
         if (brief is null)
             return "尚未讀到 git 狀態，無法建立 PR。";

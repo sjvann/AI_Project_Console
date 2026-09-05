@@ -202,6 +202,6 @@ public class GitHubTasksTests
     {
         var cfg = new GithubConfig { Owner = "acme", Repo = "app", DefaultBranch = "main" };
         var args = GitHubService.BuildCreatePrArgs(cfg, 4);
-        Assert.Equal(["pr", "create", "--repo", "acme/app", "--base", "main", "--fill", "--body", "Closes #4"], args);
+        Assert.Equal(["pr", "create", "--base", "main", "--fill", "--body", "Closes #4"], args);
     }
 }
