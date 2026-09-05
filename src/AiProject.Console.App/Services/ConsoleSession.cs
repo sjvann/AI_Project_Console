@@ -2407,20 +2407,113 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
-    public Task CheckUpdateAsync() =>
-        RunJobAsync("檢查更新…", async () =>
+    public async Task CheckUpdateAsync()
+    {
+        var ans = _native.YesNoCancel(
+            "檢查更新",
+            "是否包含 RC／預發行版本？\n\n「是」＝正式版與 RC 都看，取較新者\n「否」＝只看正式版\n「取消」＝不檢查");
+        if (ans == PhotinoDialogResult.Cancel)
+            return;
+        var includeRc = ans == PhotinoDialogResult.Yes;
+        if (Dialog == "prefs")
+            CloseDialog();
+        await RunJobAsync("檢查更新…", async () =>
         {
-            var update = await SelfUpdate.CheckLatestAsync(_cts.Token).ConfigureAwait(false);
+            var update = await SelfUpdate.CheckLatestAsync(_cts.Token, includePrerelease: includeRc).ConfigureAwait(false);
             ConsoleSettingsStore.MarkUpdateChecked();
             if (update is null)
             {
                 UpdateAvailable = null;
-                return $"目前已是最新版本 v{AppInfo.Version}。";
+                return includeRc
+                    ? $"目前已是最新版本 v{AppInfo.Version}（含 RC）。"
+                    : $"目前已是最新版本 v{AppInfo.Version}。";
             }
             UpdateAvailable = update;
             Notify();
-            return $"發現新版本 {update.Tag}（目前 v{AppInfo.Version}）。可按「立即更新」下載並安裝。";
-        });
+            var rc = update.Prerelease ? "（RC／預發行）" : "";
+            return $"發現新版本 {update.Tag}{rc}（目前 v{AppInfo.Version}）。可按「立即更新」下載並安裝。";
+        }, refreshBuilds: false);
+        if (UpdateAvailable is null && !JobBusy && JobText != "錯誤")
+        {
+            _native.Info(
+                "檢查更新",
+                includeRc
+                    ? $"目前已是最新版本 v{AppInfo.Version}（含 RC）。"
+                    : $"目前已是最新版本 v{AppInfo.Version}。");
+        }
+    }
+
+    public async Task ApplyUpdateFromFileAsync()
+    {
+        if (Dialog == "prefs")
+            CloseDialog();
+        await Task.Yield();
+
+        string[]? files;
+        try
+        {
+            files = await _native.PickFilesAsync(
+                "選擇更新檔",
+                ("安裝包／壓縮檔", [".zip", ".exe"]),
+                ("所有檔案", ["*"])).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _native.Error("無法選擇檔案", ex.Message);
+            return;
+        }
+        if (files is null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0]))
+            return;
+        var path = files[0];
+
+        var kind = SelfUpdate.DetectInstallKind();
+        var mode = SelfUpdate.ResolveLocalFileMode(path, kind);
+        if (mode is UpdateApplyMode.None or UpdateApplyMode.OpenReleases)
+        {
+            _native.Info(
+                kind == InstallKind.Development ? "無法自動覆蓋" : "無法套用此檔案",
+                SelfUpdate.CannotApplyLocalFileHint(kind, path));
+            return;
+        }
+
+        if (!_native.Confirm(
+            "從檔案更新",
+            (kind == InstallKind.Development
+                ? "目前是從原始碼／開發目錄執行。套用會覆蓋目前執行目錄，不會改 Git 原始碼。\n\n"
+                : "") +
+            $"將用本機檔案安裝：\n{path}\n\n會開啟安裝程式。安裝時控制台可能會關閉並在完成後重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            return;
+
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return;
+        }
+
+        JobBusy = true;
+        JobText = "套用更新…";
+        Notify();
+        try
+        {
+            var fromInstaller = mode == UpdateApplyMode.Installer;
+            SelfUpdate.LaunchApply(path, mode, silent: !fromInstaller);
+            if (fromInstaller)
+            {
+                JobBusy = false;
+                JobText = "安裝程式已開啟";
+                Notify();
+                return;
+            }
+            _native.Close();
+        }
+        catch (Exception ex)
+        {
+            JobBusy = false;
+            JobText = "錯誤";
+            Notify();
+            _native.Error("更新失敗", ex.Message);
+        }
+    }
 
     public void DismissUpdate()
     {
@@ -2467,7 +2560,7 @@ public sealed partial class ConsoleSession : IDisposable
 
         if (!_native.Confirm(
             "更新控制台",
-            $"將下載並安裝 {update.Tag}（目前 v{AppInfo.Version}）。\n控制台會先關閉以便覆蓋檔案，安裝完成後會自動重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            $"將下載並安裝 {update.Tag}{(update.Prerelease ? "（RC／預發行）" : "")}（目前 v{AppInfo.Version}）。\n控制台會先關閉以便覆蓋檔案，安裝完成後會自動重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
             return;
 
         if (JobBusy)
@@ -2758,7 +2851,11 @@ public sealed partial class ConsoleSession : IDisposable
         if (_resumeIssueAfterBranch is { } issue)
         {
             _resumeIssueAfterBranch = null;
-            OpenIssueDialog(issue);
+            Dialog = "issue";
+            if (ActiveIssue is null || ActiveIssue.Number != issue.Number)
+                OpenIssueDialog(issue);
+            else
+                Notify();
             return;
         }
         if (Dialog == "branch")
@@ -3726,11 +3823,9 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void CloseDialog()
     {
-        var resumeIssue = Dialog == "branch" ? _resumeIssueAfterBranch : null;
+        var resumeIssue = Dialog is "branch" or "agent" ? _resumeIssueAfterBranch : null;
         _resumeIssueAfterBranch = null;
         CompleteLeaveGate(false);
-        Dialog = null;
-        ClearIssueView();
         DoctorView = null;
         DoctorCopied = false;
         ReleaseList = null;
@@ -3739,9 +3834,15 @@ public sealed partial class ConsoleSession : IDisposable
         InfoCopied = false;
         if (resumeIssue is not null)
         {
-            OpenIssueDialog(resumeIssue);
+            Dialog = "issue";
+            if (ActiveIssue is null || ActiveIssue.Number != resumeIssue.Number)
+                OpenIssueDialog(resumeIssue);
+            else
+                Notify();
             return;
         }
+        Dialog = null;
+        ClearIssueView();
         Notify();
     }
 
@@ -4145,7 +4246,7 @@ public sealed partial class ConsoleSession : IDisposable
                 && ActiveIssue is { } issue
                 && _native.Confirm(
                     "還不能建立 PR",
-                    block + "\n\n「送出回應」只是 Issue 留言，不會關閉任務。要先為此任務建立功能分支嗎？未提交的改動會跟著新分支。"))
+                    block + "\n\n要先為此任務建立功能分支嗎？未提交的改動會跟著新分支。"))
             {
                 _resumeIssueAfterBranch = issue;
                 await OpenBranchDialogAsync(

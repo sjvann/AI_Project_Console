@@ -20,72 +20,101 @@
                 }
                 <span>目前分支 @S.IssueBranchText</span>
             </div>
-            <section class="issue-steps" aria-label="完成步驟">
-                <ol>
-                    <li><strong>送出回應</strong>：把進度寫進這則 Issue 的討論。只是留言，不會關閉任務。</li>
-                    <li><strong>建立 PR</strong>：用功能分支上的提交開 Pull Request。合併後才會關閉這則 Issue。</li>
-                </ol>
-                @if (!string.IsNullOrEmpty(S.IssuePrBlockReason))
-                {
-                    <p class="issue-pr-block">@S.IssuePrBlockReason</p>
-                }
-                else if (S.PullRequest is { HasPr: true })
-                {
-                    <p class="hint">目前分支已有 PR。可開啟查看檢查；審查與合併仍到 GitHub。</p>
-                }
-                else
-                {
-                    <p class="hint">建立時會在說明寫入 Closes @issue.NumberText，合併即關閉此任務。</p>
-                }
+            <ol class="issue-steps" aria-label="建議步驟">
+                <li><strong>看內容</strong>：含截圖，確認這則任務在說什麼。</li>
+                <li><strong>討論</strong>：講清楚。若不是問題就結案。</li>
+                <li><strong>自己處理</strong>：做得到就開分支、提交、建 PR。</li>
+                <li><strong>請 Agent</strong>：自己處理不了才請。做完同樣開分支、建 PR。</li>
+            </ol>
+            <section class="issue-read" aria-label="任務內容">
+                <h3 class="issue-section-title">任務內容</h3>
+                <div class="issue-body doc-preview">@((MarkupString)S.IssueBodyHtml)</div>
             </section>
-            <div class="issue-body doc-preview">@((MarkupString)S.IssueBodyHtml)</div>
-            @if (!string.IsNullOrEmpty(S.IssueViewHint))
+            <section class="issue-discuss" aria-label="討論">
+                <h3 class="issue-section-title">討論</h3>
+                @if (S.IssueComments.Count == 0 && string.IsNullOrEmpty(S.IssueViewHint))
+                {
+                    <p class="hint">還沒有討論。先寫下理解；若不是問題可結案。</p>
+                }
+                @foreach (var comment in S.IssueComments)
+                {
+                    <article class="issue-comment">
+                        <div class="issue-comment-head">
+                            <span class="issue-comment-author">@comment.AuthorText</span>
+                            @if (!string.IsNullOrEmpty(comment.WhenText()))
+                            {
+                                <span class="issue-comment-when">@comment.WhenText()</span>
+                            }
+                        </div>
+                        <div class="issue-comment-body doc-preview">@((MarkupString)S.IssueCommentHtml(comment.Body))</div>
+                    </article>
+                }
+                @if (!string.IsNullOrEmpty(S.IssueViewHint))
+                {
+                    <p class="hint">@S.IssueViewHint</p>
+                }
+                <div class="issue-reply">
+                    <div class="field" style="align-items:start">
+                        <span>討論</span>
+                        <textarea @bind="S.IssueCommentDraft"
+                                  @bind:event="oninput"
+                                  disabled="@(S.JobBusy || S.IssueViewBusy)"
+                                  placeholder="不清楚的地方、範圍、為什麼不是問題、或打算怎麼做…"></textarea>
+                    </div>
+                    <div class="issue-discuss-actions">
+                        <button type="button" class="btn-sec" disabled="@(!S.CanSubmitIssueComment)" @onclick="S.SubmitIssueCommentAsync">送出討論</button>
+                        @if (issue.IsOpen)
+                        {
+                            <button type="button"
+                                    class="btn-sec"
+                                    disabled="@(!S.CanCloseActiveIssue)"
+                                    title="討論後認為不是問題、或不必再做"
+                                    @onclick="S.CloseActiveIssueAsync">結案</button>
+                        }
+                    </div>
+                </div>
+            </section>
+            @if (S.ShowIssueFinishSection)
             {
-                <p class="hint">@S.IssueViewHint</p>
-            }
-            @if (S.IssueComments.Count > 0)
-            {
-                <section class="issue-comments" aria-label="討論">
-                    @foreach (var comment in S.IssueComments)
+                <section class="issue-after" aria-label="開分支與 PR">
+                    <h3 class="issue-section-title">開分支、建 PR</h3>
+                    <p class="hint">自己改完或 Agent 改完、提交並發布之後才做這步。留言不會關閉任務；開 PR 並合併，或按結案，才會。</p>
+                    @if (!string.IsNullOrEmpty(S.IssuePrBlockReason))
                     {
-                        <article class="issue-comment">
-                            <div class="issue-comment-head">
-                                <span class="issue-comment-author">@comment.AuthorText</span>
-                                @if (!string.IsNullOrEmpty(comment.WhenText()))
-                                {
-                                    <span class="issue-comment-when">@comment.WhenText()</span>
-                                }
-                            </div>
-                            <div class="issue-comment-body">@((MarkupString)DocsMarkdown.ToSafeHtml(comment.Body))</div>
-                        </article>
+                        <p class="issue-pr-block">@S.IssuePrBlockReason</p>
+                    }
+                    else if (S.PullRequest is { HasPr: true })
+                    {
+                        <p class="hint">目前分支已有 PR。可開啟查看檢查；審查與合併仍到 GitHub。</p>
+                    }
+                    else
+                    {
+                        <p class="hint">建立 PR 時會在說明寫入 Closes @issue.NumberText。</p>
                     }
                 </section>
             }
-            <div class="issue-reply">
-                <div class="field" style="align-items:start">
-                    <span>回應</span>
-                    <textarea @bind="S.IssueCommentDraft"
-                              @bind:event="oninput"
-                              disabled="@(S.JobBusy || S.IssueViewBusy)"
-                              placeholder="寫給這則 Issue 的留言（回報進度，不會關閉任務）…"></textarea>
-                </div>
-            </div>
         </ChildContent>
         <Actions>
             <button type="button" class="btn-sec" @onclick="S.CloseDialog">關閉</button>
             <button type="button" class="btn-sec" disabled="@(string.IsNullOrEmpty(issue.Url))" @onclick="S.OpenActiveIssueUrl">在 GitHub 開啟</button>
             <span class="grow"></span>
-            <button type="button" class="btn-sec" disabled="@S.JobBusy" @onclick="S.OpenActiveIssueHelpAsync">請 Agent 協助</button>
-            <button type="button" class="btn-sec" disabled="@(!S.CanSubmitIssueComment)" @onclick="S.SubmitIssueCommentAsync">送出回應</button>
+            <button type="button"
+                    class="btn-sec"
+                    disabled="@(!S.CanAskIssueAgent)"
+                    title="自己處理不了時才請 Agent"
+                    @onclick="S.OpenActiveIssueHelpAsync">請 Agent 協助</button>
             @if (S.IssueNeedsTaskBranch)
             {
-                <button type="button" class="btn-sec" disabled="@S.JobBusy" @onclick="S.OpenIssueTaskBranchAsync">為此任務建立分支</button>
+                <button type="button" class="btn-primary" disabled="@S.JobBusy" @onclick="S.OpenIssueTaskBranchAsync">為此任務建立分支</button>
             }
-            <button type="button"
-                    class="btn-primary"
-                    disabled="@(!S.CanUseIssuePr)"
-                    title="@(S.PullRequest is { HasPr: true } ? "開啟目前分支的 PR" : "用目前分支開 PR；合併後關閉此 Issue")"
-                    @onclick="S.OpenIssuePrAsync">@S.IssuePrButtonLabel</button>
+            else if (S.ShowIssueFinishSection)
+            {
+                <button type="button"
+                        class="@(S.PullRequest is { HasPr: true } ? "btn-sec" : "btn-primary")"
+                        disabled="@(!S.CanUseIssuePr)"
+                        title="@(S.PullRequest is { HasPr: true } ? "開啟目前分支的 PR" : "自己或 Agent 做完後，用目前分支開 PR；合併後關閉此 Issue")"
+                        @onclick="S.OpenIssuePrAsync">@S.IssuePrButtonLabel</button>
+            }
         </Actions>
     </AppDialog>
 }

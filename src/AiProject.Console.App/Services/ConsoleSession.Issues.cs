@@ -6,20 +6,34 @@ namespace AiProject.Console.App.Services;
 public sealed partial class ConsoleSession
 {
     GithubIssue? _resumeIssueAfterBranch;
+    IReadOnlyDictionary<string, string> _issueImageMap = new Dictionary<string, string>();
 
     public GithubIssue? ActiveIssue { get; private set; }
     public IReadOnlyList<GithubIssueComment> IssueComments { get; private set; } = [];
     public string IssueCommentDraft { get; set; } = "";
     public string IssueViewHint { get; private set; } = "";
     public bool IssueViewBusy { get; private set; }
-    public string IssueBodyHtml => DocsMarkdown.ToSafeHtml(
-        string.IsNullOrWhiteSpace(ActiveIssue?.Body) ? "（沒有內文）" : ActiveIssue!.Body);
+
+    public string IssueBodyHtml => DocsMarkdown.ToIssueHtml(
+        string.IsNullOrWhiteSpace(ActiveIssue?.Body) ? "（沒有內文）" : ActiveIssue!.Body,
+        _issueImageMap);
+
+    public string IssueCommentHtml(string? body) => DocsMarkdown.ToIssueHtml(body, _issueImageMap);
 
     public bool CanSubmitIssueComment =>
         ActiveIssue is not null
         && !JobBusy
         && !IssueViewBusy
         && !string.IsNullOrWhiteSpace(IssueCommentDraft);
+
+    public bool CanAskIssueAgent =>
+        ActiveIssue is { IsOpen: true } && !JobBusy;
+
+    public bool CanCloseActiveIssue =>
+        ActiveIssue is { IsOpen: true } && !JobBusy && !IssueViewBusy;
+
+    public bool CanFinishIssueOnBranch =>
+        ActiveIssue is { IsOpen: true } && !JobBusy;
 
     public string IssuePrButtonLabel => PullRequest is { HasPr: true } ? "開啟 PR" : "建立 PR";
 
@@ -38,7 +52,10 @@ public sealed partial class ConsoleSession
         && (PullRequest is { HasPr: true } || string.IsNullOrEmpty(IssuePrBlockReason));
 
     public bool IssueNeedsTaskBranch =>
-        ActiveIssue is not null && IssueCompletion.NeedsTaskBranch(GitBrief, GithubDraft.DefaultBranch);
+        ActiveIssue is { IsOpen: true }
+        && IssueCompletion.NeedsTaskBranch(GitBrief, GithubDraft.DefaultBranch);
+
+    public bool ShowIssueFinishSection => ActiveIssue is not null;
 
     public string IssueBranchText => GitBrief?.Branch ?? "（未知）";
 
@@ -51,6 +68,7 @@ public sealed partial class ConsoleSession
         IssueCommentDraft = "";
         IssueViewHint = "";
         IssueViewBusy = false;
+        _issueImageMap = new Dictionary<string, string>();
         Dialog = "issue";
         Notify();
         _ = LoadIssueViewAsync(issue);
@@ -58,9 +76,14 @@ public sealed partial class ConsoleSession
 
     public void OpenIssueHelp(GithubIssue issue)
     {
-        if (!RequireCatalog())
+        if (!RequireCatalog() || !CanAskIssueAgent)
             return;
-        AgentPrompt = CursorLauncher.BuildIssueAgentPrompt(Catalog!.Root, issue);
+        _resumeIssueAfterBranch = issue;
+        AgentPrompt = CursorLauncher.BuildIssueAgentPrompt(
+            Catalog!.Root,
+            issue,
+            IssueComments,
+            string.IsNullOrWhiteSpace(IssueCommentDraft) ? null : IssueCommentDraft);
         AgentTitle = $"請 Agent 協助 · {issue.NumberText}";
         AgentIntro = AgentLaunchIntro();
         Dialog = "agent";
@@ -69,7 +92,7 @@ public sealed partial class ConsoleSession
 
     public Task OpenActiveIssueHelpAsync()
     {
-        if (ActiveIssue is null)
+        if (!CanAskIssueAgent || ActiveIssue is null)
             return Task.CompletedTask;
         OpenIssueHelp(ActiveIssue);
         return Task.CompletedTask;
@@ -88,7 +111,7 @@ public sealed partial class ConsoleSession
         var listed = ActiveIssue;
         var body = IssueCommentDraft.Trim();
         IssueViewBusy = true;
-        IssueViewHint = "送出回應中…";
+        IssueViewHint = "送出討論中…";
         Notify();
         try
         {
@@ -109,15 +132,54 @@ public sealed partial class ConsoleSession
         }
     }
 
+    public async Task CloseActiveIssueAsync()
+    {
+        if (!CanCloseActiveIssue || !RequireCatalog() || ActiveIssue is null)
+            return;
+        var listed = ActiveIssue;
+        var note = IssueCommentDraft.Trim();
+        var confirm = string.IsNullOrEmpty(note)
+            ? $"確定關閉 {listed.NumberText}「{listed.Title}」？這表示討論後認為不是問題、或不必再做。"
+            : $"會先把討論送出，再關閉 {listed.NumberText}。確定？";
+        if (!_native.Confirm("結案", confirm))
+            return;
+        IssueViewBusy = true;
+        IssueViewHint = "結案中…";
+        Notify();
+        try
+        {
+            var cfg = await GithubConfigResolver.ResolveAsync(Catalog!).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(note))
+            {
+                await GitHubIssues.CommentAsync(Catalog!.Root, cfg, listed.Number, note, _cts.Token).ConfigureAwait(false);
+                IssueCommentDraft = "";
+            }
+            await GitHubIssues.CloseAsync(Catalog!.Root, cfg, listed.Number, _cts.Token, "not planned").ConfigureAwait(false);
+            JobText = $"已關閉 {listed.NumberText}";
+            await RefreshIssuesAsync().ConfigureAwait(false);
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            if (ActiveIssue is null || ActiveIssue.Number != listed.Number)
+                return;
+            IssueViewHint = FirstLine(ex.Message);
+            IssueViewBusy = false;
+            Notify();
+        }
+    }
+
     public Task OpenIssuePrAsync()
     {
+        if (!CanUseIssuePr)
+            return Task.CompletedTask;
         var number = ActiveIssue?.Number;
         return OpenOrCreatePrAsync(number is > 0 ? number : null);
     }
 
     public Task OpenIssueTaskBranchAsync()
     {
-        if (ActiveIssue is null)
+        if (ActiveIssue is null || !CanFinishIssueOnBranch)
             return Task.CompletedTask;
         _resumeIssueAfterBranch = ActiveIssue;
         return OpenBranchDialogAsync(
@@ -129,7 +191,7 @@ public sealed partial class ConsoleSession
         if (Catalog is null)
             return;
         IssueViewBusy = true;
-        IssueViewHint = "載入討論中…";
+        IssueViewHint = "載入內容中…";
         Notify();
         try
         {
@@ -146,7 +208,17 @@ public sealed partial class ConsoleSession
                 PrState = listed.PrState,
             };
             IssueComments = comments;
-            IssueViewHint = comments.Count == 0 ? "還沒有討論。可在下方回應。" : "";
+            var wanted = IssueMarkdown.FindHttpImageUrls(issue.Body)
+                .Concat(comments.SelectMany(c => IssueMarkdown.FindHttpImageUrls(c.Body)))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            _issueImageMap = await IssueImages.ToDataUrisAsync(
+                wanted, Catalog.Root, cfg, _cts.Token).ConfigureAwait(false);
+            if (ActiveIssue is null || ActiveIssue.Number != listed.Number)
+                return;
+            IssueViewHint = wanted.Count > 0 && _issueImageMap.Count == 0
+                ? "截圖無法載入，可按「在 GitHub 開啟」查看。"
+                : "";
         }
         catch (Exception ex)
         {
@@ -167,6 +239,7 @@ public sealed partial class ConsoleSession
             && string.IsNullOrEmpty(IssueCommentDraft)
             && string.IsNullOrEmpty(IssueViewHint)
             && !IssueViewBusy
+            && _issueImageMap.Count == 0
             && _resumeIssueAfterBranch is null)
             return;
         ActiveIssue = null;
@@ -174,5 +247,6 @@ public sealed partial class ConsoleSession
         IssueCommentDraft = "";
         IssueViewHint = "";
         IssueViewBusy = false;
+        _issueImageMap = new Dictionary<string, string>();
     }
 }
