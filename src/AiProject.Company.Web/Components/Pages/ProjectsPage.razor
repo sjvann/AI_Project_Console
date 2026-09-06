@@ -1,0 +1,56 @@
+@page "/projects"
+@rendermode InteractiveServer
+@inject DirectoryQueries Directory
+@inject IProjectHealthPolicy Health
+@inject IProjectDocsCatalog Docs
+
+<PageTitle>專案</PageTitle>
+<h1>專案組合</h1>
+<table class="grid">
+    <thead><tr><th>專案</th><th>客戶</th><th>來源</th><th>階段</th><th>目標日</th><th>狀態</th><th>健康</th></tr></thead>
+    <tbody>
+    @foreach (var row in _rows)
+    {
+        <tr class="tone-@row.Health.Worst.ToString().ToLowerInvariant()">
+            <td><a href="/projects/@row.Project.Id">@row.Project.Name</a></td>
+            <td>@row.ClientName</td>
+            <td>@row.Lifecycle.Display()</td>
+            <td>@row.Project.CurrentPhase(DateTimeOffset.Now)?.Name</td>
+            <td>@row.Project.TargetEnd</td>
+            <td>@row.Project.Status</td>
+            <td>@row.Health.ScheduleLabel · @row.Health.StaffingLabel</td>
+        </tr>
+    }
+    </tbody>
+</table>
+@if (_rows.Count == 0)
+{
+    <p class="empty">還沒有專案。<a href="/clients">從客戶建立</a>。</p>
+}
+
+@code {
+    IReadOnlyList<Row> _rows = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var projects = await Directory.ProjectsAsync();
+        var contracts = await Directory.ContractsAsync();
+        var clients = (await Directory.ClientsAsync()).ToDictionary(c => c.Id);
+        var byContract = contracts.ToDictionary(c => c.Id);
+        var today = Directory.Today();
+        var rows = new List<Row>();
+        foreach (var p in projects)
+        {
+            byContract.TryGetValue(p.ContractId, out var contract);
+            Client? client = null;
+            if (contract is not null)
+                clients.TryGetValue(contract.ClientId, out client);
+            var catalog = await Docs.ReadAsync(p);
+            var health = Health.Evaluate(p, today, 0, false, null, catalog.RequirementsReady);
+            rows.Add(new Row(p, client?.Name ?? "—", client?.Lifecycle ?? ClientLifecycle.Active, health));
+        }
+        _rows = rows;
+    }
+
+    sealed record Row(Project Project, string ClientName, ClientLifecycle Lifecycle, ProjectHealth Health);
+}

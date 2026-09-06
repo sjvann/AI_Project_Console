@@ -1,0 +1,99 @@
+@page "/people/{Id:guid}"
+@rendermode InteractiveServer
+@inject PeopleCommands Commands
+@inject DirectoryQueries Directory
+@inject IAuthorizationGate Gate
+
+<PageTitle>人員卡片</PageTitle>
+@if (_person is null)
+{
+    <p>找不到這個人。</p>
+}
+else
+{
+    <h1>@_person.DisplayName</h1>
+    <div class="stack card">
+        <label>顯示名 <input @bind="_name" /></label>
+        <label>Email <input @bind="_email" /></label>
+        <label>每週上限 <input type="number" @bind="_cap" /></label>
+        <label>技能（逗號） <input @bind="_skills" /></label>
+        <label>GitHub <input @bind="_github" /></label>
+        <p class="hint">給控制台上傳對人用，不是後台登入。招募邀請也會自動綁。</p>
+        <label>不可派起 <input type="date" @bind="_unavailStart" /></label>
+        <label>不可派迄 <input type="date" @bind="_unavailEnd" /></label>
+        <label>不可派原因 <input @bind="_unavailReason" /></label>
+        <label class="check"><input type="checkbox" @bind="_exempt" /> 不參與專案分攤</label>
+        <label>月薪 <input type="password" @bind="_salary" autocomplete="off" /> <button type="button" class="btn-sec" @onclick="Reveal">顯示</button></label>
+        <label>對內時計費率 <input type="password" @bind="_hourly" autocomplete="off" /></label>
+        <label>改費率原因 <input @bind="_reason" /></label>
+        <button class="btn-primary" @onclick="Save">儲存</button>
+        <button class="btn-sec" @onclick="Bind">綁定 GitHub</button>
+        <button class="btn-danger" @onclick="Deactivate">停用</button>
+        <p>@_message</p>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    Person? _person;
+    string _name = "";
+    string _email = "";
+    decimal _cap = 40;
+    string _skills = "";
+    string _github = "";
+    DateOnly _unavailStart = DateOnly.FromDateTime(DateTime.Today);
+    DateOnly _unavailEnd = DateOnly.FromDateTime(DateTime.Today);
+    string _unavailReason = "";
+    bool _exempt;
+    string _salary = "";
+    string _hourly = "";
+    string _reason = "";
+    string _message = "";
+    bool _showPay;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _person = await Directory.PersonAsync(Id);
+        if (_person is null)
+            return;
+        _name = _person.DisplayName;
+        _email = _person.Email ?? "";
+        _cap = _person.WeeklyHourCap;
+        _skills = string.Join(",", _person.Skills);
+        _github = _person.GitHubLogin ?? "";
+        _exempt = _person.CostAllocationExempt;
+    }
+
+    void Reveal()
+    {
+        if (!Gate.Can(PlatformCapability.ViewSalary, personId: Id))
+        {
+            _message = Messages.RateHidden;
+            return;
+        }
+        _showPay = !_showPay;
+    }
+
+    async Task Save()
+    {
+        decimal? salary = decimal.TryParse(_salary, out var s) ? s : null;
+        decimal? hourly = decimal.TryParse(_hourly, out var h) ? h : null;
+        var ranges = string.IsNullOrWhiteSpace(_unavailReason)
+            ? _person!.Unavailable
+            : _person!.Unavailable.Append(new UnavailableRange(_unavailStart, _unavailEnd, _unavailReason)).ToList();
+        var result = await Commands.UpdatePersonAsync(Id, _name, _email, _person!.Department, _person.ManagerPersonId, _cap, _skills.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), _person.Status, _exempt, ranges, salary, hourly, _reason);
+        _message = result.Ok ? "已儲存" : result.Message;
+    }
+
+    async Task Bind()
+    {
+        var result = await Commands.BindGitHubAsync(Id, _github);
+        _message = result.Ok ? "已綁定" : result.Message;
+    }
+
+    async Task Deactivate()
+    {
+        var result = await Commands.DeactivateAsync(Id);
+        _message = result.Ok ? "已停用，不能新派工；歷史工時仍可查。" : result.Message;
+    }
+}

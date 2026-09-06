@@ -1,0 +1,36 @@
+- name: 產品規格
+  href: README.md
+- name: 願景與買家
+  href: vision.md
+- name: 仲介平台
+  href: marketplace.md
+- name: 角色
+  href: personas.md
+- name: 總規格
+  href: spec.md
+- name: 產品需求（PRD）
+  href: prd.md
+- name: 系統執行計劃書
+  href: execution-plan.md
+- name: 模組
+  items:
+    - name: 人員與外包
+      href: modules/people.md
+    - name: 派工
+      href: modules/dispatch.md
+    - name: 專案與客戶
+      href: modules/projects-clients.md
+    - name: 預算費用
+      href: modules/budget.md
+    - name: 薪資
+      href: modules/payroll.md
+    - name: 戰情室
+      href: modules/war-room.md
+- name: UI／UX
+  href: ux.md
+- name: 技術架構
+  href: architecture.md
+- name: 公司工作區部署
+  href: deploy-company.md
+- name: 路線圖
+  href: roadmap.md

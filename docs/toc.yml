@@ -36,12 +36,6 @@
       href: agent/backends.md
     - name: MCP
       href: agent/mcp.md
-- name: 銷售套件
-  items:
-    - name: 套件說明
-      href: salekit/README.md
-    - name: 講者重點
-      href: salekit/talking-points.md
 - name: 維護者
   items:
     - name: 開發與維護

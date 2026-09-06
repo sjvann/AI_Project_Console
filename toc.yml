@@ -1,4 +1,8 @@
 - name: 使用文件
   href: docs/
+- name: 產品規格
+  href: docs/product/
+- name: 銷售套件
+  href: docs/salekit/
 - name: API
   href: api/

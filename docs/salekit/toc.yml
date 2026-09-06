@@ -1,0 +1,12 @@
+- name: 銷售套件
+  href: README.md
+- name: 一頁紙
+  href: one-pager.md
+- name: 講者重點
+  href: talking-points.md
+- name: 競品對照
+  href: competitive.md
+- name: 演示腳本
+  href: demo-script.md
+- name: 採購 FAQ
+  href: buyer-faq.md

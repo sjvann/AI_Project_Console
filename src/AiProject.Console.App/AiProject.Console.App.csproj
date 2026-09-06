@@ -23,7 +23,9 @@
   <ItemGroup>
     <PackageReference Include="Markdig" Version="0.41.3" />
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <ProjectReference Include="..\AiProject.Console.Core\AiProject.Console.Core.csproj" />
+    <ProjectReference Include="..\AiProject.Console.CompanyClient\AiProject.Console.CompanyClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -964,6 +964,12 @@
                             }
                         </datalist>
                         <p class="hint">大型公司可填自建 Git 主機。GitHub 相容主機用 gh；其他種類先可設，任務功能尚未接時會明白停用。</p>
+                        <h3 class="prefs-sub">公司平台</h3>
+                        <p class="hint">送到公司與讀取派工條用的自架網址，例如 https://company.example.com。不含原始碼，只傳時段與狀態圖。</p>
+                        <div class="field">
+                            <span>公司平台網址</span>
+                            <input @bind="S.CompanyBaseUrl" placeholder="https://company.example.com" />
+                        </div>
                         <h3 class="prefs-sub">控制台更新</h3>
                         <p class="hint">目前版本 v@(AppInfo.Version)。檢查時會詢問是否包含 RC／預發行。也可選本機安裝程式或 zip 直接套用。</p>
                         <div class="row">

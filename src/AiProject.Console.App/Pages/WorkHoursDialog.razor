@@ -38,6 +38,8 @@
                             aria-selected="@(S.WorkHoursPane == "dash")" @onclick="@(() => S.SetWorkHoursPane("dash"))">儀表板</button>
                     <button type="button" class="hours-pane @(S.WorkHoursPane == "sheet" ? "active" : null)"
                             aria-selected="@(S.WorkHoursPane == "sheet")" @onclick="@(() => S.SetWorkHoursPane("sheet"))">報帳單</button>
+                    <button type="button" class="hours-pane @(S.WorkHoursPane == "chart" ? "active" : null)"
+                            aria-selected="@(S.WorkHoursPane == "chart")" @onclick="@(() => S.SetWorkHoursPane("chart"))">狀態圖</button>
                 </div>
                 <div class="hours-nav">
                     <button type="button" class="btn-sec" @onclick="@(() => S.ShiftWorkHours(-1))">@PrevLabel(S.WorkHoursView)</button>
@@ -53,7 +55,47 @@
             }
         </div>
         <div class="hours-body">
-            @if (S.WorkHoursPane != "sheet")
+            @if (S.WorkHoursPane == "chart")
+            {
+                <div class="hours-chart-board">
+                    <p class="hint">專案 × 日期，點一下加深投入。這不是公司甘特。按「送到公司」才上傳，不會背景偷傳。</p>
+                    @if (S.CompanyAssignments.Count > 0)
+                    {
+                        <p class="hint">公司認為你這週在：@string.Join("、", S.CompanyAssignments.Select(a => a.ProjectName))</p>
+                    }
+                    <table class="grid status-chart">
+                        <thead>
+                            <tr>
+                                <th>專案</th>
+                                @foreach (var day in S.StatusChartDays.Take(14))
+                                {
+                                    <th>@day.Month/@day.Day</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var project in projects)
+                            {
+                                <tr>
+                                    <td>@project.Name</td>
+                                    @foreach (var day in S.StatusChartDays.Take(14))
+                                    {
+                                        var n = S.ChartIntensity(project.Key, day);
+                                        <td>
+                                            <button type="button" class="chart-cell is-@n" @onclick="@(() => S.CycleStatusChart(project.Key, day))">@n</button>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (!string.IsNullOrEmpty(S.CompanyUploadHint))
+                    {
+                        <p class="hint">@S.CompanyUploadHint</p>
+                    }
+                </div>
+            }
+            else if (S.WorkHoursPane != "sheet")
             {
                 <div class="hours-dash">
                     <div class="hours-overview">
@@ -326,6 +368,7 @@
         <div class="dialog-actions hours-actions">
             <span class="hint grow">可報帳時數寫在本機 work-hours.json；匯出 Markdown 與 CSV 給負責人汇整。</span>
             <button class="btn-sec" disabled="@(S.WorkHoursExporting || sheet is null)" @onclick="S.ExportWorkTimesheetAsync">匯出工時單</button>
+            <button class="btn-primary" disabled="@S.CompanyUploadBusy" @onclick="S.SendTimesheetToCompanyAsync">送到公司</button>
             <button class="btn-primary" @onclick="S.CloseDialog">關閉</button>
         </div>
     </div>

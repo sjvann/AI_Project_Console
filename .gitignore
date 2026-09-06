@@ -13,3 +13,6 @@ artifacts/
 _site/
 api/**/*.yml
 api/.manifest
+*.db
+*.db-shm
+*.db-wal

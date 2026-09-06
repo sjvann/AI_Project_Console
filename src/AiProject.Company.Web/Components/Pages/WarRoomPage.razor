@@ -1,0 +1,86 @@
+@page "/war-room"
+@rendermode InteractiveServer
+@inject WarRoomQueries Query
+@inject IAuthorizationGate Gate
+@inject NavigationManager Nav
+@inject ICurrentUser User
+
+<PageTitle>戰情室</PageTitle>
+@if (_denied)
+{
+    <h1>你看不到戰情室</h1>
+    <p>外包窗口與工程師不能進戰情室。直接輸入網址也會被拒絕。</p>
+}
+else if (_loadError is not null)
+{
+    <h1>戰情室載入失敗</h1>
+    <p class="hint">@_loadError</p>
+}
+else if (_snap is null)
+{
+    <p>載入中…</p>
+}
+else
+{
+    <h1>戰情室</h1>
+    <p class="hint">期間：本週／本月 · @_snap.Today.ToString("yyyy-MM-dd")</p>
+    <div class="kpis">
+        <article class="kpi"><span>進行中</span><strong>@_snap.ActiveProjects</strong></article>
+        <article class="kpi kpi-red"><span>紅燈</span><strong>@_snap.RedCount</strong><em>逾期</em></article>
+        <article class="kpi"><span>待案人力</span><strong>@_snap.IdlePeople</strong></article>
+        <article class="kpi"><span>本月預估毛利</span><strong>@(MarginResult.Display(_snap.MonthMargin))</strong></article>
+    </div>
+    <label class="check"><input type="checkbox" @bind="_onlyAlerts" /> 只看紅黃</label>
+    <div class="cards">
+        @foreach (var card in Visible)
+        {
+            <a class="proj-card tone-@card.Health.Worst.ToString().ToLowerInvariant()" href="/projects/@card.ProjectId">
+                <h2>@card.Name</h2>
+                <p>@card.Phase · 目標 @card.TargetEnd.ToString("MM/dd") · @card.Headcount 人</p>
+                <p><span>@card.Health.ScheduleLabel</span> · <span>@card.Health.StaffingLabel</span> · <span>@card.Health.MarginLabel</span></p>
+            </a>
+        }
+    </div>
+    @if (!Visible.Any())
+    {
+        <p class="empty">還沒有專案。請先<a href="/clients">建立第一個客戶與專案</a>。</p>
+    }
+    <h2>例外</h2>
+    <ul class="exceptions">
+        @foreach (var item in _snap.Exceptions)
+        {
+            <li><a href="@item.Href">@item.Text</a></li>
+        }
+        @if (_snap.Exceptions.Count == 0)
+        {
+            <li class="hint">目前沒有例外。</li>
+        }
+    </ul>
+}
+
+@code {
+    WarRoomSnapshot? _snap;
+    bool _denied;
+    bool _onlyAlerts;
+    string? _loadError;
+
+    IEnumerable<WarRoomCard> Visible =>
+        _snap is null ? [] : _onlyAlerts ? _snap.Cards.Where(c => c.Health.Worst != HealthTone.Green) : _snap.Cards;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Gate.Can(PlatformCapability.ViewWarRoom))
+        {
+            _denied = true;
+            return;
+        }
+        try
+        {
+            _snap = await Query.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.GetBaseException().Message;
+        }
+    }
+}

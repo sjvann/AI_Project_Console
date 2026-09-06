@@ -1,0 +1,73 @@
+@page "/people"
+@rendermode InteractiveServer
+@inject PeopleCommands Commands
+@inject DirectoryQueries Directory
+@inject IAvailabilityCalculator Availability
+@inject IAuthorizationGate Gate
+
+<PageTitle>人員</PageTitle>
+<h1>人員名冊</h1>
+@if (!Gate.Can(PlatformCapability.ManagePeople) && Gate.Ensure(PlatformCapability.ManagePeople).Code == ErrorCodes.Forbidden)
+{
+    <p>@_gate.Message</p>
+}
+<div class="toolbar">
+    <input placeholder="顯示名" @bind="_newName" />
+    <select @bind="_newKind">
+        <option value="@EmploymentKind.FullTime">正職</option>
+        <option value="@EmploymentKind.Freelance">個人外包</option>
+        <option value="@EmploymentKind.VendorStaff">承攬派駐</option>
+    </select>
+    <button class="btn-primary" @onclick="Create">建立</button>
+    <a href="/people/unmatched">待歸戶佇列</a>
+</div>
+<p class="hint">@_message</p>
+<table class="grid">
+    <thead>
+        <tr><th>名</th><th>類型</th><th>外包商</th><th>GitHub</th><th>本週已派／上限</th><th>狀態</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var row in _rows)
+        {
+            <tr>
+                <td><a href="/people/@row.Person.Id">@row.Person.DisplayName</a></td>
+                <td>@row.Person.EmploymentKind</td>
+                <td>@(string.IsNullOrEmpty(row.VendorName) ? "—" : row.VendorName)</td>
+                <td>@(string.IsNullOrEmpty(row.Person.GitHubLogin) ? "—" : row.Person.GitHubLogin)</td>
+                <td>@row.Assigned / @row.Cap</td>
+                <td>@row.Person.Status</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    Outcome _gate = Outcome.Success();
+    string _newName = "";
+    EmploymentKind _newKind = EmploymentKind.FullTime;
+    string _message = "";
+    List<(Person Person, string VendorName, decimal Assigned, decimal Cap)> _rows = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _gate = Gate.Ensure(PlatformCapability.ManagePeople);
+        var people = await Directory.PeopleAsync();
+        var vendors = (await Directory.VendorsAsync()).ToDictionary(v => v.Id, v => v.Name);
+        var week = Directory.Today().AddDays(-((int)Directory.Today().DayOfWeek + 6) % 7);
+        var avail = await Directory.WeekAvailabilityAsync(week);
+        _rows = people.Select(p =>
+        {
+            var a = avail.FirstOrDefault(x => x.PersonId == p.Id);
+            var vendor = p.VendorId is Guid vid && vendors.TryGetValue(vid, out var n) ? n : "";
+            return (p, vendor, a?.AssignedHours ?? 0, a?.CapHours ?? p.WeeklyHourCap);
+        }).ToList();
+    }
+
+    async Task Create()
+    {
+        var result = await Commands.CreatePersonAsync(_newName, _newKind, null);
+        _message = result.Ok ? "已建立" : result.Message;
+        if (result.Ok)
+            await OnInitializedAsync();
+    }
+}

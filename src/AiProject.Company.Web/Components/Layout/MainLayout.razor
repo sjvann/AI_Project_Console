@@ -1,0 +1,76 @@
+﻿@inherits LayoutComponentBase
+@inject ICurrentUser User
+@inject IHomeRouteResolver Home
+@inject NavigationManager Nav
+
+<div class="shell">
+    <header class="top">
+        <a class="brand" href="@Home.PathFor(User.Role)">AI_Project 公司平台</a>
+        <nav class="nav" aria-label="主要">
+            @if (User.IsAuthenticated && User.PersonId is not null)
+            {
+                @if (Can(PlatformCapability.ViewWarRoom))
+                {
+                    <a href="/war-room">戰情室</a>
+                }
+                @if (User.Role is PlatformRole.Pm or PlatformRole.Lead or PlatformRole.Delivery or PlatformRole.Owner or PlatformRole.Finance)
+                {
+                    <a href="/projects">專案</a>
+                    <a href="/clients">客戶</a>
+                }
+                @if (Can(PlatformCapability.Dispatch))
+                {
+                    <a href="/dispatch">派工</a>
+                }
+                @if (Can(PlatformCapability.ManagePeople) || User.Role == PlatformRole.Hr)
+                {
+                    <a href="/people">人員</a>
+                    <a href="/vendors">外包商</a>
+                }
+                @if (Can(PlatformCapability.ManageBudget))
+                {
+                    <a href="/budget">預算</a>
+                }
+                @if (Can(PlatformCapability.LockPayroll) || Can(PlatformCapability.ConfirmTimesheet))
+                {
+                    <a href="/payroll">@(Can(PlatformCapability.LockPayroll) ? "薪資" : "工時確認")</a>
+                }
+                @if (User.Role.LandsOnMyHours() || User.Role == PlatformRole.Engineer)
+                {
+                    <a href="/me">我的工時</a>
+                }
+                @if (Can(PlatformCapability.ManageSettings) || Can(PlatformCapability.InviteUser))
+                {
+                    <a href="/accounts">帳戶</a>
+                }
+                @if (Can(PlatformCapability.ManageSettings))
+                {
+                    <a href="/settings">設定</a>
+                }
+            }
+        </nav>
+        <div class="who">
+            @if (User.IsAuthenticated)
+            {
+                <span>@User.DisplayName · @User.Role.Display()</span>
+                <form method="post" action="/logout">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn-sec">登出</button>
+                </form>
+            }
+            else
+            {
+                <a class="btn-primary" href="/login">登入</a>
+            }
+        </div>
+    </header>
+    <main class="main">
+        @Body
+    </main>
+</div>
+
+@code {
+    [Inject] IAuthorizationGate Gate { get; set; } = default!;
+
+    bool Can(PlatformCapability capability) => Gate.Can(capability);
+}

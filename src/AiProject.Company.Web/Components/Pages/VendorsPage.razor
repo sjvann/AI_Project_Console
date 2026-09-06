@@ -1,0 +1,35 @@
+@page "/vendors"
+@rendermode InteractiveServer
+@inject PeopleCommands Commands
+@inject DirectoryQueries Directory
+
+<PageTitle>外包商</PageTitle>
+<h1>外包商</h1>
+<div class="toolbar">
+    <input placeholder="公司名" @bind="_name" />
+    <input placeholder="統編" @bind="_tax" />
+    <button class="btn-primary" @onclick="Create">建立</button>
+</div>
+<p>@_message</p>
+@foreach (var vendor in _vendors)
+{
+    <section class="card">
+        <h2>@vendor.Name</h2>
+        <p>@vendor.TaxId · @vendor.ValidFrom – @vendor.ValidTo</p>
+    </section>
+}
+
+@code {
+    string _name = "";
+    string _tax = "";
+    string _message = "";
+    IReadOnlyList<Vendor> _vendors = [];
+    protected override async Task OnInitializedAsync() => _vendors = await Directory.VendorsAsync();
+    async Task Create()
+    {
+        var today = Directory.Today();
+        var result = await Commands.CreateVendorAsync(_name, _tax, today, today.AddYears(1));
+        _message = result.Ok ? "已建立" : result.Message;
+        _vendors = await Directory.VendorsAsync();
+    }
+}

@@ -613,3 +613,11 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
     .intake-grid { grid-template-columns: 1fr; }
     .intake-visual { grid-template-columns: 96px minmax(0, 1fr); }
 }
+.status-chart { width: 100%; border-collapse: collapse; }
+.status-chart th, .status-chart td { border: 1px solid var(--border); padding: 4px; text-align: center; }
+.chart-cell { width: 36px; height: 28px; }
+.chart-cell.is-0 { background: var(--row-alt); }
+.chart-cell.is-1 { background: #cfe8dc; }
+.chart-cell.is-2 { background: #7fb9a4; color: #fff; }
+.chart-cell.is-3 { background: var(--accent); color: #fff; }
+

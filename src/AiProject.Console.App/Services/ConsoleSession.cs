@@ -14,6 +14,7 @@ using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 using AiProject.Console.Core.WorkHours;
+using AiProject.Console.CompanyClient;
 using Microsoft.JSInterop;
 using Photino.NET;
 
@@ -34,13 +35,16 @@ public sealed partial class ConsoleSession : IDisposable
     private int _ciWatchGen;
     private DocsServeHandle? _docsServe;
     private readonly WorkHoursStore _workHours = new();
+    private readonly ExecutionStatusChartStore _statusChart = new();
+    private readonly ICompanyPlatformClient? _company;
     private int _timesheetGen;
     private TaskCompletionSource<bool>? _leaveGateTcs;
     private string? _releaseReturnDialog;
 
-    public ConsoleSession(NativeUi native)
+    public ConsoleSession(NativeUi native, ICompanyPlatformClient? company = null)
     {
         _native = native;
+        _company = company;
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         TestBeforePush = ConsoleSettingsStore.GetTestBeforePush();
@@ -55,6 +59,7 @@ public sealed partial class ConsoleSession : IDisposable
         Workbench = ConsoleSettingsStore.GetWorkbench();
         GitHostName = ConsoleSettingsStore.GetGitHost();
         GitKind = ConsoleSettingsStore.GetGitKind();
+        CompanyBaseUrl = ConsoleSettingsStore.GetCompanyBaseUrl();
         RefreshAgentDetect();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
@@ -131,6 +136,7 @@ public sealed partial class ConsoleSession : IDisposable
     public bool IsReqWorkbench => Workbench == "req";
     public string GitHostName { get; set; } = GitHost.PublicHostname;
     public string GitKind { get; set; } = GitHost.KindGithub;
+    public string CompanyBaseUrl { get; set; } = "";
     public IReadOnlyList<string> RecentGitHosts => ConsoleSettingsStore.RecentGitHosts();
     public string ActiveGitHost =>
         !string.IsNullOrWhiteSpace(GithubDraft.Host) ? GitHost.Normalize(GithubDraft.Host)
@@ -590,10 +596,12 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void SetWorkHoursPane(string pane)
     {
-        WorkHoursPane = pane == "sheet" ? "sheet" : "dash";
+        WorkHoursPane = pane is "sheet" or "chart" ? pane : "dash";
         Notify();
         if (WorkHoursPane == "sheet")
             _ = RefreshWorkTimesheetAsync();
+        if (WorkHoursPane == "chart")
+            _ = RefreshCompanyAssignmentsAsync();
     }
 
     public void SetWorkHoursProjectFilter(string? key)
@@ -754,6 +762,7 @@ public sealed partial class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
         ConsoleSettingsStore.SetGitHost(GitHostName);
         ConsoleSettingsStore.SetGitKind(GitKind);
+        ConsoleSettingsStore.SetCompanyBaseUrl(CompanyBaseUrl);
         ConsoleSettingsStore.SetMcpReadOnly(McpReadOnly);
         ConsoleSettingsStore.SetMcpAllow(McpAllow);
         ConsoleSettingsStore.SetMcpDeny(McpDeny);
