@@ -2,6 +2,19 @@
 
 先按工具列「環境體檢」，再對照本頁。畫面各區說明見 [畫面導覽](interface.md)。
 
+## SmartScreen 擋下安裝程式
+
+<a id="smartscreen"></a>
+
+從 Releases 下載 `*-win-x64-setup.exe` 時，Windows 可能顯示「已保護您的電腦」，發行者為「不明的發行者」。這是 SmartScreen 對尚未簽署（或聲譽不足）的程式的提示，不是防毒判定為惡意軟體。
+
+若你確認檔案來自本專案的 [GitHub Releases](https://github.com/sjvann/AI_Project_Console/releases)：
+
+1. 在提示中按 **更多資訊**（若看得到），再按 **仍要執行**
+2. 或對安裝檔右鍵 → **內容** → 勾選 **解除封鎖** → 套用後再執行
+
+請不要為此關閉 Microsoft Defender SmartScreen。維護者如何用 Azure Artifact Signing 簽署安裝包，見 [程式碼簽署](../maintainer/code-signing.md)。
+
 ## 程式打不開或視窗是白的
 
 - Windows 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)。系統通常已內建；企業映像若拔掉元件，請向 IT 重裝。

@@ -126,9 +126,10 @@ button.gh-id.is-muted { color: var(--muted); }
 .gh-hub-lane.is-next { border-color: var(--accent); }
 .gh-hub-lane h3 { margin: 0; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
 .gh-hub-lane .hint { margin: 0 0 4px; }
-.gh-hub-lane button { display: block; width: 100%; text-align: left; background: none; border: none; border-radius: 4px; font-weight: 600; padding: 7px 8px; color: var(--text); }
-.gh-hub-lane button:hover:not(:disabled) { background: var(--sel); }
-.gh-hub-lane button.is-cta { background: var(--sel); color: var(--accent-hi); }
+.gh-hub-lane button { display: block; width: 100%; text-align: left; background: none; border: none; border-radius: 4px; font-weight: 600; padding: 7px 8px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.gh-hub-lane button:hover:not(:disabled) { background: var(--sel); color: var(--accent-hi); }
+.gh-hub-lane button.is-cta { background: var(--sel); color: var(--accent-hi); text-decoration: none; }
+.gh-hub-lane button:disabled { color: var(--muted); text-decoration: none; }
 @media (max-width: 840px) {
     .gh-hub-lanes { grid-template-columns: 1fr 1fr; }
 }

@@ -11,6 +11,7 @@
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Inno Setup 6 或 7](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，用於 `*-setup.exe`）
 - [GitHub CLI](https://cli.github.com/) 已登入：`gh auth login`
+- （可選）Azure Artifact Signing：`.NET 8 Runtime`、`az login`、`installer/windows/trusted-signing.json`。見 [程式碼簽署](../docs/maintainer/code-signing.md)
 - 在倉庫根目錄執行下列指令
 
 ```powershell
@@ -48,6 +49,8 @@ powershell -ExecutionPolicy Bypass -File scripts/pack-win.ps1 -Version 0.3.8
 
 - `AI_Project_Console-0.3.8-win-x64-setup.exe`：安裝程式（開始選單捷徑，可選桌面捷徑）
 - `AI_Project_Console-0.3.8-win-x64.zip`：免安裝壓縮包，解壓後執行 `AI_Project_Console.exe`
+
+已設定 Azure Artifact Signing 時，主程式與 setup.exe 會一併簽署。正式發行請加 `-RequireSign`；本機試包可加 `-SkipSign`。步驟見 [程式碼簽署](../docs/maintainer/code-signing.md)。
 
 只產生單檔執行檔（不經 Inno Setup）可用：
 

@@ -6,7 +6,14 @@
 
 1. 同步改 `AppInfo.Version`、App 專案、`setup.iss`、`pack-win.ps1` 的版號。
 2. 提交並推送 `main`（**不可覆寫舊 tag**，已安裝使用者依 latest 更新）。
+<<<<<<< HEAD
+3. `scripts/pack-win.ps1` 產生 `dist\` 的 setup.exe 與 zip（操作台發行會代跑）。已設定 Azure Artifact Signing 時會簽署主程式與安裝程式，見 [程式碼簽署與 Microsoft Store](code-signing.md)。
+4. `gh release create` 附上兩個資產（操作台會附上；tag 已存在則 `gh release upload --clobber`）。
+
+本機打包前置：.NET 10 SDK、[Inno Setup 6](https://jrsoftware.org/isinfo.php)、已登入的 GitHub CLI。要簽署時另需 .NET 8 Runtime、`az login` 與 `installer/windows/trusted-signing.json`。
+=======
 3. `scripts/pack-win.ps1` 產生 `dist\` 的 setup.exe 與 zip（操作台發行會代跑，並顯示步驟與紀錄）。
 4. `gh release create` 附上兩個資產（操作台會附上；tag 已存在則 `gh release upload --clobber`）。
 
 本機打包前置：.NET 10 SDK、[Inno Setup 6 或 7](https://jrsoftware.org/isinfo.php)、已登入的 GitHub CLI。
+>>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365

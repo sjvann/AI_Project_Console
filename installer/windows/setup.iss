@@ -30,6 +30,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+; 靜默安裝（企業／Microsoft Store EXE 上架）：setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\..\src\AiProject.Console.App\Assets\app.ico
 MinVersion=10.0
