@@ -17,9 +17,15 @@ public sealed record ProjectInfo(
     string LaunchUrl,
     string Group,
     string Language = "",
-    bool IsUi = false);
+    bool IsUi = false,
+    string IconPath = "",
+    string StackId = "");
 
-public sealed record ScanResult(string Root, IReadOnlyList<ProjectInfo> Projects, string Error = "");
+public sealed record ScanResult(
+    string Root,
+    IReadOnlyList<ProjectInfo> Projects,
+    string Error = "",
+    IReadOnlyList<string>? StackIds = null);
 
 public sealed record ProductLine(string Id, string Label, string Root);
 
@@ -43,7 +49,8 @@ public sealed record ServiceEntry(
     string Source = "scan",
     IReadOnlyList<ServiceDependency>? DependsOn = null,
     string? Ready = null,
-    int? ReadyTimeoutMs = null)
+    int? ReadyTimeoutMs = null,
+    string IconPath = "")
 {
     public IReadOnlyList<ServiceDependency> Dependencies =>
         DependsOn is { Count: > 0 } ? DependsOn : [];
@@ -76,7 +83,8 @@ public sealed record BuildState(
     DateTimeOffset? LastBuildUtc = null,
     DateTimeOffset? NewestSourceUtc = null,
     string NewestSourcePath = "",
-    string Reason = "");
+    string Reason = "",
+    string IconPath = "");
 
 public sealed record ConsoleAction(
     string Id,

@@ -171,8 +171,11 @@ button.gh-id.is-muted { color: var(--muted); }
 .prj-list > .group-label { grid-column: 1 / -1; }
 .svc { display: grid; grid-template-columns: 52px 1fr 56px auto; gap: 6px; align-items: center; padding: 6px 8px; cursor: pointer; border-radius: 3px; }
 .svc.sel, .svc.is-busy { background: var(--sel); }
-.svc-label { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.svc-label > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.svc-label .svc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-heading { display: inline-flex; align-items: center; gap: 8px; }
+.app-icon { width: 16px; height: 16px; object-fit: contain; border-radius: 3px; flex: none; }
+.project-heading .app-icon { width: 20px; height: 20px; }
 .svc-deps { color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
 .svc-busy { color: var(--accent); font-weight: 700; font-size: 12px; white-space: nowrap; animation: prj-pulse 1.2s ease-in-out infinite; }
 .status-on { color: var(--ok); }
@@ -181,7 +184,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .prj-list { display: grid; grid-template-columns: auto minmax(0, 1fr) 72px auto; column-gap: 8px; align-items: center; }
 .prj { display: contents; }
 .prj-name, .prj .meta, .prj .badge-stale, .prj-actions { padding-top: 4px; padding-bottom: 4px; }
-.prj-name { padding-left: 8px; white-space: nowrap; }
+.prj-name { display: inline-flex; align-items: center; gap: 6px; padding-left: 8px; white-space: nowrap; }
 .prj .meta { color: var(--muted); font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prj-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding-right: 8px; }
 .prj-actions .btn-link { padding-right: 8px; }

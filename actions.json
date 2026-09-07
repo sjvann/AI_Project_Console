@@ -22,7 +22,7 @@
       "group": "build",
       "kind": "internal",
       "handler": "build_projects",
-      "confirm": "將編譯專案目錄內全部 csproj（含測試），可能需要數分鐘，確定執行？"
+      "confirm": "將編譯專案目錄內全部偵測到的專案（含測試），可能需要數分鐘，確定執行？"
     },
     {
       "id": "github_settings",

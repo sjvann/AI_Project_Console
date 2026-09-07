@@ -55,7 +55,13 @@
 
     <div class="card">
         <div class="row">
-            <strong>@(S.Catalog?.Name ?? "尚未選擇專案")</strong>
+            <strong class="project-heading">
+                @if (S.WorkspaceAppIconUrl is { } projectIcon)
+                {
+                    <img class="app-icon" src="@projectIcon" width="20" height="20" alt="" />
+                }
+                <span>@(S.Catalog?.Name ?? "尚未選擇專案")</span>
+            </strong>
             @if (S.HasProject && S.GitBrief is not null)
             {
                 <button type="button"
@@ -251,7 +257,11 @@
                                 <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null) @(activity is not null ? "is-busy" : null)" style="padding-left: @(8 + (node.Depth + 1) * 14)px" @onclick="@(() => S.SelectService(svc.Id))">
                                     <span class="@(on ? "status-on" : "status-off")">@(self ? "本機" : on ? "線上" : "離線")</span>
                                     <span class="svc-label">
-                                        <span>@svc.Label</span>
+                                        @if (S.AppIconDataUrl(svc.IconPath) is { } svcIcon)
+                                        {
+                                            <img class="app-icon" src="@svcIcon" width="16" height="16" alt="" />
+                                        }
+                                        <span class="svc-name">@svc.Label</span>
                                         @if (activity is not null)
                                         {
                                             <span class="svc-busy" aria-live="polite">@activity</span>
@@ -325,7 +335,13 @@
                             var badge = BuildFreshness.BadgeText(p);
                             var ago = BuildFreshness.FormatAgo(p.LastBuildUtc);
                             <div class="prj prj-@kind" title="@p.Reason">
-                                <span class="prj-name">@p.Name</span>
+                                <span class="prj-name">
+                                    @if (S.AppIconDataUrl(p.IconPath) is { } prjIcon)
+                                    {
+                                        <img class="app-icon" src="@prjIcon" width="16" height="16" alt="" />
+                                    }
+                                    <span>@p.Name</span>
+                                </span>
                                 <span class="meta">@ProjectMeta(p, ago)</span>
                                 <span class="badge-stale badge-@kind">@badge</span>
                                 <span class="prj-actions">

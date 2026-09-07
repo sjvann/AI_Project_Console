@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Xml.Linq;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Build;
@@ -9,11 +10,10 @@ public static class BuildFreshness
 {
     public const string DefaultConfiguration = "Debug";
 
-    private static readonly HashSet<string> SourceSuffixes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets",
-        ".js", ".css", ".html", ".proto", ".resx",
-    };
+    private static readonly HashSet<string> SourceSuffixes = new(
+        new[] { ".cs", ".razor", ".cshtml", ".csproj", ".props", ".targets", ".js", ".css", ".html", ".proto", ".resx" }
+            .Concat(TechStackCatalog.SourceExtensions),
+        StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Runtime profile / config files. <c>dotnet build</c> does not rewrite the assembly when
@@ -74,13 +74,51 @@ public static class BuildFreshness
     {
         var name = AssemblyName(projectDir);
         var binDir = Path.Combine(projectDir, "bin");
-        if (!Directory.Exists(binDir))
-            return (0, null);
+        if (Directory.Exists(binDir))
+        {
+            var preferred = NewestDll(binDir, name, configuration);
+            if (preferred.Path is not null)
+                return preferred;
+            var anyDll = NewestDll(binDir, name, configuration: null);
+            if (anyDll.Path is not null)
+                return anyDll;
+        }
+        return NewestStackOutput(projectDir);
+    }
 
-        var preferred = NewestDll(binDir, name, configuration);
-        if (preferred.Path is not null)
-            return preferred;
-        return NewestDll(binDir, name, configuration: null);
+    static (double Mtime, string? Path) NewestStackOutput(string projectDir)
+    {
+        string[] dirs =
+        [
+            Path.Combine(projectDir, "dist"),
+            Path.Combine(projectDir, "build"),
+            Path.Combine(projectDir, ".next"),
+            Path.Combine(projectDir, "out"),
+            Path.Combine(projectDir, "target"),
+            Path.Combine(projectDir, "target", "debug"),
+            Path.Combine(projectDir, "build", "libs"),
+        ];
+        double best = 0;
+        string? bestPath = null;
+        foreach (var dir in dirs)
+        {
+            if (!Directory.Exists(dir))
+                continue;
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Take(200))
+                {
+                    var mtime = File.GetLastWriteTimeUtc(file).Subtract(DateTime.UnixEpoch).TotalSeconds;
+                    if (mtime > best)
+                    {
+                        best = mtime;
+                        bestPath = file;
+                    }
+                }
+            }
+            catch (Exception) { /* ignore */ }
+        }
+        return (best, bestPath);
     }
 
     static (double Mtime, string? Path) NewestDll(string binDir, string assemblyName, string? configuration)
@@ -118,7 +156,8 @@ public static class BuildFreshness
         foreach (var path in Directory.EnumerateFiles(projectDir, "*", SearchOption.AllDirectories))
         {
             var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (parts.Any(p => p is "bin" or "obj"))
+            if (parts.Any(p => p is "bin" or "obj" or "node_modules" or "venv" or ".venv"
+                or "target" or "dist" or "__pycache__" or ".git" or "vendor"))
                 continue;
             if (!SourceSuffixes.Contains(Path.GetExtension(path)))
                 continue;
@@ -156,7 +195,7 @@ public static class BuildFreshness
         var full = Path.IsPathRooted(raw)
             ? Path.GetFullPath(raw)
             : Path.GetFullPath(Path.Combine(root, raw.Replace('/', Path.DirectorySeparatorChar)));
-        if (File.Exists(full) || Path.GetExtension(full).Equals(".csproj", StringComparison.OrdinalIgnoreCase))
+        if (File.Exists(full) || TechStackCatalog.IsProjectManifest(full))
             return Path.GetDirectoryName(full) ?? full;
         return full;
     }
@@ -171,7 +210,8 @@ public static class BuildFreshness
             Status: "",
             Path: host.Project,
             Output: "",
-            Label: svc.Label));
+            Label: svc.Label,
+            IconPath: svc.IconPath));
     }
 
     public static IReadOnlyList<BuildState> AllServiceBuildStates(ProjectCatalog catalog)
@@ -200,7 +240,8 @@ public static class BuildFreshness
             System: info.Group,
             Kind: kind,
             Output: "",
-            Language: info.Language));
+            Language: info.Language,
+            IconPath: info.IconPath));
     }
 
     public static IReadOnlyList<BuildState> AllProjectBuildStates(ProjectCatalog catalog)
@@ -276,7 +317,7 @@ public static class BuildFreshness
         DateTimeOffset? newestSrc = srcMtime > 0
             ? DateTimeOffset.FromUnixTimeSeconds((long)srcMtime)
             : null;
-        var reason = Describe(status, srcPath, srcMtime, outPath, outMtime);
+        var reason = Describe(status, srcPath, srcMtime, outPath, outMtime, projectDir);
         var report = BuildReportStore.TryRead(root, projectDir);
         if (report is not null)
         {
@@ -310,10 +351,19 @@ public static class BuildFreshness
         };
     }
 
-    static string Describe(string status, string? srcPath, double srcMtime, string? outPath, double outMtime)
+    static string Describe(string status, string? srcPath, double srcMtime, string? outPath, double outMtime, string projectDir)
     {
         if (status == "unbuilt")
-            return "尚未找到編譯輸出（bin/" + DefaultConfiguration + "）";
+        {
+            try
+            {
+                if (Directory.Exists(Path.Combine(projectDir, "bin"))
+                    || Directory.GetFiles(projectDir, "*.csproj").Length > 0)
+                    return "尚未找到編譯輸出（bin/" + DefaultConfiguration + "）";
+            }
+            catch (Exception) { /* ignore */ }
+            return "尚未找到編譯輸出";
+        }
         var srcName = string.IsNullOrEmpty(srcPath) ? "來源" : Path.GetFileName(srcPath);
         var dllName = string.IsNullOrEmpty(outPath) ? "輸出 DLL" : Path.GetFileName(outPath);
         if (status == "stale")

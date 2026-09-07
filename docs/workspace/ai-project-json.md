@@ -1,6 +1,6 @@
 # 工作區設定（ai-project.json）
 
-`ai-project.json` 放在**你選進控制台的那個根目錄**。可選：沒有它時，控制台會掃描 `.csproj` 與 `launchSettings.json` 推服務。下列情況請補清單：
+`ai-project.json` 放在**你選進控制台的那個根目錄**。可選：沒有它時，控制台會掃描專案檔（`.csproj`、`package.json`、`pyproject.toml`、`go.mod`、`Cargo.toml`、`pom.xml` 等）與 `launchSettings.json` 推服務。下列情況請補清單：
 
 - 根目錄本身幾乎沒有專案（薄工作區），真正的產品線在隔壁資料夾
 - 掃描到的服務名稱、port、健康檢查不對
@@ -36,11 +36,11 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 若只要**多一個群組**（例如桌面控制台），掃描到的 API／Web 仍要留著，加 `"mergeScanServices": true`（也可用 `merge_scan_services`／`mergeScan`）。清單列會覆寫同路徑的掃描項（可改 `label`／`group`），其餘掃描結果照舊。
 
-`scanProjects` 與 `services` **不是互斥**：不寫或 `true` 時專案頁仍掃 `.csproj`。只有要關掉專案掃描時才設 `"scanProjects": false`（也可用 `scan_projects`／`scan`）；專案頁會變空，編譯過期項目也不再列那些專案。
+`scanProjects` 與 `services` **不是互斥**：不寫或 `true` 時專案頁仍掃專案檔。只有要關掉專案掃描時才設 `"scanProjects": false`（也可用 `scan_projects`／`scan`）；專案頁會變空，編譯過期項目也不再列那些專案。
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
-| `project` | 是 | 相對路徑，指向專案目錄、`.csproj`（副檔名可省略），或 Python 控制台腳本（`.py`；Windows 以 `py -3` 啟動） |
+| `project` | 是 | 相對路徑，指向專案目錄、`.csproj`（副檔名可省略）、`package.json` 所在目錄，或 Python 控制台腳本（`.py`；Windows 以 `py -3` 啟動） |
 | `id` | 否 | 穩定識別；空白則由名稱產生 |
 | `label` | 否 | 畫面上的名稱 |
 | `port` | 否 | 顯示與推斷健康檢查用 |

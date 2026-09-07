@@ -2,6 +2,7 @@ using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Stack;
+using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 
@@ -118,9 +119,9 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
 
     public static DoctorSnapshot Build(ProjectCatalog? catalog)
     {
-        var hasDotnet = CliUtil.CommandExists("dotnet");
         var hasGit = CliUtil.CommandExists("git");
         var hasGh = CliUtil.CommandExists("gh");
+        var hasWinget = ToolchainBootstrap.HasWinget();
         var installKind = SelfUpdate.DetectInstallKind();
         var agent = AgentBackendRegistry.Inspect();
         var agentCli = CommitMessageSuggester.InspectCli();
@@ -129,16 +130,21 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         var mcpPolicy = catalog is null ? null : McpPolicy.Load(catalog.Root);
         var docfx = DocsService.InspectDocfx(catalog?.Root);
         var docs = string.IsNullOrWhiteSpace(catalog?.Root) ? null : DocsService.Scan(catalog.Root);
+        var stackIds = TechStackDetector.RequiredStacks(catalog);
+        var toolIds = TechStackCatalog.RequiredToolIdsFor(stackIds);
+        var toolStatus = ToolchainBootstrap.Inspect(toolIds);
 
         var tools = new List<DoctorItem>
         {
             new("控制台", $"{AppInfo.Version} · {InstallKindLabel(installKind)}", DoctorLevel.Info),
-            new(".NET", Environment.Version.ToString(), DoctorLevel.Info),
-            Tool("dotnet", hasDotnet),
+            new(".NET 執行環境", Environment.Version.ToString(), DoctorLevel.Info),
             Tool("git", hasGit),
             new("gh", hasGh ? "已安裝" : "未安裝（GitHub CLI，選用）",
                 hasGh ? DoctorLevel.Ok : DoctorLevel.Info,
                 Badge: hasGh ? "正常" : "選用"),
+            new("winget", hasWinget ? "可用（用來安裝語言環境）" : "未安裝（缺少時會開官方下載頁）",
+                DoctorLevel.Info,
+                Badge: hasWinget ? "可用" : "選用"),
         };
 
         var agentItems = new List<DoctorItem>
@@ -170,9 +176,22 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         var sections = new List<DoctorSection>
         {
             new("tools", "基本工具", tools),
-            new("agent", "Agent 後端", agentItems, "可在設定切換目前後端。", "prefs-agent"),
-            new("mcp", "MCP", mcpItems, "寫入 .cursor/mcp.json、調整允許的工具。", "prefs-mcp"),
         };
+        if (catalog is not null)
+        {
+            var toolchainItems = BuildToolchainItems(catalog, stackIds, toolStatus);
+            var missingTools = toolchainItems.Count(i => i.Level == DoctorLevel.Missing);
+            sections.Add(new(
+                "toolchain",
+                "開發環境",
+                toolchainItems,
+                missingTools > 0
+                    ? "缺少的執行環境可按下方按鈕安裝（Windows 用 winget；沒有 winget 會開官方下載頁）。裝好後請再按一次環境體檢。"
+                    : "依專案檔與副檔名偵測。套件還原可在缺少 node_modules／.venv 時執行。",
+                missingTools > 0 ? "install-toolchains" : null));
+        }
+        sections.Add(new("agent", "Agent 後端", agentItems, "可在設定切換目前後端。", "prefs-agent"));
+        sections.Add(new("mcp", "MCP", mcpItems, "寫入 .cursor/mcp.json、調整允許的工具。", "prefs-mcp"));
 
         if (catalog is null)
         {
@@ -182,9 +201,9 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
                 [
                     new(
                         "專案",
-                        "尚未選擇專案目錄。選好後會一併檢查文件工具（docfx）；若缺少會在同一區塊提供安裝步驟。",
+                        "尚未選擇專案目錄。選好後會依專案檔／副檔名檢查對應的編譯環境，並一併檢查文件工具（docfx）。",
                         DoctorLevel.Info,
-                        HowTo: "先選專案，再決定要不要安裝 DocFX。這兩件事是同一條流程。"),
+                        HowTo: "先選專案。控制台會偵測 .NET、Node、Python、Go、Java、Rust 等常見語言，缺少時可在體檢裡安裝。"),
                 ],
                 ActionId: "pick-project"));
         }
@@ -225,6 +244,13 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             };
             if (!string.IsNullOrWhiteSpace(catalog.Summary))
                 project.Add(new("摘要", catalog.Summary, DoctorLevel.Info));
+            var langs = catalog.Projects
+                .Select(p => p.Language)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (langs.Count > 0)
+                project.Add(new("語言", string.Join("、", langs), DoctorLevel.Info));
             project.Add(new(
                 "服務",
                 catalog.Services.Count == 0 ? "沒有服務或 UI" : catalog.Services.Count + " 個",
@@ -254,7 +280,69 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             sections.Add(new("project", "專案", project));
         }
 
-        return new DoctorSnapshot(sections, FormatText(catalog, agent, agentCli, mcpPolicy));
+        return new DoctorSnapshot(sections, FormatText(catalog, agent, agentCli, mcpPolicy, stackIds, toolStatus));
+    }
+
+    static List<DoctorItem> BuildToolchainItems(
+        ProjectCatalog catalog,
+        IReadOnlyList<string> stackIds,
+        IReadOnlyList<ToolStatus> toolStatus)
+    {
+        var items = new List<DoctorItem>();
+        var langs = catalog.Projects
+            .Select(p => string.IsNullOrEmpty(p.Language) ? p.StackId : p.Language)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        items.Add(new(
+            "偵測到",
+            langs.Count == 0 && stackIds.Count == 0
+                ? "尚未辨識到專案檔或常見原始碼（仍可手動編 ai-project.json）"
+                : string.Join("、", langs.Count > 0 ? langs : stackIds),
+            langs.Count + stackIds.Count == 0 ? DoctorLevel.Info : DoctorLevel.Ok,
+            HowTo: "依據 package.json、pyproject.toml、go.mod、Cargo.toml、pom.xml、*.csproj 等專案檔，或 .py／.ts／.go 等副檔名。"));
+
+        foreach (var st in toolStatus)
+        {
+            if (st.Installed)
+            {
+                items.Add(new(
+                    st.Spec.DisplayName,
+                    "已安裝",
+                    DoctorLevel.Ok,
+                    Detail: st.ResolvedPath,
+                    Badge: "正常"));
+                continue;
+            }
+            items.Add(new(
+                st.Spec.DisplayName,
+                "缺少",
+                DoctorLevel.Missing,
+                HowTo: st.Spec.HowTo,
+                Badge: "缺少",
+                ActionId: "install-toolchain:" + st.Spec.Id,
+                ActionLabel: "安裝 " + st.Spec.DisplayName));
+        }
+
+        foreach (var p in catalog.Projects)
+        {
+            if (string.IsNullOrEmpty(p.StackId) || p.StackId == "dotnet")
+                continue;
+            var dir = Path.Combine(catalog.Root, p.RelDir.Replace('/', Path.DirectorySeparatorChar));
+            if (StackCommands.PackagesRestored(dir, p.StackId))
+                continue;
+            if (!Directory.Exists(dir))
+                continue;
+            items.Add(new(
+                p.Name + " 套件",
+                "尚未還原",
+                DoctorLevel.Warn,
+                HowTo: "安裝執行環境後可按「還原套件」（npm install／pip install 等）。",
+                Badge: "需還原",
+                ActionId: "restore-packages:" + p.RelDir,
+                ActionLabel: "還原套件"));
+        }
+        return items;
     }
 
     private static DoctorItem Tool(string name, bool ok) =>
@@ -316,7 +404,9 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         ProjectCatalog? catalog,
         AgentDoctorInfo agent,
         AgentCliDoctor agentCli,
-        McpPolicy? mcpPolicy)
+        McpPolicy? mcpPolicy,
+        IReadOnlyList<string> stackIds,
+        IReadOnlyList<ToolStatus> toolStatus)
     {
         var lines = new List<string>
         {
@@ -324,7 +414,6 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             "",
             $".NET: {Environment.Version}",
             $"控制台: {AppInfo.Version}（{SelfUpdate.DetectInstallKind()}）",
-            $"dotnet: {(CliUtil.CommandExists("dotnet") ? "OK" : "缺少")}",
             $"git: {(CliUtil.CommandExists("git") ? "OK" : "缺少")}",
             $"gh: {(CliUtil.CommandExists("gh") ? "OK" : "缺少（GitHub CLI，選用）")}",
             "",
@@ -346,6 +435,14 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             lines.Add("");
             lines.Add("尚未選擇專案目錄。");
             return string.Join('\n', lines);
+        }
+
+        if (stackIds.Count > 0 || toolStatus.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("開發環境：" + (stackIds.Count == 0 ? "（依掃描）" : string.Join("、", stackIds)));
+            foreach (var st in toolStatus)
+                lines.Add($"  - {st.Spec.DisplayName}: {(st.Installed ? "OK" : "缺少")}");
         }
 
         lines.AddRange(

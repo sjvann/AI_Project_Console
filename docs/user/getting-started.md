@@ -21,12 +21,15 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 |------|--------|------|
 | Windows 10／11（64 位元） | 所有人 | 目前正式安裝包是 Windows x64 |
 | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | 所有人 | Win10／11 通常已內建；若視窗打不開再裝 |
-| [.NET SDK](https://dotnet.microsoft.com/download) | 要啟動／編譯 .NET 服務時 | 控制台本身已內含執行環境；**被管理的專案**仍需要 `dotnet` |
+| [.NET SDK](https://dotnet.microsoft.com/download) | 工作區有 .NET 專案時 | 控制台本身已內含執行環境；**被管理的 .NET 專案**仍需要 `dotnet`。沒裝時環境體檢可協助安裝 |
+| [Node.js LTS](https://nodejs.org/) | 有 `package.json`／前端專案時 | 體檢偵測到會提示；可一鍵用 winget 安裝 |
+| [Python](https://www.python.org/downloads/) | 有 `pyproject.toml`、`requirements.txt` 或 Python 專案時 | 同上。安裝時請勾選 Add to PATH |
+| [Go](https://go.dev/dl/)／[JDK](https://learn.microsoft.com/java/openjdk/download)／[Rust](https://rustup.rs/) 等 | 對應專案檔存在時 | 見環境體檢「開發環境」。常見語言都會依專案檔或副檔名偵測 |
 | [Git](https://git-scm.com/) | 要用 GitHub Pulse／操作台時 | 提交、同步、clone |
 | [GitHub CLI `gh`](https://cli.github.com/) | GitHub 管理的專案、任務 Issue、發行 Release、建 PR | 開啟這類專案時控制台會要求登入；也可先執行 `gh auth login` |
 | Cursor 或其他 Agent | 要用「求救」時 | 見 [Agent 後端](../agent/backends.md) |
 
-按工具列「環境體檢」可一次核對 `dotnet`、`git`、`gh` 與目前 Agent。
+按工具列「環境體檢」可一次核對 `git`、目前 Agent，以及**這個工作區需要的語言環境**（.NET、Node、Python、Go、Java…）。缺少時可在體檢裡安裝。
 
 ## 安裝
 
@@ -58,7 +61,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
    - **從 GitHub 開啟…** — 輸入 `owner/repo` 或網址，clone 後開啟（見 [GitHub](github.md)）
 3. 若目錄已接上 GitHub，會先請你登入（需已安裝 `gh`）。登入後標題列會顯示帳號，GitHub 操作台可看指派給你的 Issue。接著會自動從遠端同步目前分支；專案名稱旁可看到並切換分支。
 4. 勾選「啟動時還原上次專案」，下次會自動載入。
-5. 按「環境體檢」，確認 `dotnet`、`git` 為 OK。Agent 若顯示不可用，先到「設定 → Agent」換已安裝的後端，或暫時不求救也能啟動服務。
+5. 按「環境體檢」，確認 `git` 與工作區需要的編譯環境為 OK。缺少 Python／Node 等時，按「安裝」讓控制台協助建置。Agent 若顯示不可用，先到「設定 → Agent」換已安裝的後端，或暫時不求救也能啟動服務。
 
 標題列下方若出現新版本橫幅，見 [更新](#更新)。
 
@@ -68,14 +71,14 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 | 情況 | 選這個 |
 |------|--------|
-| 單一 git 倉，裡面有多個 `.csproj` | 該倉的根目錄 |
-| 薄工作區（這個資料夾本身沒有 `.csproj`，隔壁才有產品線） | 工作區根，並準備 `ai-project.json`（見 [工作區設定](../workspace/ai-project-json.md)） |
+| 單一 git 倉，裡面有多個專案（`.csproj`、`package.json`、`pyproject.toml`、`go.mod` 等） | 該倉的根目錄 |
+| 薄工作區（這個資料夾本身沒有專案檔，隔壁才有產品線） | 工作區根，並準備 `ai-project.json`（見 [工作區設定](../workspace/ai-project-json.md)） |
 | 只想開遠端倉 | 「從 GitHub 開啟…」，再選 clone 到哪個父目錄 |
 
 選完後：
 
 - 左側「服務」應出現可啟動項目
-- 左側「專案」列出 `.csproj` 與編譯狀態
+- 左側「專案」列出偵測到的專案（.NET、Node、Python 等）與編譯狀態
 - GitHub 操作台列出指派給你的 GitHub Issue（需登入）
 - 若服務是空的：確認有 `launchSettings.json` 的 `applicationUrl`，或請工作區負責人放 `ai-project.json`
 - 工作區已開啟後又新增專案：按專案列 **重新掃描**，不必關閉再開

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using AiProject.Console.Core.Tech;
 
 namespace AiProject.Console.Core.Scan;
 
@@ -10,6 +11,9 @@ public static class ProjectScanner
     private static readonly HashSet<string> SkipDirNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "bin", "obj", ".git", "node_modules", ".ai_project", ".ai_house", "packages",
+        "venv", ".venv", "__pycache__", "target", "dist", "vendor", ".gradle", ".next",
+        ".nuxt", ".tox", ".mypy_cache", ".pytest_cache", "bower_components", ".dart_tool",
+        "coverage", ".hg", ".svn", "build",
     };
 
     private static readonly Regex UrlRe = new(@"https?://[^\s;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -21,10 +25,52 @@ public static class ProjectScanner
         "Swashbuckle.AspNetCore",
     };
 
-    public static IReadOnlyList<string> ListCsprojPaths(string root)
+    public static IReadOnlyList<string> ListCsprojPaths(string root) =>
+        ListProjectFiles(root).Where(TechStackCatalog.IsDotnetProject).ToList();
+
+    public static IReadOnlyList<string> ListProjectFiles(string root)
     {
         root = Path.GetFullPath(root);
         var found = new List<string>();
+        var gitRels = TryGitLsFiles(root);
+        if (gitRels is not null)
+        {
+            foreach (var rel in gitRels)
+            {
+                if (!TechStackCatalog.IsProjectManifest(rel))
+                    continue;
+                var path = Path.GetFullPath(Path.Combine(root, rel));
+                if (File.Exists(path) && !IsSkippedPath(path))
+                    found.Add(path);
+            }
+        }
+
+        if (found.Count == 0)
+        {
+            try
+            {
+                foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                {
+                    if (IsSkippedPath(path) || !TechStackCatalog.IsProjectManifest(path))
+                        continue;
+                    found.Add(Path.GetFullPath(path));
+                }
+            }
+            catch (Exception)
+            {
+                // ignore
+            }
+        }
+
+        var picked = new List<string>();
+        foreach (var group in found.GroupBy(p => Path.GetDirectoryName(p) ?? p, StringComparer.OrdinalIgnoreCase))
+            picked.AddRange(TechStackCatalog.PickManifests(group));
+        picked.Sort(StringComparer.OrdinalIgnoreCase);
+        return picked;
+    }
+
+    static IReadOnlyList<string>? TryGitLsFiles(string root)
+    {
         try
         {
             var psi = new ProcessStartInfo("git", "ls-files -c -o --exclude-standard -z")
@@ -36,41 +82,24 @@ public static class ProjectScanner
                 CreateNoWindow = true,
             };
             using var proc = Process.Start(psi);
-            if (proc is not null)
-            {
-                var output = proc.StandardOutput.ReadToEnd();
-                proc.WaitForExit(60_000);
-                if (proc.ExitCode == 0 && output.Length > 0)
-                {
-                    foreach (var rel in output.Split('\0'))
-                    {
-                        if (!rel.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        var path = Path.GetFullPath(Path.Combine(root, rel));
-                        if (File.Exists(path))
-                            found.Add(path);
-                    }
-                }
-            }
+            if (proc is null)
+                return null;
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(60_000);
+            if (proc.ExitCode != 0 || output.Length == 0)
+                return null;
+            return output.Split('\0', StringSplitOptions.RemoveEmptyEntries);
         }
         catch (Exception)
         {
-            found.Clear();
+            return null;
         }
+    }
 
-        if (found.Count == 0)
-        {
-            foreach (var path in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories))
-            {
-                var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (parts.Any(p => SkipDirNames.Contains(p)))
-                    continue;
-                found.Add(Path.GetFullPath(path));
-            }
-        }
-
-        found.Sort(StringComparer.OrdinalIgnoreCase);
-        return found;
+    static bool IsSkippedPath(string path)
+    {
+        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return parts.Any(p => SkipDirNames.Contains(p));
     }
 
     public static ScanResult ScanWorkspace(string root, IReadOnlyList<ProductLine>? extraRoots = null)
@@ -94,8 +123,11 @@ public static class ProjectScanner
                 AddFrom(scanRoot, root, line.Label, projects, seen);
             }
         }
-        return new ScanResult(root, projects);
+        return new ScanResult(root, projects, "", StackIdsFrom(projects));
     }
+
+    static IReadOnlyList<string> StackIdsFrom(IEnumerable<ProjectInfo> projects) =>
+        projects.Select(p => p.StackId).Where(s => !string.IsNullOrEmpty(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     private static void AddFrom(
         string scanRoot,
@@ -106,15 +138,16 @@ public static class ProjectScanner
     {
         if (!Directory.Exists(scanRoot))
             return;
-        foreach (var csproj in ListCsprojPaths(scanRoot))
+        foreach (var file in ListProjectFiles(scanRoot))
         {
-            if (!seen.Add(csproj))
+            if (!seen.Add(file))
                 continue;
-            var info = ScanProject(csproj, workspaceRoot);
+            var info = ScanManifest(file, workspaceRoot);
             if (!string.IsNullOrWhiteSpace(groupOverride))
                 info = info with { Group = groupOverride };
             projects.Add(info);
         }
+        AddExtensionOnly(scanRoot, workspaceRoot, groupOverride, projects, seen);
     }
 
     public static IReadOnlyList<ProjectInfo> ExternalServiceCandidates(ScanResult scan) =>
@@ -122,10 +155,17 @@ public static class ProjectScanner
             p.IsExecutable
             && (p.IsUi || p.Ports.Count > 0 || p.ApplicationUrls.Count > 0)).ToList();
 
+    public static ProjectInfo ScanManifest(string projectFile, string root)
+    {
+        if (TechStackCatalog.IsDotnetProject(projectFile))
+            return ScanProject(projectFile, root);
+        return ScanOther(projectFile, root);
+    }
+
     public static ProjectInfo ScanProject(string csproj, string root)
     {
         var projectDir = Path.GetDirectoryName(csproj)!;
-        var (sdk, outputType, isExe, isWeb, hasApiDocs, hasUiMarkers) = ParseCsprojMeta(csproj);
+        var (sdk, outputType, isExe, isWeb, hasApiDocs, hasUiMarkers, applicationIcon) = ParseCsprojMeta(csproj);
         var (urls, ports, launchUrl) = ParseLaunchSettings(projectDir);
         var relDir = RelPosix(root, projectDir);
         var name = Path.GetFileNameWithoutExtension(csproj);
@@ -158,23 +198,228 @@ public static class ProjectScanner
             LaunchUrl: launchUrl,
             Group: GuessGroup(relDir),
             Language: DetectLanguage(csproj),
-            IsUi: isUi);
+            IsUi: isUi,
+            IconPath: AppIconLocator.FindRel(root, projectDir, applicationIcon) ?? "",
+            StackId: "dotnet");
     }
 
-    public static string DetectLanguage(string projectFile)
+    public static string DetectLanguage(string projectFile) =>
+        TechStackCatalog.LanguageForDotnetSuffix(projectFile);
+
+    static ProjectInfo ScanOther(string projectFile, string root)
     {
-        var ext = Path.GetExtension(projectFile);
-        return ext.ToLowerInvariant() switch
+        var projectDir = Path.GetDirectoryName(projectFile) ?? projectFile;
+        var stack = TechStackCatalog.MatchFile(projectFile);
+        var stackId = stack?.Id ?? "";
+        var relDir = RelPosix(root, projectDir);
+        var name = TechStackDetector.PackageJsonName(projectDir)
+            ?? (TechStackCatalog.IsExactManifestName(Path.GetFileName(projectFile))
+                ? Path.GetFileName(projectDir)
+                : Path.GetFileNameWithoutExtension(projectFile));
+        if (string.IsNullOrWhiteSpace(name))
+            name = Path.GetFileName(projectDir);
+        var language = TechStackDetector.DisplayLanguage(projectFile, projectDir);
+        var isTest = relDir.ToLowerInvariant().Split('/').Contains("tests")
+            || name.Contains("test", StringComparison.OrdinalIgnoreCase);
+        var (isExe, isWeb, isUi, ports) = InferMeta(projectFile, projectDir, stackId);
+        var urls = ports.Select(p => $"http://localhost:{p}").ToList();
+        return new ProjectInfo(
+            RelDir: relDir,
+            Name: name,
+            Csproj: projectFile,
+            Sdk: stackId,
+            OutputType: isExe ? "Exe" : "Library",
+            IsExecutable: isExe && !isTest,
+            IsWeb: isWeb,
+            IsWebApi: isWeb && !isUi,
+            IsTest: isTest,
+            Ports: ports,
+            ApplicationUrls: urls,
+            LaunchUrl: "",
+            Group: GuessGroup(relDir),
+            Language: language,
+            IsUi: isUi && !isTest,
+            IconPath: AppIconLocator.FindRel(root, projectDir) ?? "",
+            StackId: stackId);
+    }
+
+    static (bool IsExe, bool IsWeb, bool IsUi, List<int> Ports) InferMeta(string projectFile, string projectDir, string stackId)
+    {
+        var port = TechStackDetector.PortFromDotEnv(projectDir);
+        var ports = port is int p ? new List<int> { p } : new List<int>();
+        try
         {
-            ".csproj" => "C#",
-            ".fsproj" => "F#",
-            ".vbproj" => "VB.NET",
-            ".vcxproj" => "C++",
-            ".esproj" or ".njsproj" => "JavaScript",
-            ".tsproj" => "TypeScript",
-            ".pyproj" => "Python",
-            _ => "",
-        };
+            if (stackId == "node")
+            {
+                var scripts = TechStackDetector.NpmScripts(projectDir);
+                var hasStart = scripts.Any(s => s.Equals("start", StringComparison.OrdinalIgnoreCase)
+                    || s.Equals("dev", StringComparison.OrdinalIgnoreCase));
+                var text = File.Exists(projectFile) ? File.ReadAllText(projectFile) : "";
+                var web = TechStackCatalog.LooksLikeNodeWeb(text);
+                return (hasStart || web, web, web, ports);
+            }
+            if (stackId == "python")
+            {
+                var text = File.Exists(projectFile) ? File.ReadAllText(projectFile) : "";
+                var web = TechStackCatalog.LooksLikePythonWeb(text);
+                var entry = TechStackDetector.DirectoryLooksLikePythonProject(projectDir);
+                return (entry || web, web, false, ports);
+            }
+            if (stackId == "go")
+                return (TechStackDetector.HasGoMain(projectDir), false, false, ports);
+            if (stackId == "rust")
+            {
+                var text = File.ReadAllText(projectFile);
+                var exe = text.Contains("[package]", StringComparison.Ordinal);
+                return (exe, false, false, ports);
+            }
+            if (stackId is "java-maven" or "java-gradle")
+            {
+                var text = File.ReadAllText(projectFile);
+                var web = text.Contains("spring-boot", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("war", StringComparison.OrdinalIgnoreCase);
+                return (web || text.Contains("mainClass", StringComparison.OrdinalIgnoreCase), web, false, ports);
+            }
+            if (stackId == "php")
+                return (Directory.Exists(Path.Combine(projectDir, "public")), true, true, ports);
+            if (stackId == "ruby")
+            {
+                var rails = File.Exists(Path.Combine(projectDir, "bin", "rails"));
+                return (rails, rails, rails, ports);
+            }
+            if (stackId == "dart")
+            {
+                var flutter = TechStackCatalog.LooksLikeFlutter(File.ReadAllText(projectFile));
+                return (true, flutter, flutter, ports);
+            }
+        }
+        catch (Exception)
+        {
+            return (false, false, false, ports);
+        }
+        return (false, false, false, ports);
+    }
+
+    static void AddExtensionOnly(
+        string scanRoot,
+        string workspaceRoot,
+        string? groupOverride,
+        List<ProjectInfo> projects,
+        HashSet<string> seen)
+    {
+        var covered = new List<(string StackId, string Dir)>();
+        foreach (var p in projects)
+        {
+            if (string.IsNullOrEmpty(p.StackId))
+                continue;
+            var dir = Path.GetFullPath(Path.Combine(workspaceRoot, p.RelDir.Replace('/', Path.DirectorySeparatorChar)));
+            covered.Add((p.StackId, dir));
+        }
+
+        IEnumerable<string> files;
+        var git = TryGitLsFiles(scanRoot);
+        if (git is not null)
+        {
+            files = git
+                .Where(TechStackCatalog.IsSourceFile)
+                .Select(rel => Path.GetFullPath(Path.Combine(scanRoot, rel)))
+                .Where(File.Exists);
+        }
+        else
+        {
+            try
+            {
+                files = Directory.EnumerateFiles(scanRoot, "*", SearchOption.AllDirectories)
+                    .Where(p => !IsSkippedPath(p) && TechStackCatalog.IsSourceFile(p));
+            }
+            catch (Exception)
+            {
+                return;
+            }
+        }
+
+        var byStackDir = new Dictionary<(string Stack, string Dir), int>();
+        foreach (var path in files)
+        {
+            if (IsSkippedPath(path))
+                continue;
+            var stack = TechStackCatalog.MatchSourceExtension(path);
+            if (stack is null)
+                continue;
+            var dir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir))
+                continue;
+            if (covered.Any(c => SameStackCovered(c.StackId, c.Dir, stack.Id, dir)))
+                continue;
+            var key = (stack.Id, dir);
+            byStackDir[key] = byStackDir.GetValueOrDefault(key) + 1;
+        }
+
+        foreach (var ((stackId, dir), count) in byStackDir)
+        {
+            if (!DirectoryLooksLikeLooseProject(dir, stackId, count))
+                continue;
+            if (!seen.Add(dir))
+                continue;
+            projects.Add(LooseProject(dir, workspaceRoot, stackId, groupOverride));
+        }
+    }
+
+    static bool SameStackCovered(string coveredStack, string coveredDir, string stackId, string dir)
+    {
+        if (!coveredStack.Equals(stackId, StringComparison.OrdinalIgnoreCase)
+            && !(coveredStack.StartsWith("java", StringComparison.Ordinal) && stackId.StartsWith("java", StringComparison.Ordinal)))
+            return false;
+        var a = coveredDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var b = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return b.StartsWith(a, StringComparison.OrdinalIgnoreCase)
+            || a.StartsWith(b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool DirectoryLooksLikeLooseProject(string dir, string stackId, int fileCount)
+    {
+        if (stackId == "python")
+            return TechStackDetector.DirectoryLooksLikePythonProject(dir) || fileCount >= 5;
+        if (stackId == "node")
+            return TechStackDetector.DirectoryLooksLikeNodeProject(dir) || fileCount >= 8;
+        if (stackId == "go")
+            return TechStackDetector.HasGoMain(dir) || fileCount >= 3;
+        if (stackId == "dotnet")
+            return false;
+        return fileCount >= 8;
+    }
+
+    static ProjectInfo LooseProject(string projectDir, string root, string stackId, string? groupOverride)
+    {
+        var relDir = RelPosix(root, projectDir);
+        var language = TechStackCatalog.Stacks.FirstOrDefault(s => s.Id == stackId)?.Language ?? "";
+        if (stackId == "node" && TechStackDetector.LooksLikeTypeScript(projectDir))
+            language = "TypeScript";
+        var port = TechStackDetector.PortFromDotEnv(projectDir);
+        var ports = port is int p ? new List<int> { p } : new List<int>();
+        var isPy = stackId == "python";
+        var isNode = stackId == "node";
+        var isExe = (isPy && TechStackDetector.DirectoryLooksLikePythonProject(projectDir))
+            || (isNode && TechStackDetector.DirectoryLooksLikeNodeProject(projectDir))
+            || (stackId == "go" && TechStackDetector.HasGoMain(projectDir));
+        return new ProjectInfo(
+            RelDir: relDir,
+            Name: Path.GetFileName(projectDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            Csproj: projectDir,
+            Sdk: stackId,
+            OutputType: isExe ? "Exe" : "Library",
+            IsExecutable: isExe,
+            IsWeb: isNode,
+            IsWebApi: false,
+            IsTest: relDir.ToLowerInvariant().Split('/').Contains("tests"),
+            Ports: ports,
+            ApplicationUrls: ports.Select(x => $"http://localhost:{x}").ToList(),
+            LaunchUrl: "",
+            Group: string.IsNullOrWhiteSpace(groupOverride) ? GuessGroup(relDir) : groupOverride,
+            Language: language,
+            IsUi: isNode,
+            IconPath: AppIconLocator.FindRel(root, projectDir) ?? "",
+            StackId: stackId);
     }
 
     private static string RelPosix(string root, string path)
@@ -234,24 +479,27 @@ public static class ProjectScanner
         return false;
     }
 
-    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb, bool HasApiDocs, bool HasUiMarkers) ParseCsprojMeta(string csproj)
+    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb, bool HasApiDocs, bool HasUiMarkers, string ApplicationIcon) ParseCsprojMeta(string csproj)
     {
         try
         {
             var doc = XDocument.Load(csproj);
             var root = doc.Root;
             if (root is null)
-                return ("", "Library", false, false, false, false);
+                return ("", "Library", false, false, false, false, "");
             var sdk = (string?)root.Attribute("Sdk") ?? "";
             var isWeb = sdk.Contains("Microsoft.NET.Sdk.Web", StringComparison.Ordinal);
             var outputType = "Library";
             var hasApiDocs = false;
             var hasUiMarkers = false;
+            var applicationIcon = "";
             foreach (var elem in root.Descendants())
             {
                 var local = LocalName(elem.Name);
                 if (local == "OutputType" && !string.IsNullOrWhiteSpace(elem.Value) && outputType == "Library")
                     outputType = elem.Value.Trim();
+                if (local == "ApplicationIcon" && string.IsNullOrEmpty(applicationIcon) && !string.IsNullOrWhiteSpace(elem.Value))
+                    applicationIcon = elem.Value.Trim();
                 if (local == "PackageReference")
                 {
                     var include = (string?)elem.Attribute("Include") ?? "";
@@ -268,11 +516,11 @@ public static class ProjectScanner
             var isExe = outputType.Equals("Exe", StringComparison.OrdinalIgnoreCase)
                 || outputType.Equals("WinExe", StringComparison.OrdinalIgnoreCase)
                 || isWeb;
-            return (sdk.Trim(), outputType, isExe, isWeb, hasApiDocs, hasUiMarkers);
+            return (sdk.Trim(), outputType, isExe, isWeb, hasApiDocs, hasUiMarkers, applicationIcon);
         }
         catch (Exception)
         {
-            return ("", "Library", false, false, false, false);
+            return ("", "Library", false, false, false, false, "");
         }
     }
 

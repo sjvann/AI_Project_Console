@@ -10,7 +10,9 @@ using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Scan;
 using AiProject.Console.Core.Stack;
+using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 using AiProject.Console.Core.WorkHours;
@@ -37,6 +39,7 @@ public sealed partial class ConsoleSession : IDisposable
     private readonly WorkHoursStore _workHours = new();
     private readonly ExecutionStatusChartStore _statusChart = new();
     private readonly ICompanyPlatformClient? _company;
+    private readonly Dictionary<string, string?> _iconUrlCache = new(StringComparer.OrdinalIgnoreCase);
     private int _timesheetGen;
     private TaskCompletionSource<bool>? _leaveGateTcs;
     private string? _releaseReturnDialog;
@@ -73,6 +76,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     public ProjectCatalog? Catalog { get; private set; }
     public ProjectRuntime? Runtime { get; private set; }
+    public string? WorkspaceAppIconUrl => AppIconDataUrl(Catalog is null ? null : AppIconLocator.WorkspaceIcon(Catalog));
     public IReadOnlyList<string> RecentProjects => ConsoleSettingsStore.RecentProjects();
     public bool OpenWithCursor { get; set; }
     public bool RestoreLastProject { get; set; }
@@ -413,6 +417,20 @@ public sealed partial class ConsoleSession : IDisposable
 
     public IEnumerable<IGrouping<string, BuildState>> ProjectGroups =>
         VisibleProjects.GroupBy(p => string.IsNullOrEmpty(p.System) ? "其他" : p.System);
+
+    public string? AppIconDataUrl(string? relPath)
+    {
+        if (Catalog is null || string.IsNullOrWhiteSpace(relPath))
+            return null;
+        var full = AppIconLocator.ResolveAbsolute(Catalog.Root, relPath);
+        if (full is null)
+            return null;
+        if (_iconUrlCache.TryGetValue(full, out var cached))
+            return cached;
+        var url = AppIconLocator.TryDataUrl(full);
+        _iconUrlCache[full] = url;
+        return url;
+    }
 
     public bool IsServiceGroupCollapsed(string key) => _collapsedServiceGroups.Contains(key);
 
@@ -1238,6 +1256,7 @@ public sealed partial class ConsoleSession : IDisposable
                 return;
 
             var catalog = ServiceCatalogBuilder.Build(root);
+            _iconUrlCache.Clear();
             Catalog = catalog;
             Runtime = new ProjectRuntime(catalog.Root);
             Runtime.Ensure();
@@ -1333,6 +1352,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (SelectedServiceId is null || !keep.Contains(SelectedServiceId))
             SelectedServiceId = next.Services.FirstOrDefault()?.Id;
+        _iconUrlCache.Clear();
         Catalog = next;
         ReloadLog();
     }
@@ -2072,7 +2092,7 @@ public sealed partial class ConsoleSession : IDisposable
     {
         if (!RequireCatalog())
             return;
-        if (!EnsureStartTools())
+        if (!await EnsureStartToolsAsync().ConfigureAwait(false))
             return;
         var catalog = Catalog!;
         var runtime = Runtime!;
@@ -2118,7 +2138,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
         var toStart = plan.Order.Count > 0 ? plan.Order : planned;
-        if (!EnsureStartTools(toStart))
+        if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
             return;
         MarkServiceActivity(toStart, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
@@ -2154,26 +2174,26 @@ public sealed partial class ConsoleSession : IDisposable
         });
     }
 
-    public Task RestartGroupAsync(string key)
+    public async Task RestartGroupAsync(string key)
     {
         if (!RequireCatalog())
-            return Task.CompletedTask;
+            return;
         var catalog = Catalog!;
         var runtime = Runtime!;
         var health = new Dictionary<string, bool>(Health);
         var ids = GroupRunnableIds(key);
         var targets = ProcessSupervisor.OnlineRunnable(catalog, health, ids);
         if (targets.Count == 0)
-            return Task.CompletedTask;
-        if (!EnsureStartTools(targets))
-            return Task.CompletedTask;
+            return;
+        if (!await EnsureStartToolsAsync(targets).ConfigureAwait(false))
+            return;
         MarkServiceActivity(targets, ServiceActivityMap.Restarting);
-        return RunJobAsync("重啟中…", () =>
+        await RunJobAsync("重啟中…", () =>
         {
             var results = ProcessSupervisor.RestartOnline(catalog, runtime, health, ids);
             ApplyStartResults(results);
             return Task.FromResult<string?>(null);
-        });
+        }).ConfigureAwait(false);
     }
 
     public void OpenGroupUrls(string key)
@@ -2193,26 +2213,26 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("無 URL", "沒有可開啟的 openUrl。");
     }
 
-    public Task StartOneAsync(ServiceEntry svc, bool skipOptional = false, bool skipDepends = false)
+    public async Task StartOneAsync(ServiceEntry svc, bool skipOptional = false, bool skipDepends = false)
     {
         if (!RequireCatalog())
-            return Task.CompletedTask;
+            return;
         if (IsSelfService(svc))
         {
             _native.Info("本機控制台", ProcessSupervisor.SelfConsoleStartMessage);
-            return Task.CompletedTask;
+            return;
         }
         if (!string.IsNullOrEmpty(svc.HostedBy))
         {
             _native.Info("隨宿主啟動", $"「{svc.Label}」隨 {svc.HostedBy} 一併提供，請啟動宿主服務。");
-            return Task.CompletedTask;
+            return;
         }
         if (Health.GetValueOrDefault(svc.Id))
         {
             ApplyStartResults([(svc.Id, svc.Label, null)]);
             Notify();
             _native.Info("已在線", $"「{svc.Label}」已在執行。");
-            return Task.CompletedTask;
+            return;
         }
         if (skipDepends && svc.Dependencies.Any(d => !d.Optional))
         {
@@ -2220,16 +2240,16 @@ public sealed partial class ConsoleSession : IDisposable
             if (!_native.Confirm(
                     "只起自己",
                     $"「{svc.Label}」硬相依 {hard}。略過後可能無法連線。仍要只起自己嗎？"))
-                return Task.CompletedTask;
+                return;
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
         var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id], skipOptional, skipDepends);
         var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
-        if (!EnsureStartTools(toStart))
-            return Task.CompletedTask;
+        if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
+            return;
         MarkServiceActivity(toStart, ServiceActivityMap.Starting);
-        return RunJobAsync($"啟動 {svc.Label}…", async () =>
+        await RunJobAsync($"啟動 {svc.Label}…", async () =>
         {
             var results = await ProcessSupervisor.StartTargetsAsync(
                 catalog,
@@ -2245,7 +2265,7 @@ public sealed partial class ConsoleSession : IDisposable
             ApplyStartResults(results);
             var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
             return self.Error;
-        });
+        }).ConfigureAwait(false);
     }
 
     public Task StopAllAsync()
@@ -2281,23 +2301,23 @@ public sealed partial class ConsoleSession : IDisposable
         });
     }
 
-    public Task RestartOneAsync(ServiceEntry svc)
+    public async Task RestartOneAsync(ServiceEntry svc)
     {
         if (!RequireCatalog())
-            return Task.CompletedTask;
+            return;
         if (IsSelfService(svc))
         {
             _native.Info("本機控制台", ProcessSupervisor.SelfConsoleStartMessage);
-            return Task.CompletedTask;
+            return;
         }
         var catalog = Catalog!;
         var runtime = Runtime!;
         var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id]);
         var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
-        if (!EnsureStartTools(toStart))
-            return Task.CompletedTask;
+        if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
+            return;
         MarkServiceActivity(toStart, ServiceActivityMap.Restarting);
-        return RunJobAsync($"重啟 {svc.Label}…", async () =>
+        await RunJobAsync($"重啟 {svc.Label}…", async () =>
         {
             ProcessSupervisor.StopService(catalog, runtime, svc);
             await Task.Delay(800).ConfigureAwait(false);
@@ -2313,7 +2333,7 @@ public sealed partial class ConsoleSession : IDisposable
             ApplyStartResults(results);
             var self = results.LastOrDefault(r => string.Equals(r.Id, svc.Id, StringComparison.OrdinalIgnoreCase));
             return self.Error;
-        });
+        }).ConfigureAwait(false);
     }
 
     public void OpenUrls(bool frontendsOnly)
@@ -2391,6 +2411,130 @@ public sealed partial class ConsoleSession : IDisposable
     {
         CloseDialog();
         await PickProjectAsync().ConfigureAwait(false);
+    }
+
+    public async Task RunDoctorActionAsync(string actionId)
+    {
+        if (string.IsNullOrWhiteSpace(actionId) || JobBusy)
+            return;
+        if (actionId == "install-docfx")
+        {
+            await InstallDocfxFromDoctorAsync().ConfigureAwait(false);
+            return;
+        }
+        if (actionId == "install-toolchains")
+        {
+            await InstallMissingToolchainsAsync().ConfigureAwait(false);
+            return;
+        }
+        const string installPrefix = "install-toolchain:";
+        if (actionId.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            await InstallToolchainAsync(actionId[installPrefix.Length..]).ConfigureAwait(false);
+            return;
+        }
+        const string restorePrefix = "restore-packages:";
+        if (actionId.StartsWith(restorePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            await RestorePackagesAsync(actionId[restorePrefix.Length..]).ConfigureAwait(false);
+            return;
+        }
+    }
+
+    public async Task InstallMissingToolchainsAsync()
+    {
+        if (Catalog is null)
+            return;
+        var missing = ToolchainBootstrap.MissingTools(TechStackCatalog.RequiredToolIdsFor(TechStackDetector.RequiredStacks(Catalog)));
+        if (missing.Count == 0)
+        {
+            _native.Info("開發環境", "目前偵測到的語言環境都已安裝。");
+            return;
+        }
+        var names = string.Join("、", missing.Select(m => m.DisplayName));
+        if (!_native.Confirm("安裝開發環境", $"將安裝：{names}。\n\nWindows 會用 winget；沒有 winget 則開啟官方下載頁。確定？"))
+            return;
+        foreach (var spec in missing)
+            await InstallToolchainAsync(spec.Id, confirm: false).ConfigureAwait(false);
+    }
+
+    public async Task InstallToolchainAsync(string toolId, bool confirm = true)
+    {
+        var spec = TechStackCatalog.Tool(toolId);
+        if (spec is null)
+            return;
+        if (confirm && !_native.Confirm("安裝 " + spec.DisplayName, spec.HowTo + "\n\n現在安裝？"))
+            return;
+        if (JobBusy)
+            return;
+        JobBusy = true;
+        JobText = "安裝 " + spec.DisplayName + "…";
+        Notify();
+        try
+        {
+            var progress = new Progress<string>(line =>
+            {
+                JobText = spec.DisplayName + "：" + Truncate(line, 80);
+                Notify();
+            });
+            var (code, output) = await ToolchainBootstrap.InstallAsync(spec.Id, progress, _cts.Token).ConfigureAwait(false);
+            JobText = code == 0 ? spec.DisplayName + " 已就緒" : "安裝未完成";
+            if (code != 0)
+                _native.Warn("安裝 " + spec.DisplayName, FirstLine(output));
+        }
+        catch (Exception ex)
+        {
+            JobText = "錯誤";
+            _native.Error("安裝 " + spec.DisplayName, FirstLine(ex.Message));
+        }
+        finally
+        {
+            JobBusy = false;
+            if (Dialog == "doctor")
+                DoctorView = DoctorSnapshot.Build(Catalog);
+            Notify();
+        }
+    }
+
+    public async Task RestorePackagesAsync(string relDir)
+    {
+        if (Catalog is null || JobBusy)
+            return;
+        var target = Path.Combine(Catalog.Root, relDir.Replace('/', Path.DirectorySeparatorChar));
+        JobBusy = true;
+        JobText = "還原套件…";
+        Notify();
+        try
+        {
+            var plan = StackCommands.PlanRestore(Catalog.Root, target);
+            var progress = new Progress<string>(line =>
+            {
+                JobText = Truncate(line, 80);
+                Notify();
+            });
+            var (code, log) = await StackCommands.RunAsync(plan, progress, _cts.Token).ConfigureAwait(false);
+            JobText = code == 0 ? "套件已還原" : "還原失敗";
+            if (code != 0)
+                _native.Warn("還原套件", FirstLine(log));
+        }
+        catch (Exception ex)
+        {
+            JobText = "錯誤";
+            _native.Error("還原套件", FirstLine(ex.Message));
+        }
+        finally
+        {
+            JobBusy = false;
+            if (Dialog == "doctor")
+                DoctorView = DoctorSnapshot.Build(Catalog);
+            Notify();
+        }
+    }
+
+    static string Truncate(string text, int max)
+    {
+        var t = (text ?? "").Trim();
+        return t.Length <= max ? t : t[..(max - 1)] + "…";
     }
 
     public async Task InstallDocfxFromDoctorAsync()
@@ -2772,6 +2916,8 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         var catalog = Catalog!;
         var target = Path.Combine(catalog.Root, relPath.Replace('/', Path.DirectorySeparatorChar));
+        if (!await EnsureBuildToolsAsync([target]).ConfigureAwait(false))
+            return;
         LeftTab = "prj";
         LastBuildFailure = null;
         CompileHelpEnabled = false;
@@ -3800,6 +3946,7 @@ public sealed partial class ConsoleSession : IDisposable
         if (GithubSaveTarget == "manifest")
         {
             GithubConfigResolver.WriteManifest(Catalog, GithubDraft);
+            _iconUrlCache.Clear();
             Catalog = ServiceCatalogBuilder.Build(Catalog.Root);
         }
         else
@@ -3818,6 +3965,7 @@ public sealed partial class ConsoleSession : IDisposable
         if (DeploySaveTarget == "manifest")
         {
             DeployConfigResolver.WriteManifest(Catalog, DeployDraft);
+            _iconUrlCache.Clear();
             Catalog = ServiceCatalogBuilder.Build(Catalog.Root);
         }
         else
@@ -4457,6 +4605,8 @@ public sealed partial class ConsoleSession : IDisposable
                 _native.Info("沒有測試", "這個工作區沒有方案或測試專案可跑。控制台只做一次完整測試，不是 IDE 測試總管。");
             return true;
         }
+        if (!await EnsureBuildToolsAsync(targets).ConfigureAwait(false))
+            return false;
 
         LeftTab = "prj";
         BuildText = "";
@@ -4519,15 +4669,16 @@ public sealed partial class ConsoleSession : IDisposable
         LastBuildFailure = null;
         CompileHelpEnabled = false;
         Notify();
+        var targets = BuildRunner.TargetsFor(catalog, handler);
+        if (targets.Count == 0)
+        {
+            _native.Info("沒有需要編譯的項目", "這個工作區目前沒有可編譯的專案。");
+            return;
+        }
+        if (!await EnsureBuildToolsAsync(targets).ConfigureAwait(false))
+            return;
         await RunJobAsync("建置中…", async () =>
         {
-            var targets = BuildRunner.TargetsFor(catalog, handler);
-            if (targets.Count == 0)
-            {
-                ResetBuildProgress();
-                AppendBuild("沒有需要編譯的項目。");
-                return (string?)null;
-            }
             await BeginBuildBatchAsync(targets).ConfigureAwait(false);
             var allLines = new List<string>();
             string? failedTarget = null;
@@ -4831,32 +4982,69 @@ public sealed partial class ConsoleSession : IDisposable
         return ids;
     }
 
-    private bool EnsureStartTools(ServiceEntry? svc = null) =>
-        EnsureStartTools(svc is null
+    private async Task<bool> EnsureStartToolsAsync(ServiceEntry? svc = null) =>
+        await EnsureStartToolsAsync(svc is null
             ? ServiceCatalogBuilder.OrderedRunnable(Catalog!)
-            : [ServiceCatalogBuilder.HostService(Catalog!, svc)]);
+            : [ServiceCatalogBuilder.HostService(Catalog!, svc)]).ConfigureAwait(false);
 
-    private bool EnsureStartTools(IEnumerable<ServiceEntry> targets)
+    private async Task<bool> EnsureStartToolsAsync(IEnumerable<ServiceEntry> targets)
     {
         var catalog = Catalog!;
-        var needDotnet = false;
-        var needPython = false;
+        var toolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in targets)
         {
             var path = ProcessSupervisor.ProjectPathFor(catalog, item);
-            if (path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
-                needPython = true;
-            else
-                needDotnet = true;
+            var stackId = TechStackDetector.StackIdForPath(path);
+            if (string.IsNullOrEmpty(stackId) && path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+                stackId = "python";
+            if (string.IsNullOrEmpty(stackId))
+                stackId = "dotnet";
+            foreach (var id in TechStackCatalog.RequiredToolIdsFor([stackId]))
+                toolIds.Add(id);
         }
-        if (needPython && !CliUtil.CommandExists("py") && !CliUtil.CommandExists("python") && !CliUtil.CommandExists("python3"))
+        var dir = catalog.Root;
+        var missing = ToolchainBootstrap.MissingTools(toolIds, dir);
+        if (missing.Count == 0)
+            return true;
+        var names = string.Join("、", missing.Select(m => m.DisplayName));
+        if (!_native.Confirm("缺少開發環境", $"找不到 {names}。要現在安裝嗎？\n\n安裝完成後請再按一次啟動。"))
+            return false;
+        foreach (var spec in missing)
+            await InstallToolchainAsync(spec.Id, confirm: false).ConfigureAwait(false);
+        ToolchainBootstrap.RefreshProcessPath();
+        missing = ToolchainBootstrap.MissingTools(toolIds, dir);
+        if (missing.Count > 0)
         {
-            _native.Error("缺少工具", "找不到 Python（py / python / python3）。");
+            _native.Error("缺少工具", "仍缺少：" + string.Join("、", missing.Select(m => m.DisplayName)) + "。請看環境體檢。");
             return false;
         }
-        if (needDotnet && !CliUtil.CommandExists("dotnet"))
+        return true;
+    }
+
+    private async Task<bool> EnsureBuildToolsAsync(IEnumerable<string> targets)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var target in targets)
         {
-            _native.Error("缺少工具", "找不到 dotnet。");
+            var stackId = StackCommands.StackIdFor(target);
+            if (string.IsNullOrEmpty(stackId))
+                stackId = "dotnet";
+            foreach (var id in TechStackCatalog.RequiredToolIdsFor([stackId]))
+                ids.Add(id);
+        }
+        var missing = ToolchainBootstrap.MissingTools(ids, Catalog?.Root);
+        if (missing.Count == 0)
+            return true;
+        var names = string.Join("、", missing.Select(m => m.DisplayName));
+        if (!_native.Confirm("缺少開發環境", $"編譯／測試需要 {names}。要現在安裝嗎？"))
+            return false;
+        foreach (var spec in missing)
+            await InstallToolchainAsync(spec.Id, confirm: false).ConfigureAwait(false);
+        ToolchainBootstrap.RefreshProcessPath();
+        missing = ToolchainBootstrap.MissingTools(ids, Catalog?.Root);
+        if (missing.Count > 0)
+        {
+            _native.Error("缺少工具", "仍缺少：" + string.Join("、", missing.Select(m => m.DisplayName)) + "。請看環境體檢。");
             return false;
         }
         return true;
@@ -5032,6 +5220,7 @@ public sealed partial class ConsoleSession : IDisposable
     private void ResetToStartup()
     {
         _workHours.End();
+        _iconUrlCache.Clear();
         Catalog = null;
         Runtime = null;
         SelectedServiceId = null;

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.ProcessOps;
@@ -312,7 +313,10 @@ public static class ProcessSupervisor
         if (Directory.Exists(path))
         {
             var csprojs = Directory.GetFiles(path, "*.csproj").OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
-            return csprojs.Length > 0 ? csprojs[0] : path;
+            if (csprojs.Length > 0)
+                return csprojs[0];
+            var manifest = TechStackCatalog.FindPreferredManifest(path);
+            return manifest ?? path;
         }
         if (File.Exists(path))
             return path;
@@ -322,7 +326,8 @@ public static class ProcessSupervisor
             if (File.Exists(candidate))
                 return candidate;
         }
-        return path;
+        var preferred = TechStackCatalog.FindPreferredManifest(path);
+        return preferred ?? path;
     }
 
     public const string SelfConsoleStartMessage = "這是目前這個控制台，再啟動會再開一扇視窗。";
@@ -334,10 +339,8 @@ public static class ProcessSupervisor
         var host = ServiceCatalogBuilder.HostService(catalog, svc);
         var stem = host.Stem;
         KillPidFile(rt, stem);
-        var proj = ProjectPathFor(catalog, host);
-        if (!File.Exists(proj) && !Directory.Exists(proj))
-            throw new FileNotFoundException($"找不到專案：{proj}");
 
+        // preStart 可能 clone 產品線倉；專案路徑要等它成功後再解析，否則薄工作區會空 Log 直接「找不到專案」。
         var logFile = rt.LogPath(stem);
         var writer = OpenLog(logFile);
         writer.WriteLine($"=== {host.Label} start {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
@@ -349,7 +352,23 @@ public static class ProcessSupervisor
             throw new InvalidOperationException(prep);
         }
 
+        var proj = ProjectPathFor(catalog, host);
+        if (!File.Exists(proj) && !Directory.Exists(proj))
+        {
+            var missing = $"找不到專案：{proj}";
+            writer.WriteLine(missing);
+            CloseLog(logFile, writer);
+            throw new FileNotFoundException(missing);
+        }
+
         var psi = CreateStartInfo(catalog, host, proj);
+        if (psi.Environment.ContainsKey("__missing_toolchain"))
+        {
+            var missing = psi.Environment["__missing_toolchain"];
+            writer.WriteLine(missing);
+            CloseLog(logFile, writer);
+            throw new InvalidOperationException(missing);
+        }
         writer.WriteLine($"{psi.FileName} {string.Join(' ', psi.ArgumentList)}");
         writer.WriteLine($"cwd {psi.WorkingDirectory}");
 
@@ -383,22 +402,8 @@ public static class ProcessSupervisor
     internal static bool IsPyLauncher(string fileName) =>
         Path.GetFileNameWithoutExtension(fileName).Equals("py", StringComparison.OrdinalIgnoreCase);
 
-    internal static string? ResolvePythonLauncherPath()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            var py = CliUtil.FindOnPath("py");
-            if (py is not null)
-                return py;
-        }
-        foreach (var name in new[] { "python", "python3" })
-        {
-            var found = CliUtil.FindOnPath(name);
-            if (found is not null)
-                return found;
-        }
-        return null;
-    }
+    internal static string? ResolvePythonLauncherPath() =>
+        ToolchainBootstrap.ResolveCommand("python");
 
     internal static bool HasPythonLauncher() => ResolvePythonLauncherPath() is not null;
 
@@ -408,7 +413,8 @@ public static class ProcessSupervisor
     internal static bool RequiresDotnet(ProjectCatalog catalog, ServiceEntry svc)
     {
         var path = ProjectPathFor(catalog, ServiceCatalogBuilder.HostService(catalog, svc));
-        return !IsPythonScript(path);
+        var id = TechStackDetector.StackIdForPath(path);
+        return id == "dotnet";
     }
 
     internal static ProcessStartInfo CreateStartInfo(ProjectCatalog catalog, ServiceEntry host, string proj)
@@ -425,6 +431,23 @@ public static class ProcessSupervisor
             python.ArgumentList.Add(relScript.Replace('\\', '/'));
             python.Environment["PYTHONUNBUFFERED"] = "1";
             return python;
+        }
+
+        var stackId = TechStackDetector.StackIdForPath(full);
+        if (stackId is not ("" or "dotnet"))
+        {
+            var plan = StackCommands.PlanStart(catalog.Root, full);
+            var start = NewRedirected(string.IsNullOrEmpty(plan.FileName) ? "cmd" : plan.FileName, plan.WorkingDirectory);
+            foreach (var a in plan.Arguments)
+                start.ArgumentList.Add(a);
+            if (plan.ExtraEnv is not null)
+            {
+                foreach (var kv in plan.ExtraEnv)
+                    start.Environment[kv.Key] = kv.Value;
+            }
+            if (plan.MissingToolIds.Count > 0)
+                start.Environment["__missing_toolchain"] = ToolchainBootstrap.FormatMissing(plan.MissingToolIds);
+            return start;
         }
 
         var relProj = Path.GetRelativePath(catalog.Root, full);
