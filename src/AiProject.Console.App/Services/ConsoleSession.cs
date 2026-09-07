@@ -2634,7 +2634,6 @@ public sealed partial class ConsoleSession : IDisposable
 
     public async Task OnActionAsync(ConsoleAction action)
     {
-        CloseGithubHub();
         var handler = action.Handler;
         if (action.RequiresDeploy && handler is not "deploy_settings" and not "gcp_settings")
         {
@@ -4166,6 +4165,25 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Error("需要 GitHub CLI", "發行 Release 需要 gh。請安裝：https://cli.github.com/ 並執行 gh auth login。");
             return;
         }
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", $"請等待目前工作完成（{JobText}），再發行 Release。");
+            return;
+        }
+        ReleaseHint = "正在讀取 GitHub 上的發行紀錄…";
+        ReleaseTag = "";
+        ReleaseTitle = "";
+        ReleaseNotes = "";
+        ReleaseTarget = GitBrief?.Branch ?? "";
+        ReleaseDraft = false;
+        ReleasePrerelease = false;
+        ReleaseGenerateNotes = true;
+        ReleaseMakeLatest = true;
+        ReleaseAssets.Clear();
+        ReleasePackable = ConsoleReleasePack.LooksPackable(Catalog!.Root);
+        ReleaseLatestTag = "";
+        Dialog = "release";
+        Notify();
         ReleaseInspect? inspect = null;
         await RunJobAsync("讀取 Release…", async () =>
         {
@@ -4173,7 +4191,11 @@ public sealed partial class ConsoleSession : IDisposable
             return (string?)null;
         }).ConfigureAwait(false);
         if (inspect is null)
+        {
+            ReleaseHint = "無法讀取 GitHub Release。可關閉後再從操作台「發行 Release…」重試。";
+            Notify();
             return;
+        }
         ReleasePackable = inspect.Packable;
         ReleaseLatestTag = inspect.LatestGithubTag;
         if (inspect.Packable && !inspect.LatestHasSetup && !string.IsNullOrEmpty(inspect.LatestGithubTag))

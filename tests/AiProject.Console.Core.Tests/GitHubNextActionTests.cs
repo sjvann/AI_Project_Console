@@ -86,9 +86,19 @@ public class GitHubNextActionTests
     public void HistoricalCiFailure_DoesNotOverrideClean()
     {
         var step = GitHubNextAction.Decide(new GitBriefStatus("main", 0, 0, 0), hasPr: true);
-        Assert.Equal(GitHubNextAction.KindHub, step.Kind);
-        Assert.Equal("已與遠端一致。", step.Hint);
-        Assert.True(step.OpensHub);
+        Assert.Equal(GitHubNextAction.KindRelease, step.Kind);
+        Assert.Equal("github_release", step.Handler);
+        Assert.Contains("正式版", step.Hint);
+        Assert.False(step.OpensHub);
+    }
+
+    [Fact]
+    public void DefaultBranchClean_OffersRelease()
+    {
+        var step = GitHubNextAction.Decide(new GitBriefStatus("main", 0, 0, 0), hasPr: false, defaultBranch: "main");
+        Assert.Equal(GitHubNextAction.KindRelease, step.Kind);
+        Assert.Equal(GithubActionLanes.Ship, step.Lane);
+        Assert.Equal("發行 Release…", step.Label);
     }
 
     [Fact]
