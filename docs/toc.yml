@@ -48,5 +48,7 @@
       href: maintainer/develop.md
     - name: 發版
       href: maintainer/release.md
+    - name: 程式碼簽署與 Store
+      href: maintainer/code-signing.md
     - name: 文件網站（DocFX）
       href: maintainer/docfx.md

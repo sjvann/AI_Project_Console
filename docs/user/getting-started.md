@@ -34,7 +34,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 1. 打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases)
 2. 下載 `AI_Project_Console-*-win-x64-setup.exe`
-3. 執行安裝程式。會裝到目前使用者的 Local AppData，並加入開始選單；可選桌面捷徑
+3. 執行安裝程式。會裝到目前使用者的 Local AppData，並加入開始選單；可選桌面捷徑。若 Windows 顯示「已保護您的電腦」，見 [常見問題：SmartScreen](troubleshooting.md#smartscreen)
 4. 從開始選單開啟「AI_Project 控制台」
 
 ### 方式 B：免安裝壓縮包

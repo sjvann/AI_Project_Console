@@ -62,7 +62,7 @@ dotnet test AiProject.Console.slnx
 
 ## 打包與 Release
 
-Windows 安裝包、升版檢查清單、GitHub Release 指令：[scripts/README.md](../../scripts/README.md) 與 [發版](release.md)。
+Windows 安裝包、升版檢查清單、GitHub Release 指令：[scripts/README.md](../../scripts/README.md) 與 [發版](release.md)。用 Azure Artifact Signing（舊稱 Trusted Signing）簽署安裝包、以及之後上 Microsoft Store：[程式碼簽署與 Microsoft Store](code-signing.md)。
 
 圖示原始檔在 `assets/brand/`。改主圖後：
 

@@ -9,6 +9,7 @@
 *.pdb
 dist/
 artifacts/
+installer/windows/trusted-signing.json
 .ai_project/
 _site/
 api/**/*.yml
