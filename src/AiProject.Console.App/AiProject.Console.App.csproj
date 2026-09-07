@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,17 +8,24 @@
     <RootNamespace>AiProject.Console.App</RootNamespace>
     <AssemblyName>AI_Project_Console</AssemblyName>
     <ApplicationTitle>AI_Project 控制台</ApplicationTitle>
-    <Version>0.6.9</Version>
-    <InformationalVersion>0.6.9</InformationalVersion>
+    <Version>0.6.10</Version>
+    <InformationalVersion>0.6.10</InformationalVersion>
     <Product>AI_Project 控制台</Product>
     <Authors>sjvann</Authors>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- Windows 會擋未簽名的 Debug apphost（dotnet run → 存取被拒）。改由已簽名的 dotnet.exe 載入 DLL。 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Markdig" Version="0.41.3" />
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <ProjectReference Include="..\AiProject.Console.Core\AiProject.Console.Core.csproj" />
+    <ProjectReference Include="..\AiProject.Console.CompanyClient\AiProject.Console.CompanyClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>

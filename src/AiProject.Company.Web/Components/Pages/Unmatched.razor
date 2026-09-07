@@ -1,0 +1,6 @@
+@page "/unmatched"
+@inject ICurrentUser User
+<PageTitle>待歸戶</PageTitle>
+<h1>請找人資綁定 GitHub 帳號</h1>
+<p>控制台用來上傳的 GitHub 帳號 <strong>@(string.IsNullOrEmpty(User.GitHubLogin) ? User.UserName : User.GitHubLogin)</strong> 還沒對到人員檔。請走招募邀請，或請人資在人員卡片綁定。上傳會進待歸戶佇列，不會自動對 PR。</p>
+<p class="hint">不要用一串編號跟同事對帳，把這個 GitHub 名稱交給人資即可。</p>

@@ -12,6 +12,8 @@
 dotnet run --project src/AiProject.Console.App
 ```
 
+Debug 建置不產生 `AI_Project_Console.exe`（改由 `dotnet.exe` 載入 DLL）。Windows 若擋未簽名的 apphost，會出現「存取被拒」；這是為了避開該限制。Release／安裝包仍用 exe。
+
 發布單檔執行檔：
 
 ```powershell
@@ -35,7 +37,9 @@ AiProject.Console.slnx
   src/AiProject.Console.Core   掃描、服務目錄、行程、建置、GitHub、部署、Agent
   src/AiProject.Console.App    Photino 視窗 + Blazor UI
   src/AiProject.Console.Mcp    stdio MCP 伺服器
-  tests/AiProject.Console.Core.Tests
+  src/AiProject.Console.CompanyClient  公司平台 HTTPS 用戶端
+  src/AiProject.Company.*      公司平台（Domain／Application／Infrastructure／Contracts／Web）
+  tests/...
 ```
 
 動作目錄：`src/AiProject.Console.Core/Actions/actions.json`。版號來源：`src/AiProject.Console.Core/AppInfo.cs` 的 `Version`。
@@ -58,7 +62,14 @@ dotnet test AiProject.Console.slnx
 
 ## 文件網站
 
-使用文件與 API 參考用 DocFX 建置，發佈於 <https://sjvann.github.io/AI_Project_Console/>。本機預覽與設定見 [文件網站（DocFX）](docfx.md)。
+使用文件、產品規格、銷售套件與 API 參考用 DocFX 建置，發佈於 <https://sjvann.github.io/AI_Project_Console/>。本機預覽與設定見 [文件網站（DocFX）](docfx.md)。
+
+公司平台（人員、派工、戰情室等）施工以 [系統執行計劃書](../product/execution-plan.md) 與 [自架說明](../product/deploy-company.md) 為準。本機：
+
+```powershell
+dotnet run --project src/AiProject.Company.Web
+```
+
 
 ## 打包與 Release
 

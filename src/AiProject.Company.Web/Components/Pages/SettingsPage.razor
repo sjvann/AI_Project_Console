@@ -1,0 +1,204 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject SettingsCommands Commands
+@inject DirectoryQueries Directory
+@inject IAuthorizationGate Gate
+
+<PageTitle>設定</PageTitle>
+<h1>公司設定</h1>
+@if (!Gate.Can(PlatformCapability.ManageSettings))
+{
+    <p>只有公司管理員能改全公司設定。</p>
+}
+else if (_model is not null)
+{
+    <div class="stack card">
+        <label>公司名 <input @bind="_name" /></label>
+        <label>時區 <input @bind="_tz" /></label>
+        <label>記帳貨幣
+            <select @bind="_currency">
+                @foreach (var iso in CompanyCurrencyChoices)
+                {
+                    <option value="@iso">@iso</option>
+                }
+            </select>
+        </label>
+        <p class="hint">損益、戰情室、匯出 CSV 都換成這個幣。合約仍可開美金等外幣，靠下面匯率表換算。不接銀行牌價。</p>
+        <label>毛利黃燈（%） <input type="number" @bind="_yellow" /></label>
+        <label>毛利紅燈（%） <input type="number" @bind="_red" /></label>
+        <label class="check"><input type="checkbox" @bind="_writeBack" /> 派工寫回 GitHub assignee</label>
+        <button class="btn-primary" @onclick="Save">存檔</button>
+        <p class="hint">@_message</p>
+    </div>
+    <p class="hint">人員帳戶改到 <a href="/accounts">帳戶管理</a>。公司管理人員用帳號密碼進後台。從線上招募進來的外部工程師用 GitHub 邀請，走桌面控制台。</p>
+    <h2>外幣匯率（換成 @_currency）</h2>
+    <p class="hint">合約若用外幣計價，預算損益要先換成記帳貨幣才看得懂毛利。這裡是人工匯率表，可同時維護多種外幣；同一幣別再存一次會覆蓋。記帳貨幣本身固定為 1，不必填。</p>
+    @if (_model.ExchangeRates.Count == 0)
+    {
+        <p class="empty">還沒有外幣匯率。合約若都是 @_currency，這裡可以空白。</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th>外幣</th>
+                    <th>1 單位兌 @_currency</th>
+                    <th>生效日</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _model.ExchangeRates.OrderBy(x => x.Currency))
+                {
+                    <tr>
+                        <td>@row.Currency</td>
+                        <td>@row.RateToCompany</td>
+                        <td>@row.AsOf</td>
+                        <td><button type="button" class="btn-link" @onclick="() => EditRate(row)">改這筆</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    <div class="stack card">
+        <label>外幣
+            <select @bind="_fxPick" @bind:after="PrefillFromTable">
+                @foreach (var iso in ForeignCodes)
+                {
+                    <option value="@iso">@iso</option>
+                }
+                <option value="@Currencies.Other">其他（自行輸入）</option>
+            </select>
+        </label>
+        @if (_fxPick == Currencies.Other)
+        {
+            <label>幣別代碼 <input @bind="_fxCustom" @bind:after="PrefillFromTable" maxlength="8" placeholder="例如 THB" /></label>
+        }
+        <label>匯率 <input type="number" step="0.0001" min="0.0001" @bind="_fxRate" /></label>
+        <p class="hint">@FxPreview</p>
+        <label>生效日 <input type="date" @bind="_fxAsOf" /></label>
+        <label>備註（可選） <input @bind="_fxNote" placeholder="例如 2026 年 9 月財務月結" /></label>
+        <p class="hint">誰改了匯率、改成多少，系統會自動記審計。備註只在你想留下月結說明時才填。</p>
+        <button class="btn-primary" @onclick="SaveFx">儲存匯率</button>
+        <p class="hint">@_fxMessage</p>
+    </div>
+}
+
+@code {
+    CompanySettings? _model;
+    string _name = "";
+    string _tz = "Asia/Taipei";
+    string _currency = "TWD";
+    decimal _yellow = 25;
+    decimal _red = 10;
+    bool _writeBack = true;
+    string _message = "";
+    string _fxPick = "USD";
+    string _fxCustom = "";
+    decimal _fxRate = 32;
+    DateOnly _fxAsOf = DateOnly.FromDateTime(DateTime.Today);
+    string _fxNote = "";
+    string _fxMessage = "";
+
+    IEnumerable<string> CompanyCurrencyChoices =>
+        Currencies.Common.Contains(_currency, StringComparer.OrdinalIgnoreCase)
+            ? Currencies.Common
+            : Currencies.Common.Append(_currency.ToUpperInvariant());
+
+    IEnumerable<string> ForeignCodes =>
+        Currencies.Common.Where(c => !string.Equals(c, _currency, StringComparison.OrdinalIgnoreCase));
+
+    string FxPreview
+    {
+        get
+        {
+            var code = ResolveFxCode();
+            return string.IsNullOrEmpty(code)
+                ? "請選外幣。"
+                : $"意思：1 {code} = {_fxRate} {_currency}。例如合約 10,000 {code} 的損益會顯示成 {(_fxRate * 10000):N0} {_currency}。";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    async Task ReloadAsync()
+    {
+        _model = await Directory.SettingsAsync();
+        _name = _model.CompanyName;
+        _tz = _model.TimeZoneId;
+        _currency = _model.Currency;
+        _yellow = _model.YellowPercent;
+        _red = _model.RedPercent;
+        _writeBack = _model.WriteBackGithubAssignee;
+        if (!ForeignCodes.Contains(_fxPick) && _fxPick != Currencies.Other)
+            _fxPick = ForeignCodes.FirstOrDefault() ?? Currencies.Other;
+        PrefillFromTable();
+    }
+
+    async Task Save()
+    {
+        var result = await Commands.UpdateAsync(_name, _tz, _currency, _yellow, _red, _writeBack);
+        _message = result.Ok ? "已全公司生效。" : result.Message;
+        if (result.Ok)
+            await ReloadAsync();
+    }
+
+    async Task SaveFx()
+    {
+        var code = ResolveFxCode();
+        if (string.IsNullOrEmpty(code))
+        {
+            _fxMessage = "請選外幣，或自行輸入三碼幣別。";
+            return;
+        }
+
+        var result = await Commands.SetRateAsync(code, _fxRate, _fxAsOf, _fxNote);
+        if (result.Ok)
+        {
+            _fxMessage = $"已存 1 {code} = {_fxRate} {_currency}。外幣合約的損益會用這張表換成記帳貨幣。";
+            _fxNote = "";
+            await ReloadAsync();
+        }
+        else
+        {
+            _fxMessage = result.Message;
+        }
+    }
+
+    void EditRate(ExchangeRate row)
+    {
+        if (ForeignCodes.Contains(row.Currency))
+        {
+            _fxPick = row.Currency;
+            _fxCustom = "";
+        }
+        else
+        {
+            _fxPick = Currencies.Other;
+            _fxCustom = row.Currency;
+        }
+
+        _fxRate = row.RateToCompany;
+        _fxAsOf = row.AsOf;
+        _fxMessage = "";
+    }
+
+    void PrefillFromTable()
+    {
+        var code = ResolveFxCode();
+        var existing = _model?.ExchangeRates.FirstOrDefault(x => x.Currency == code);
+        if (existing is null)
+            return;
+        _fxRate = existing.RateToCompany;
+        _fxAsOf = existing.AsOf;
+    }
+
+    string ResolveFxCode()
+    {
+        var raw = _fxPick == Currencies.Other ? _fxCustom : _fxPick;
+        if (string.IsNullOrWhiteSpace(raw) || raw == Currencies.Other)
+            return "";
+        return Currencies.Normalize(raw);
+    }
+}

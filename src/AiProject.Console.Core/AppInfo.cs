@@ -2,7 +2,7 @@ namespace AiProject.Console.Core;
 
 public static class AppInfo
 {
-    public const string Version = "0.6.9";
+    public const string Version = "0.6.10";
     public const string Product = "AI_Project 控制台";
     public const string GitHubOwner = "sjvann";
     public const string GitHubRepo = "AI_Project_Console";
@@ -15,4 +15,5 @@ public static class AppInfo
     public static string GitHubSlug => GitHubOwner + "/" + GitHubRepo;
     public static string ReleasesUrl => $"https://github.com/{GitHubSlug}/releases";
     public static string LatestReleaseApiUrl => $"https://api.github.com/repos/{GitHubSlug}/releases/latest";
+    public static string ReleasesApiUrl => $"https://api.github.com/repos/{GitHubSlug}/releases?per_page=30";
 }

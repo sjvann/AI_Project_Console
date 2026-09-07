@@ -2,7 +2,7 @@
 
 控制台管的是**目前開啟專案**的 `docs/`（或 `Docs/`），不是控制台自己的說明站。規定：專案文件都放這個目錄，用 Markdown 撰寫，用 [DocFX](https://dotnet.github.io/docfx/) 建靜態站，可發到 GitHub Pages。
 
-文件不齊**不會**擋你關閉專案或離開（離開仍看 git 是否乾淨，見 [GitHub](github.md)）。摘要列會提醒。畫面位置見 [畫面導覽](interface.md)。
+文件不齊**不會**擋你關閉專案或離開（離開仍會看 git 是否乾淨並警示，見 [GitHub](github.md)）。摘要列會提醒。畫面位置見 [畫面導覽](interface.md)。
 
 控制台自己的使用文件也在倉庫 `docs/`，線上版：<https://sjvann.github.io/AI_Project_Console/>。那是給控制台使用者看的；你在自己產品倉裡按「建立體系」，寫的是**那份產品**的說明。
 

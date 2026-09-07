@@ -14,6 +14,7 @@ using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 using AiProject.Console.Core.WorkHours;
+using AiProject.Console.CompanyClient;
 using Microsoft.JSInterop;
 using Photino.NET;
 
@@ -34,11 +35,16 @@ public sealed partial class ConsoleSession : IDisposable
     private int _ciWatchGen;
     private DocsServeHandle? _docsServe;
     private readonly WorkHoursStore _workHours = new();
+    private readonly ExecutionStatusChartStore _statusChart = new();
+    private readonly ICompanyPlatformClient? _company;
     private int _timesheetGen;
+    private TaskCompletionSource<bool>? _leaveGateTcs;
+    private string? _releaseReturnDialog;
 
-    public ConsoleSession(NativeUi native)
+    public ConsoleSession(NativeUi native, ICompanyPlatformClient? company = null)
     {
         _native = native;
+        _company = company;
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         TestBeforePush = ConsoleSettingsStore.GetTestBeforePush();
@@ -53,6 +59,7 @@ public sealed partial class ConsoleSession : IDisposable
         Workbench = ConsoleSettingsStore.GetWorkbench();
         GitHostName = ConsoleSettingsStore.GetGitHost();
         GitKind = ConsoleSettingsStore.GetGitKind();
+        CompanyBaseUrl = ConsoleSettingsStore.GetCompanyBaseUrl();
         RefreshAgentDetect();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
@@ -129,6 +136,7 @@ public sealed partial class ConsoleSession : IDisposable
     public bool IsReqWorkbench => Workbench == "req";
     public string GitHostName { get; set; } = GitHost.PublicHostname;
     public string GitKind { get; set; } = GitHost.KindGithub;
+    public string CompanyBaseUrl { get; set; } = "";
     public IReadOnlyList<string> RecentGitHosts => ConsoleSettingsStore.RecentGitHosts();
     public string ActiveGitHost =>
         !string.IsNullOrWhiteSpace(GithubDraft.Host) ? GitHost.Normalize(GithubDraft.Host)
@@ -205,11 +213,17 @@ public sealed partial class ConsoleSession : IDisposable
     public BuildFailure? LastBuildFailure { get; private set; }
 
     public string? Dialog { get; private set; }
+    public string LeaveGateAction { get; private set; } = "";
+    public string? LeaveGateReason { get; private set; }
+    public string LeaveGateTitle => GitBriefStatus.LeaveGateTitle(string.IsNullOrEmpty(LeaveGateAction) ? "離開" : LeaveGateAction);
+    public string LeaveGateForceLabel => GitBriefStatus.LeaveGateForceLabel(LeaveGateAction);
     public DoctorSnapshot? DoctorView { get; private set; }
     public bool DoctorCopied { get; private set; }
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
     public JobResultView? JobResult { get; private set; }
+    public ReleaseRunState? ReleaseRun { get; private set; }
+    public bool ReleaseProgressReturnsToForm => _releaseReturnDialog == "release";
     public bool InfoCopied { get; private set; }
     public string AlertTitle { get; private set; } = "";
     public string AlertBody { get; private set; } = "";
@@ -252,7 +266,7 @@ public sealed partial class ConsoleSession : IDisposable
                 ? "已附上 *-win-x64-setup.exe。已安裝使用者按「立即更新」會啟動安裝程式。"
                 : ReleaseDraft
                     ? "草稿可不附安裝包。正式發行前請打包，否則自動更新會改開 GitHub 頁。"
-                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先執行 scripts/pack-win.ps1 再上傳。沒有這個檔，自動更新只能開 GitHub 頁。";
+                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先打包再上傳，畫面會顯示步驟與紀錄（編譯可能要 1–3 分鐘）。沒有這個檔，自動更新只能開 GitHub 頁。";
     public string CommitMessage { get; set; } = "";
     public string CommitSubject { get; set; } = "";
     public string CommitBody { get; set; } = "";
@@ -582,10 +596,12 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void SetWorkHoursPane(string pane)
     {
-        WorkHoursPane = pane == "sheet" ? "sheet" : "dash";
+        WorkHoursPane = pane is "sheet" or "chart" ? pane : "dash";
         Notify();
         if (WorkHoursPane == "sheet")
             _ = RefreshWorkTimesheetAsync();
+        if (WorkHoursPane == "chart")
+            _ = RefreshCompanyAssignmentsAsync();
     }
 
     public void SetWorkHoursProjectFilter(string? key)
@@ -746,6 +762,7 @@ public sealed partial class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
         ConsoleSettingsStore.SetGitHost(GitHostName);
         ConsoleSettingsStore.SetGitKind(GitKind);
+        ConsoleSettingsStore.SetCompanyBaseUrl(CompanyBaseUrl);
         ConsoleSettingsStore.SetMcpReadOnly(McpReadOnly);
         ConsoleSettingsStore.SetMcpAllow(McpAllow);
         ConsoleSettingsStore.SetMcpDeny(McpDeny);
@@ -1455,10 +1472,14 @@ public sealed partial class ConsoleSession : IDisposable
         var reason = GitBrief?.LeaveBlockReason();
         if (reason is null)
             return true;
-        _native.Warn(
-            $"還不能{action}",
-            reason + "\n\n請先在 Pulse 提交，或開 GitHub 操作台發布。專案列的「分支」可確認目前分支。");
-        return false;
+
+        _leaveGateTcs?.TrySetResult(false);
+        _leaveGateTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        LeaveGateAction = action;
+        LeaveGateReason = reason;
+        Dialog = "leave-gate";
+        Notify();
+        return await _leaveGateTcs.Task.ConfigureAwait(false);
     }
 
     public async Task RefreshGithubAuthAsync()
@@ -1759,17 +1780,6 @@ public sealed partial class ConsoleSession : IDisposable
             CliUtil.OpenUrl(issue.Url);
     }
 
-    public void OpenIssueHelp(GithubIssue issue)
-    {
-        if (!RequireCatalog())
-            return;
-        AgentPrompt = CursorLauncher.BuildIssueAgentPrompt(Catalog!.Root, issue);
-        AgentTitle = $"請 Agent 協助 · {issue.NumberText}";
-        AgentIntro = AgentLaunchIntro();
-        Dialog = "agent";
-        Notify();
-    }
-
     public void ShowTasks()
     {
         OpenGithubHub();
@@ -1833,6 +1843,7 @@ public sealed partial class ConsoleSession : IDisposable
         UnassignedCollapsed = true;
         _unassignedCollapseUserSet = false;
         GithubManaged = false;
+        ClearIssueView();
     }
 
     private static string FirstLine(string text)
@@ -2408,20 +2419,113 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
-    public Task CheckUpdateAsync() =>
-        RunJobAsync("檢查更新…", async () =>
+    public async Task CheckUpdateAsync()
+    {
+        var ans = _native.YesNoCancel(
+            "檢查更新",
+            "是否包含 RC／預發行版本？\n\n「是」＝正式版與 RC 都看，取較新者\n「否」＝只看正式版\n「取消」＝不檢查");
+        if (ans == PhotinoDialogResult.Cancel)
+            return;
+        var includeRc = ans == PhotinoDialogResult.Yes;
+        if (Dialog == "prefs")
+            CloseDialog();
+        await RunJobAsync("檢查更新…", async () =>
         {
-            var update = await SelfUpdate.CheckLatestAsync(_cts.Token).ConfigureAwait(false);
+            var update = await SelfUpdate.CheckLatestAsync(_cts.Token, includePrerelease: includeRc).ConfigureAwait(false);
             ConsoleSettingsStore.MarkUpdateChecked();
             if (update is null)
             {
                 UpdateAvailable = null;
-                return $"目前已是最新版本 v{AppInfo.Version}。";
+                return includeRc
+                    ? $"目前已是最新版本 v{AppInfo.Version}（含 RC）。"
+                    : $"目前已是最新版本 v{AppInfo.Version}。";
             }
             UpdateAvailable = update;
             Notify();
-            return $"發現新版本 {update.Tag}（目前 v{AppInfo.Version}）。可按「立即更新」下載並安裝。";
-        });
+            var rc = update.Prerelease ? "（RC／預發行）" : "";
+            return $"發現新版本 {update.Tag}{rc}（目前 v{AppInfo.Version}）。可按「立即更新」下載並安裝。";
+        }, refreshBuilds: false);
+        if (UpdateAvailable is null && !JobBusy && JobText != "錯誤")
+        {
+            _native.Info(
+                "檢查更新",
+                includeRc
+                    ? $"目前已是最新版本 v{AppInfo.Version}（含 RC）。"
+                    : $"目前已是最新版本 v{AppInfo.Version}。");
+        }
+    }
+
+    public async Task ApplyUpdateFromFileAsync()
+    {
+        if (Dialog == "prefs")
+            CloseDialog();
+        await Task.Yield();
+
+        string[]? files;
+        try
+        {
+            files = await _native.PickFilesAsync(
+                "選擇更新檔",
+                ("安裝包／壓縮檔", [".zip", ".exe"]),
+                ("所有檔案", ["*"])).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _native.Error("無法選擇檔案", ex.Message);
+            return;
+        }
+        if (files is null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0]))
+            return;
+        var path = files[0];
+
+        var kind = SelfUpdate.DetectInstallKind();
+        var mode = SelfUpdate.ResolveLocalFileMode(path, kind);
+        if (mode is UpdateApplyMode.None or UpdateApplyMode.OpenReleases)
+        {
+            _native.Info(
+                kind == InstallKind.Development ? "無法自動覆蓋" : "無法套用此檔案",
+                SelfUpdate.CannotApplyLocalFileHint(kind, path));
+            return;
+        }
+
+        if (!_native.Confirm(
+            "從檔案更新",
+            (kind == InstallKind.Development
+                ? "目前是從原始碼／開發目錄執行。套用會覆蓋目前執行目錄，不會改 Git 原始碼。\n\n"
+                : "") +
+            $"將用本機檔案安裝：\n{path}\n\n會開啟安裝程式。安裝時控制台可能會關閉並在完成後重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            return;
+
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return;
+        }
+
+        JobBusy = true;
+        JobText = "套用更新…";
+        Notify();
+        try
+        {
+            var fromInstaller = mode == UpdateApplyMode.Installer;
+            SelfUpdate.LaunchApply(path, mode, silent: !fromInstaller);
+            if (fromInstaller)
+            {
+                JobBusy = false;
+                JobText = "安裝程式已開啟";
+                Notify();
+                return;
+            }
+            _native.Close();
+        }
+        catch (Exception ex)
+        {
+            JobBusy = false;
+            JobText = "錯誤";
+            Notify();
+            _native.Error("更新失敗", ex.Message);
+        }
+    }
 
     public void DismissUpdate()
     {
@@ -2468,7 +2572,7 @@ public sealed partial class ConsoleSession : IDisposable
 
         if (!_native.Confirm(
             "更新控制台",
-            $"將下載並安裝 {update.Tag}（目前 v{AppInfo.Version}）。\n控制台會先關閉以便覆蓋檔案，安裝完成後會自動重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            $"將下載並安裝 {update.Tag}{(update.Prerelease ? "（RC／預發行）" : "")}（目前 v{AppInfo.Version}）。\n控制台會先關閉以便覆蓋檔案，安裝完成後會自動重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
             return;
 
         if (JobBusy)
@@ -2689,7 +2793,9 @@ public sealed partial class ConsoleSession : IDisposable
         await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
     }
 
-    public async Task OpenBranchDialogAsync()
+    public Task OpenBranchDialogAsync() => OpenBranchDialogAsync(null);
+
+    public async Task OpenBranchDialogAsync(string? suggestedName)
     {
         if (!RequireCatalog())
             return;
@@ -2698,8 +2804,10 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("忙碌中", "請等待目前工作完成。");
             return;
         }
-        NewBranchName = "";
-        BranchDialogHint = "";
+        NewBranchName = (suggestedName ?? "").Trim();
+        BranchDialogHint = _resumeIssueAfterBranch is not null
+            ? "為此任務建立功能分支。未提交的改動會跟著走；建立後請提交、發布，再回到任務視窗按「建立 PR」。"
+            : "";
         Dialog = "branch";
         Notify();
         await RefreshBranchListAsync().ConfigureAwait(false);
@@ -2752,6 +2860,16 @@ public sealed partial class ConsoleSession : IDisposable
         await RefreshGitStatusAsync().ConfigureAwait(false);
         await RefreshBuildStatesAsync().ConfigureAwait(false);
         NewBranchName = "";
+        if (_resumeIssueAfterBranch is { } issue)
+        {
+            _resumeIssueAfterBranch = null;
+            Dialog = "issue";
+            if (ActiveIssue is null || ActiveIssue.Number != issue.Number)
+                OpenIssueDialog(issue);
+            else
+                Notify();
+            return;
+        }
         if (Dialog == "branch")
             CloseDialog();
     }
@@ -3272,19 +3390,17 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         }
         PackedReleaseAssets? packed = null;
-        await RunJobAsync("打包 Windows 安裝包…", async () =>
-        {
-            var progress = new Progress<string>(text =>
+        var ok = await RunReleaseProgressAsync(
+            ReleaseRunState.PackOnly(),
+            returnDialog: "release",
+            fn: async progress =>
             {
-                JobText = text;
-                Notify();
-            });
-            packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
-            return packed.HasSetup
-                ? "已附上 " + Path.GetFileName(packed.SetupPath) + "。"
-                : "打包完成。";
-        }).ConfigureAwait(false);
-        if (packed is null)
+                packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
+                return packed.HasSetup
+                    ? "已附上 " + Path.GetFileName(packed.SetupPath) + "。"
+                    : "打包完成。";
+            }).ConfigureAwait(false);
+        if (!ok || packed is null)
             return;
         foreach (var p in packed.ExistingPaths())
         {
@@ -3316,7 +3432,7 @@ public sealed partial class ConsoleSession : IDisposable
         var title = string.IsNullOrWhiteSpace(ReleaseTitle) ? tag : ReleaseTitle.Trim();
         var kind = draft ? "草稿" : ReleasePrerelease ? "預發行" : "正式發行";
         var extra = ConsoleReleasePack.RequiresInstaller(packable, draft)
-            ? "\n\n會附加 Windows 安裝包（沒有則先執行 pack-win.ps1，並把版號寫進 AppInfo 等檔案）。已安裝使用者才能自動啟動安裝程式。"
+            ? "\n\n會附加 Windows 安裝包（沒有則先打包，並把版號寫進 AppInfo 等檔案）。畫面會顯示步驟與紀錄，編譯可能要數分鐘。已安裝使用者才能自動啟動安裝程式。"
             : "";
         if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}{extra}\n\n確定發行？"))
             return;
@@ -3326,18 +3442,13 @@ public sealed partial class ConsoleSession : IDisposable
         var prerelease = ReleasePrerelease;
         var generateNotes = ReleaseGenerateNotes;
         var makeLatest = ReleaseMakeLatest;
-        CloseDialog();
-        await RunJobAsync(needsPack ? "打包並發行 Release…" : "發行 Release…", async () =>
+        var run = needsPack ? ReleaseRunState.PackAndPublish() : ReleaseRunState.PublishOnly();
+        var ok = await RunReleaseProgressAsync(run, returnDialog: null, fn: async progress =>
         {
             if (ConsoleReleasePack.RequiresInstaller(packable, draft))
             {
                 if (!ConsoleReleasePack.HasSetupAsset(assets))
                 {
-                    var progress = new Progress<string>(text =>
-                    {
-                        JobText = text;
-                        Notify();
-                    });
                     var packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
                     foreach (var p in packed.ExistingPaths())
                     {
@@ -3361,9 +3472,10 @@ public sealed partial class ConsoleSession : IDisposable
                 GenerateNotes: generateNotes,
                 MakeLatest: makeLatest,
                 Assets: assets);
-            return await GitHubService.PublishReleaseAsync(Catalog, req).ConfigureAwait(false);
+            return await GitHubService.PublishReleaseAsync(Catalog, req, progress: progress).ConfigureAwait(false);
         }).ConfigureAwait(false);
-        StampReleaseOnIntake(tag);
+        if (ok)
+            StampReleaseOnIntake(tag);
     }
 
     public async Task OpenCommitDialogAsync()
@@ -3717,14 +3829,61 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void CloseDialog()
     {
-        Dialog = null;
+        if (ReleaseRun is { Busy: true })
+            return;
+        if (Dialog == "release-progress")
+        {
+            var ret = _releaseReturnDialog;
+            _releaseReturnDialog = null;
+            ReleaseRun = null;
+            InfoCopied = false;
+            Dialog = ret == "release" ? "release" : null;
+            Notify();
+            return;
+        }
+
+        var resumeIssue = Dialog is "branch" or "agent" ? _resumeIssueAfterBranch : null;
+        _resumeIssueAfterBranch = null;
+        CompleteLeaveGate(false);
         DoctorView = null;
         DoctorCopied = false;
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
+        ReleaseRun = null;
+        _releaseReturnDialog = null;
         InfoCopied = false;
+        if (resumeIssue is not null)
+        {
+            Dialog = "issue";
+            if (ActiveIssue is null || ActiveIssue.Number != resumeIssue.Number)
+                OpenIssueDialog(resumeIssue);
+            else
+                Notify();
+            return;
+        }
+        Dialog = null;
+        ClearIssueView();
         Notify();
+    }
+
+    public void ForceLeaveGate()
+    {
+        CompleteLeaveGate(true);
+        Notify();
+    }
+
+    void CompleteLeaveGate(bool force)
+    {
+        if (_leaveGateTcs is null && Dialog != "leave-gate")
+            return;
+        var tcs = _leaveGateTcs;
+        _leaveGateTcs = null;
+        LeaveGateAction = "";
+        LeaveGateReason = null;
+        if (Dialog == "leave-gate")
+            Dialog = null;
+        tcs?.TrySetResult(force);
     }
 
     public async Task OpenReleaseListAsync()
@@ -3798,6 +3957,7 @@ public sealed partial class ConsoleSession : IDisposable
     {
         var text = InfoReport?.Text
             ?? ReleaseList?.ToText()
+            ?? ReleaseRun?.CopyText
             ?? JobResult?.Detail
             ?? JobResult?.Summary;
         if (string.IsNullOrWhiteSpace(text) || Js is null)
@@ -3821,6 +3981,8 @@ public sealed partial class ConsoleSession : IDisposable
         InfoReport = report;
         ReleaseList = null;
         JobResult = null;
+        ReleaseRun = null;
+        _releaseReturnDialog = null;
         InfoCopied = false;
         Dialog = "info";
         Notify();
@@ -3831,6 +3993,8 @@ public sealed partial class ConsoleSession : IDisposable
         JobResult = new JobResultView(JobResultView.CleanTitle(title), tone, summary, detail);
         InfoReport = null;
         ReleaseList = null;
+        ReleaseRun = null;
+        _releaseReturnDialog = null;
         InfoCopied = false;
         Dialog = "job-result";
         Notify();
@@ -4081,7 +4245,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
-    public async Task OpenOrCreatePrAsync()
+    public async Task OpenOrCreatePrAsync(int? closesIssue = null)
     {
         if (!RequireCatalog())
             return;
@@ -4092,16 +4256,38 @@ public sealed partial class ConsoleSession : IDisposable
             Notify();
             return;
         }
-        if (PullRequest is { Error: not null and not "" })
+        var block = IssueCompletion.CreatePrBlockReason(
+            GitBrief,
+            GithubDraft.DefaultBranch,
+            hasPr: false,
+            PullRequest?.Error);
+        if (!string.IsNullOrEmpty(block))
         {
-            _native.Warn("PR", PullRequest.Error);
+            if (ActiveIssue is not null)
+            {
+                IssueViewHint = block;
+                Notify();
+            }
+            if (IssueCompletion.NeedsTaskBranch(GitBrief, GithubDraft.DefaultBranch)
+                && ActiveIssue is { } issue
+                && _native.Confirm(
+                    "還不能建立 PR",
+                    block + "\n\n要先為此任務建立功能分支嗎？未提交的改動會跟著新分支。"))
+            {
+                _resumeIssueAfterBranch = issue;
+                await OpenBranchDialogAsync(
+                    IssueCompletion.SuggestIssueBranchName(issue.Number, issue.Title)).ConfigureAwait(false);
+                return;
+            }
+            _native.Info("還不能建立 PR", block);
             return;
         }
-        if (!_native.Confirm(
-            "建立 PR",
-            "目前分支還沒有 PR。要用提交說明自動建立嗎？\n審查、留言與合併請到 GitHub。"))
+        var confirm = closesIssue is > 0
+            ? $"目前分支還沒有 PR。要用提交說明自動建立，並在說明寫入 Closes #{closesIssue} 嗎？\n合併後才會關閉這則 Issue。審查、留言與合併請到 GitHub。"
+            : "目前分支還沒有 PR。要用提交說明自動建立嗎？\n審查、留言與合併請到 GitHub。";
+        if (!_native.Confirm("建立 PR", confirm))
             return;
-        await RunJobAsync("建立 PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!)).ConfigureAwait(false);
+        await RunJobAsync("建立 PR…", async () => await GitHubService.CreatePullRequestAsync(Catalog!, closesIssue: closesIssue)).ConfigureAwait(false);
         await RefreshPullRequestAsync().ConfigureAwait(false);
         if (PullRequest is { HasPr: true })
         {
@@ -4676,6 +4862,61 @@ public sealed partial class ConsoleSession : IDisposable
         return true;
     }
 
+    private async Task<bool> RunReleaseProgressAsync(
+        ReleaseRunState run,
+        string? returnDialog,
+        Func<IProgress<string>, Task<string?>> fn)
+    {
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成。");
+            return false;
+        }
+        ReleaseRun = run;
+        _releaseReturnDialog = returnDialog;
+        JobResult = null;
+        InfoReport = null;
+        ReleaseList = null;
+        InfoCopied = false;
+        Dialog = "release-progress";
+        JobBusy = true;
+        run.Begin();
+        JobText = run.Title + "…";
+        Notify();
+        var progress = new Progress<string>(text =>
+        {
+            run.Apply(text);
+            if (!string.IsNullOrWhiteSpace(run.StatusText))
+                JobText = run.StatusText;
+            Notify();
+        });
+        string? err = null;
+        string? msg = null;
+        try
+        {
+            msg = await Task.Run(() => fn(progress)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            err = ex.Message;
+        }
+        JobBusy = false;
+        if (err is not null)
+        {
+            run.Fail(err);
+            JobText = "錯誤";
+        }
+        else
+        {
+            run.Succeed(msg);
+            JobText = string.IsNullOrWhiteSpace(run.Headline) ? "完成" : run.Headline;
+        }
+        Notify();
+        UpdateReady();
+        await RefreshBuildStatesAsync().ConfigureAwait(false);
+        return err is null;
+    }
+
     private async Task RunJobAsync(string title, Func<Task<string?>> fn, bool refreshBuilds = true)
     {
         if (JobBusy)
@@ -4814,6 +5055,7 @@ public sealed partial class ConsoleSession : IDisposable
         BranchList = [];
         NewBranchName = "";
         BranchDialogHint = "";
+        _resumeIssueAfterBranch = null;
         CommitMessage = "";
         CommitSubject = "";
         CommitBody = "";
@@ -4846,6 +5088,7 @@ public sealed partial class ConsoleSession : IDisposable
         LeftTab = "svc";
         AskPanelOpen = false;
         AuditPanelOpen = false;
+        CompleteLeaveGate(false);
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;

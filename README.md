@@ -4,7 +4,7 @@
 
 **一般使用者請從安裝包開始，不必編譯原始碼。**
 
-完整操作說明：[使用文件](https://sjvann.github.io/AI_Project_Console/)（倉庫內原稿：[docs/](docs/README.md)）
+完整操作說明：[使用文件](https://sjvann.github.io/AI_Project_Console/)（倉庫內原稿：[docs/](docs/README.md)）。給買家：[產品規格](docs/product/README.md) · [銷售套件](docs/salekit/README.md)（公司營運層標為規劃，尚未出貨）。
 
 ## 三分鐘開始
 
@@ -24,6 +24,7 @@
 | 求救、專案問答 | [卡住時怎麼辦](docs/user/help.md) |
 | 讓 Agent 回呼控制台 | [MCP](docs/agent/mcp.md) |
 | 帶團隊走一遍 | [90 分鐘導入](docs/team/trial-90min.md) |
+| 對軟體公司說明現況與規劃 | [銷售套件](docs/salekit/README.md) · [產品規格](docs/product/README.md) |
 | 改控制台原始碼、打包 | [開發與維護](docs/maintainer/develop.md) |
 
 關閉控制台**不會**停止已啟動的服務。請用「停止全部」。

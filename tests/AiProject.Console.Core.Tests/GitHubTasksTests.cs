@@ -139,5 +139,94 @@ public class GitHubTasksTests
         Assert.Contains("服務起不來", prompt);
         Assert.Contains("C:\\proj", prompt);
         Assert.Contains("stack_status", prompt);
+        Assert.Contains("處理不了", prompt);
+    }
+
+    [Fact]
+    public void BuildIssueAgentPrompt_IncludesDiscussionAndNotes()
+    {
+        var issue = new GithubIssue(
+            12,
+            "修好啟動",
+            "OPEN",
+            "https://github.com/acme/app/issues/12",
+            "服務起不來",
+            "2026-08-26T02:00:00Z",
+            ["bug"],
+            ["sjvann"]);
+        var comments = new[]
+        {
+            new GithubIssueComment("me", "範圍只改啟動腳本", "2026-09-05T10:00:00Z"),
+        };
+        var prompt = CursorLauncher.BuildIssueAgentPrompt(@"C:\proj", issue, comments, "已確認：只改啟動");
+        Assert.Contains("討論紀錄", prompt);
+        Assert.Contains("範圍只改啟動腳本", prompt);
+        Assert.Contains("確認補充", prompt);
+        Assert.Contains("已確認：只改啟動", prompt);
+    }
+
+    [Fact]
+    public void ParseView_ReadsIssueAndComments()
+    {
+        const string json = """
+            {
+              "number": 3,
+              "title": "關於我的任務",
+              "state": "OPEN",
+              "url": "https://github.com/acme/app/issues/3",
+              "body": "點選任務時，會回到 Github issue 去",
+              "updatedAt": "2026-09-05T10:00:00Z",
+              "labels": [{"name": "enhancement"}],
+              "assignees": [{"login": "sjvann"}],
+              "comments": [
+                {
+                  "author": {"login": "sjvann"},
+                  "body": "先在控制台回應",
+                  "createdAt": "2026-09-05T11:00:00Z",
+                  "url": "https://github.com/acme/app/issues/3#issuecomment-1"
+                },
+                {
+                  "author": "octocat",
+                  "body": "再用 PR",
+                  "createdAt": "2026-09-05T12:00:00Z"
+                }
+              ]
+            }
+            """;
+        var (issue, comments) = GitHubIssues.ParseView(json);
+        Assert.NotNull(issue);
+        Assert.True(issue.IsOpen);
+        Assert.Equal(3, issue.Number);
+        Assert.Equal("關於我的任務", issue.Title);
+        Assert.Equal("enhancement", issue.LabelText);
+        Assert.Equal(2, comments.Count);
+        Assert.Equal("sjvann", comments[0].Author);
+        Assert.Equal("先在控制台回應", comments[0].Body);
+        Assert.Equal("octocat", comments[1].Author);
+        Assert.Equal("再用 PR", comments[1].Body);
+    }
+
+    [Fact]
+    public void ParseView_EmptyOrInvalid_ReturnsNone()
+    {
+        Assert.Null(GitHubIssues.ParseView("").Issue);
+        Assert.Empty(GitHubIssues.ParseView("").Comments);
+        Assert.Null(GitHubIssues.ParseView("not-json").Issue);
+        Assert.Null(GitHubIssues.ParseView("[]").Issue);
+    }
+
+    [Fact]
+    public void PullRequestClosesBody_WritesKeyword()
+    {
+        Assert.Equal("Closes #3", GitHubService.PullRequestClosesBody(3));
+        Assert.Equal("", GitHubService.PullRequestClosesBody(0));
+    }
+
+    [Fact]
+    public void BuildCreatePrArgs_AddsClosesBody()
+    {
+        var cfg = new GithubConfig { Owner = "acme", Repo = "app", DefaultBranch = "main" };
+        var args = GitHubService.BuildCreatePrArgs(cfg, 4);
+        Assert.Equal(["pr", "create", "--base", "main", "--fill", "--body", "Closes #4"], args);
     }
 }

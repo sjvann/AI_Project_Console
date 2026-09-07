@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Photino.Blazor;
 using Photino.NET;
 using AiProject.Console.App.Services;
+using AiProject.Console.CompanyClient;
 using AiProject.Console.Core;
 
 namespace AiProject.Console.App;
@@ -28,6 +29,9 @@ internal static class Program
 
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.Services.AddLogging();
+        builder.Services.AddTransient<CompanyBaseAddressHandler>();
+        builder.Services.AddHttpClient<ICompanyPlatformClient, CompanyPlatformClient>()
+            .AddHttpMessageHandler<CompanyBaseAddressHandler>();
         builder.Services.AddSingleton<NativeUi>();
         builder.Services.AddSingleton<ConsoleSession>();
         builder.RootComponents.Add<App>("app");

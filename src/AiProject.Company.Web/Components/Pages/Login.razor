@@ -1,0 +1,53 @@
+@page "/login"
+@inject LocalOwnerCredentials LocalOwner
+@inject IConfiguration Config
+@inject NavigationManager Nav
+
+<PageTitle>登入</PageTitle>
+<h1>登入公司平台</h1>
+@if (_bad)
+{
+    <p class="hint" role="alert">@Messages.BadCredentials</p>
+}
+<form method="post" action="/login/account" class="card stack">
+    <AntiforgeryToken />
+    <h2>公司帳戶</h2>
+    <p class="hint">經營層、人資、財務、交付主管、專案經理、外包窗口用帳號密碼進入後台。工程師不在這裡登入：正職與招募進來的外部工程師用桌面控制台（GitHub）。</p>
+    <label>帳號 <input name="username" value="@(LocalOwner.Enabled ? LocalOwner.UserName : "")" autocomplete="username" required /></label>
+    <label>密碼 <input name="password" type="password" autocomplete="current-password" required /></label>
+    <button class="btn-primary" type="submit">進入後台</button>
+    @if (_showSeed)
+    {
+        <p class="hint">開發預設管理員：帳號 <strong>owner</strong>，密碼 <strong>AiProject-Owner-2026</strong>。</p>
+    }
+    @if (_showDemo)
+    {
+        <div class="hint">
+            <p>開發範例帳戶（密碼皆 <strong>Demo-Pass-2026</strong>）：</p>
+            <ul>
+                <li><code>exec</code> 經營層 → 戰情室</li>
+                <li><code>delivery</code> 交付主管 → 派工</li>
+                <li><code>pm</code> 專案經理 → 專案</li>
+                <li><code>hr</code> 人資 → 人員／薪資</li>
+                <li><code>finance</code> 財務 → 預算</li>
+                <li><code>vendor</code> 外包窗口 → 己方人員</li>
+            </ul>
+            <p>工程師用控制台 GitHub：<code>wang-dev</code>、<code>li-analyst</code>（招募）、<code>chao-lead</code>、<code>chen-vendor</code>。未邀請上傳可用 <code>ghost-coder</code> 對待歸戶。</p>
+        </div>
+    }
+</form>
+
+@code {
+    bool _bad;
+    bool _showSeed;
+    bool _showDemo;
+    [Inject] IHostEnvironment Host { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        _showSeed = Host.IsDevelopment() && LocalOwner.Enabled;
+        _showDemo = Host.IsDevelopment() && Config.GetValue("Company:SeedDemoData", false);
+        var uri = new Uri(Nav.Uri);
+        _bad = uri.Query.Contains("error=credentials", StringComparison.OrdinalIgnoreCase);
+    }
+}

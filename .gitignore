@@ -8,9 +8,13 @@
 *.exe
 *.pdb
 dist/
+node_modules/
 artifacts/
 installer/windows/trusted-signing.json
 .ai_project/
 _site/
 api/**/*.yml
 api/.manifest
+*.db
+*.db-shm
+*.db-wal

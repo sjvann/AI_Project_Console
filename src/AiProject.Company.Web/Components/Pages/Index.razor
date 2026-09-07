@@ -1,0 +1,28 @@
+@page "/"
+@inject ICurrentUser User
+@inject IHomeRouteResolver Home
+@inject NavigationManager Nav
+@inject ISettingsRepository Settings
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        if (!User.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login", true);
+            return;
+        }
+        var company = await Settings.GetAsync();
+        if (!company.SetupCompleted && User.Role == PlatformRole.Owner)
+        {
+            Nav.NavigateTo("/settings", true);
+            return;
+        }
+        if (User.PersonId is null && !User.Role.UsesCompanyAccount())
+        {
+            Nav.NavigateTo("/unmatched", true);
+            return;
+        }
+        Nav.NavigateTo(Home.PathFor(User.Role), true);
+    }
+}

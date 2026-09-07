@@ -279,7 +279,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .prefs-body .check { margin: 10px 0; }
 .prefs-body > .hint:first-child, .prefs-body .mcp-block:first-child, .prefs-body .mcp-prefs > .hint:first-child, .prefs-body .mcp-prefs > .mcp-block:first-child { margin-top: 0; }
 .prefs-dialog .dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); }
-.prefs-sub { margin: 16px 0 6px; font-size: 13px; color: var(--text); }
+.prefs-sub { margin: 16px 0 6px; font-size: 13px; font-weight: 700; color: var(--text); }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
 .field-inline { display: flex; gap: 8px; align-items: center; }
 .field-inline input, .field-inline select { flex: 1; min-width: 0; }
@@ -364,7 +364,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .app-dialog-head h2 { margin: 0; }
 .app-dialog-head .hint { margin: 6px 0 0; }
 .app-dialog-body { flex: 1; overflow: auto; padding: 12px 18px 4px; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-.app-dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; }
+.app-dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
 .release-list { max-height: 360px; overflow: auto; margin: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
 .release-row { display: grid; grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 8px 10px; font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
 .release-row:last-child { border-bottom: none; }
@@ -374,6 +374,17 @@ button.gh-id.is-muted { color: var(--muted); }
 .release-badges { display: inline-flex; gap: 8px; white-space: nowrap; }
 .release-when { color: var(--muted); font: 600 12px "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .job-log { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--log-bg); color: var(--log-fg); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; overflow: auto; max-height: 280px; }
+.release-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.release-step { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 6px; }
+.release-step.is-active { background: var(--sel); }
+.release-step.is-error { background: var(--fail-row); }
+.release-step.is-skipped { opacity: .55; }
+.release-step-mark { width: 22px; height: 22px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 2px solid var(--border); color: var(--muted); line-height: 1; }
+.release-step.is-done .release-step-mark { background: var(--ok); border-color: var(--ok); color: #fff; }
+.release-step.is-active .release-step-mark { border-color: var(--accent); color: var(--accent); animation: prj-pulse 1.4s ease-in-out infinite; }
+.release-step.is-error .release-step-mark { background: var(--danger); border-color: var(--danger); color: #fff; }
+.release-step strong { font-size: 14px; }
+.release-step .hint { margin: 2px 0 0; }
 .doctor-note { margin: 6px 0 0; }
 .doctor-action { margin-top: 6px; padding: 0; }
 .doctor-action-btn { margin-top: 8px; }
@@ -386,15 +397,33 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
 .task-section { margin-top: 6px; }
 .task-heading { display: flex; align-items: center; gap: 8px; margin: 8px 4px 6px; font: 700 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
 .task-heading .group-count { margin-left: auto; font-weight: 600; font-size: 11px; color: var(--muted); }
-.task-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border-radius: 4px; }
+.task-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px; border-radius: 4px; }
 .task-row:hover { background: var(--row-alt); }
-.task-row.task-open { opacity: .92; }
+.task-row.task-open { opacity: .92; grid-template-columns: 52px minmax(0, 1fr) auto; }
 .task-num { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .task-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .task-title { appearance: none; background: none; border: none; padding: 0; color: var(--text); font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-title:hover { color: var(--accent); text-decoration: underline; }
 .task-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; min-width: 0; overflow: hidden; }
 .task-empty { padding: 12px 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.issue-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.issue-section-title { margin: 10px 0 6px; font: 700 13px "Segoe UI", "Noto Sans TC", sans-serif; }
+.issue-body { margin: 0; max-height: min(48vh, 420px); overflow: auto; }
+.issue-body img, .issue-comment-body img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
+.issue-discuss { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.issue-discuss-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.issue-comments { display: flex; flex-direction: column; gap: 8px; }
+.issue-comment { padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.issue-comment-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.issue-comment-author { font-weight: 700; }
+.issue-comment-when { color: var(--muted); font-size: 12px; }
+.issue-comment-body { font-size: 13px; overflow-wrap: anywhere; }
+.issue-comment-body p, .issue-comment-body ul, .issue-comment-body ol { margin: 0.35em 0; }
+.issue-steps { margin: 8px 0 0; padding: 8px 10px 8px 1.4em; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); }
+.issue-steps li { margin: 0.3em 0; }
+.issue-after { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 4px; }
+.issue-pr-block { margin: 0 0 8px; color: var(--wait); font-size: 13px; }
+.issue-reply textarea { width: 100%; min-height: 72px; resize: vertical; }
 .doc-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; }
 .doc-tree { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; overflow: auto; max-height: 100%; min-height: 160px; }
 .doc-tree-root { padding: 8px 10px 4px; font: 700 12px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--muted); }
@@ -584,3 +613,11 @@ label.check { display: flex; align-items: center; gap: 6px; color: var(--muted);
     .intake-grid { grid-template-columns: 1fr; }
     .intake-visual { grid-template-columns: 96px minmax(0, 1fr); }
 }
+.status-chart { width: 100%; border-collapse: collapse; }
+.status-chart th, .status-chart td { border: 1px solid var(--border); padding: 4px; text-align: center; }
+.chart-cell { width: 36px; height: 28px; }
+.chart-cell.is-0 { background: var(--row-alt); }
+.chart-cell.is-1 { background: #cfe8dc; }
+.chart-cell.is-2 { background: #7fb9a4; color: #fff; }
+.chart-cell.is-3 { background: var(--accent); color: #fff; }
+

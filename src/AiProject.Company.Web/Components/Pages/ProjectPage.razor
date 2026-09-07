@@ -1,0 +1,306 @@
+@page "/projects/{Id:guid}"
+@rendermode InteractiveServer
+@inject ProjectCommands Commands
+@inject DirectoryQueries Directory
+@inject DispatchCommands Dispatch
+@inject BudgetCommands Budget
+@inject IAuthorizationGate Gate
+
+<PageTitle>專案首頁</PageTitle>
+@if (_project is null)
+{
+    <p>找不到專案。</p>
+}
+else
+{
+    <h1>@_project.Name</h1>
+    <p>目標 @_project.TargetEnd · @_project.Status · 目前階段 @_project.CurrentPhase(DateTimeOffset.Now)?.Name</p>
+    <section class="card" id="docs">
+        <h2>需求分析</h2>
+        <p class="hint">這裡只當目錄與健康燈。進件與規格仍在控制台／Git 寫。先掛倉或連工作區，需求分析在控制台寫、這裡只當入口。</p>
+        @if (!string.IsNullOrWhiteSpace(_docs?.EmptyHint))
+        {
+            <p>@_docs.EmptyHint</p>
+        }
+        <p>工作區：@(_docs?.WorkspaceLinked == true ? _docs.WorkspacePath : "未連結")</p>
+        @if (!string.IsNullOrWhiteSpace(_docs?.PagesUrl))
+        {
+            <p>
+                @if (_docs.PagesPublished)
+                {
+                    <a class="btn-primary" href="@_docs.PagesUrl" target="_blank" rel="noopener">開啟線上文件</a>
+                }
+                else
+                {
+                    <a href="@_docs.PagesUrl" target="_blank" rel="noopener">嘗試開啟 GitHub Pages</a>
+                    <span class="hint">尚未偵測到已發布的 Pages。</span>
+                }
+            </p>
+        }
+        <ul>
+            @foreach (var doc in _docs?.ProductDocs ?? [])
+            {
+                <li>
+                    @doc.Name @(doc.Present ? "已有" : "缺")
+                    @if (doc.Present && !string.IsNullOrWhiteSpace(doc.Href))
+                    {
+                        <a href="@doc.Href" target="_blank" rel="noopener">開啟</a>
+                    }
+                </li>
+            }
+        </ul>
+        @if (_docs?.Intake is { } catalogIntake)
+        {
+            <p>進件彙總：已發出 @catalogIntake.Issued · 待驗收 @catalogIntake.PendingAcceptance（只讀，不搬 intake.json）。</p>
+        }
+        else if (_docs?.WorkspaceLinked == true)
+        {
+            <p class="hint">工作區還沒有 intake.json，請到控制台需求工作台畫進件。</p>
+        }
+    </section>
+    <section class="card">
+        <h2>專案紀錄</h2>
+        <ol class="timeline">
+            @foreach (var item in _project.Journals.OrderByDescending(j => j.At))
+            {
+                <li>
+                    <strong>@item.Kind.Display()</strong>
+                    <span class="hint">@item.At.LocalDateTime.ToString("yyyy-MM-dd HH:mm") · @item.Actor</span>
+                    <p>@item.Summary</p>
+                </li>
+            }
+        </ol>
+        @if (_project.Journals.Count == 0)
+        {
+            <p class="empty">還沒有專案紀錄。</p>
+        }
+        <div class="toolbar">
+            <input placeholder="會議／決策備註（必填）" @bind="_note" style="min-width: 16rem;" />
+            <button class="btn-sec" @onclick="AddNote">記下</button>
+        </div>
+        <div class="toolbar">
+            @foreach (var phase in _project.Phases)
+            {
+                <button class="btn-sec" @onclick="() => EnterPhase(phase.Id)">進入 @phase.Name</button>
+            }
+        </div>
+    </section>
+    <div class="split">
+        <section>
+            <h2>甘特</h2>
+            <p class="hint">今天線：@_gantt?.Today（實線＝計劃，虛線＝實際進入／離開）。逾期條變紅並標「逾期」。</p>
+            <div class="gantt" aria-label="甘特圖">
+                @if (_gantt is not null)
+                {
+                    <div class="gantt-axis">
+                        <span></span>
+                        <div class="gantt-track gantt-axis-track">
+                            <span class="gantt-today" style="left: @TodayPct()%" title="今天 @_gantt.Today"></span>
+                        </div>
+                    </div>
+                }
+                @foreach (var bar in _gantt?.Bars ?? [])
+                {
+                    var plan = BarPct(bar.Start, bar.End);
+                    <div class="gantt-row @(bar.Overdue ? "is-overdue" : "")">
+                        <span>@bar.Name</span>
+                        <div class="gantt-track">
+                            <span class="gantt-today" style="left: @TodayPct()%"></span>
+                            <span class="gantt-bar @(bar.Overdue ? "is-overdue" : "")" style="left: @plan.Left%; width: @plan.Width%"></span>
+                            @if (bar.ActualStart is DateOnly actualStart)
+                            {
+                                var actual = BarPct(actualStart, bar.ActualEnd ?? actualStart);
+                                <span class="gantt-bar is-actual" style="left: @actual.Left%; width: @actual.Width%"></span>
+                            }
+                        </div>
+                        <span>計劃 @bar.Start – @bar.End @(bar.ActualStart is DateOnly a ? $"實際 {a}" : "尚未進入") @(bar.ActualEnd is DateOnly z ? $"～ {z}" : "") @(string.IsNullOrWhiteSpace(bar.DependsOnName) ? "" : $"完成才開始：{bar.DependsOnName}") @(bar.Overdue ? "逾期" : "")</span>
+                    </div>
+                }
+            </div>
+            <h2>里程碑</h2>
+            <div class="toolbar">
+                <input placeholder="名稱" @bind="_msName" />
+                <input type="date" @bind="_msDue" />
+                <input type="number" @bind="_msAmount" />
+                <select @bind="_msDepends">
+                    <option value="">無前置（完成才開始）</option>
+                    @foreach (var ms in _project.Milestones)
+                    {
+                        <option value="@ms.Id">@ms.Name</option>
+                    }
+                </select>
+                <button class="btn-primary" @onclick="AddMilestone">新增</button>
+            </div>
+            <ul>
+                @foreach (var ms in _project.Milestones)
+                {
+                    <li>
+                        @ms.Name · @ms.Due · @ms.BillingAmount @(ms.Completed ? "完成" : "") @(ms.Recognition)
+                        @if (Gate.Can(PlatformCapability.RecognizeRevenue, projectId: Id))
+                        {
+                            <button class="btn-link" @onclick="() => Recognize(ms.Id)">一鍵已認列</button>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+        <aside class="card" id="pnl">
+            <h2>損益卡</h2>
+            @if (_pnl is null)
+            {
+                <p class="hint">尚未認列或無權限。</p>
+            }
+            else
+            {
+                <p>計劃收入 @_pnl.Margin.PlannedRevenue / 實際 @_pnl.Margin.ActualRevenue</p>
+                <p>計劃成本 @_pnl.Margin.PlannedCost / 實際 @_pnl.Margin.ActualCost</p>
+                <p>毛利 @_pnl.Margin.ActualMargin（@MarginResult.Display(_pnl.Margin.ActualRate) · @_pnl.Tone）</p>
+            }
+        </aside>
+    </div>
+    <h2>派工（與週矩陣同一份）</h2>
+    <ul>
+        @foreach (var a in _gantt?.Assignments ?? [])
+        {
+            <li>@a.Role · @PersonName(a.PersonId) · @a.Start–@a.End · @a.PlannedHoursPerWeek 時/週 @(a.SyncState == AssignmentSyncState.Pending ? "待同步" : "")</li>
+        }
+    </ul>
+    <h2>GitHub 倉</h2>
+    <div class="toolbar">
+        <select @bind="_repo">
+            @foreach (var repo in _repos)
+            {
+                <option value="@repo">@repo</option>
+            }
+        </select>
+        <button class="btn-primary" @onclick="AddRepo">掛倉</button>
+    </div>
+    <ul>
+        @foreach (var repo in _project.Repos)
+        {
+            <li>@repo.OwnerRepo</li>
+        }
+    </ul>
+    @if (_gantt?.Intake is { } intake)
+    {
+        <h2>進件彙總（只讀自倉）</h2>
+        <p>已發出 @intake.Issued · 待驗收 @intake.PendingAcceptance。真相仍在 Git，不搬 intake.json。</p>
+    }
+    <div class="toolbar">
+        <a class="btn-sec" href="/dispatch?project=@Id">去週矩陣</a>
+        <button class="btn-danger" @onclick="Close">結案</button>
+    </div>
+    <p>@_message</p>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    Project? _project;
+    GanttView? _gantt;
+    ProjectPnl? _pnl;
+    ProjectDocsCatalog? _docs;
+    IReadOnlyList<string> _repos = [];
+    string _repo = "";
+    string _msName = "";
+    DateOnly _msDue = DateOnly.FromDateTime(DateTime.Today.AddDays(14));
+    decimal _msAmount;
+    string _msDepends = "";
+    string _note = "";
+    IReadOnlyList<Person> _people = [];
+    string _message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _project = await Directory.ProjectAsync(Id);
+        if (_project is null)
+            return;
+        _gantt = await Commands.GanttAsync(Id);
+        _repos = await Commands.ListGithubReposAsync();
+        _repo = _repos.FirstOrDefault() ?? "";
+        _docs = await Commands.DocsCatalogAsync(Id);
+        _people = await Directory.PeopleAsync();
+        try { _pnl = await Budget.PnlAsync(Id); }
+        catch (DomainException) { _pnl = null; }
+    }
+
+    async Task AddMilestone()
+    {
+        var depends = Guid.TryParse(_msDepends, out var dep) ? dep : (Guid?)null;
+        var result = await Commands.AddMilestoneAsync(Id, _msName, _msDue, _msAmount, depends);
+        _message = result.Ok ? "已加里程碑" : result.Message;
+        _gantt = await Commands.GanttAsync(Id);
+        _project = await Directory.ProjectAsync(Id);
+    }
+
+    async Task AddRepo()
+    {
+        var result = await Commands.AddRepoAsync(Id, _repo);
+        _message = result.Ok ? "已掛倉" : result.Message;
+        _project = await Directory.ProjectAsync(Id);
+        _docs = await Commands.DocsCatalogAsync(Id);
+    }
+
+    async Task AddNote()
+    {
+        var result = await Commands.AddProjectNoteAsync(Id, _note);
+        _message = result.Ok ? "已記下" : result.Message;
+        if (result.Ok)
+            _note = "";
+        _project = await Directory.ProjectAsync(Id);
+    }
+
+    async Task EnterPhase(Guid phaseId)
+    {
+        var result = await Commands.EnterPhaseAsync(Id, phaseId);
+        _message = result.Ok ? "已進階段" : result.Message;
+        _project = await Directory.ProjectAsync(Id);
+        _gantt = await Commands.GanttAsync(Id);
+    }
+
+    string PersonName(Guid id) => _people.FirstOrDefault(p => p.Id == id)?.DisplayName ?? id.ToString()[..8];
+
+    (double Left, double Width) BarPct(DateOnly start, DateOnly end)
+    {
+        var (min, span) = GanttRange();
+        var left = Math.Max(0, (start.DayNumber - min.DayNumber) * 100.0 / span);
+        if (left > 100)
+            left = 100;
+        var rawWidth = Math.Max(0.5, (end.DayNumber - start.DayNumber + 1) * 100.0 / span);
+        var width = Math.Min(rawWidth, Math.Max(0.5, 100 - left));
+        return (left, width);
+    }
+
+    double TodayPct()
+    {
+        if (_gantt is null)
+            return 0;
+        var (min, span) = GanttRange();
+        return Math.Max(0, Math.Min(100, (_gantt.Today.DayNumber - min.DayNumber) * 100.0 / span));
+    }
+
+    (DateOnly Min, int Span) GanttRange()
+    {
+        var today = _gantt?.Today ?? DateOnly.FromDateTime(DateTime.Today);
+        var dates = (_gantt?.Bars ?? []).SelectMany(b => new[] { b.Start, b.End }).DefaultIfEmpty(today).ToList();
+        dates.Add(today);
+        var min = dates.Min();
+        var max = dates.Max();
+        return (min, Math.Max(1, max.DayNumber - min.DayNumber));
+    }
+
+    async Task Recognize(Guid milestoneId)
+    {
+        var result = await Budget.RecognizeAsync(Id, milestoneId, RecognitionStep.Collected, true);
+        _message = result.Ok ? "已認列" : result.Message;
+        _project = await Directory.ProjectAsync(Id);
+        try { _pnl = await Budget.PnlAsync(Id); }
+        catch (DomainException) { _pnl = null; }
+    }
+
+    async Task Close()
+    {
+        var result = await Commands.CloseProjectAsync(Id);
+        _message = result.Ok ? "已結案，不能新派工。" : result.Message;
+        _project = await Directory.ProjectAsync(Id);
+    }
+}

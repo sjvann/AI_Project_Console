@@ -1,0 +1,275 @@
+@page "/dispatch"
+@rendermode InteractiveServer
+@inject DispatchCommands Commands
+@inject DirectoryQueries Directory
+@inject NavigationManager Nav
+
+<PageTitle>派工週矩陣</PageTitle>
+<h1>派工全貌</h1>
+<p class="hint">列是人，欄是工作日。超載格子紅底並標「超載」。寫回 GitHub 失敗會顯示待同步，不會假裝已派到 GitHub。</p>
+<div class="toolbar">
+    <button class="btn-sec" @onclick="Prev">上一週</button>
+    <strong>@_weekStart.ToString("yyyy-MM-dd") 當週</strong>
+    <button class="btn-sec" @onclick="Next">下一週</button>
+</div>
+<div class="matrix" tabindex="0" @onkeydown="OnKey">
+    <div class="matrix-head">
+        <span>人員</span>
+        @foreach (var day in Days)
+        {
+            <span>@Workday(day)</span>
+        }
+        <span>小時</span>
+    </div>
+    @foreach (var group in _groups)
+    {
+        <button type="button" class="matrix-group" @onclick="() => Toggle(group.Key)">@(group.Collapsed ? "▸" : "▾") @group.Key</button>
+        @if (!group.Collapsed)
+        {
+            @foreach (var row in group.Rows)
+            {
+                <div class="matrix-row @(row.Overload ? "is-overload" : "")" draggable="true"
+                     @ondragstart="() => _dragPerson = row.Person.Id">
+                    <span>@row.Person.DisplayName @(row.Overload ? "超載" : "")</span>
+                    @foreach (var day in Days)
+                    {
+                        var cell = row.Cells.FirstOrDefault(c => c.Date == day);
+                        <div class="matrix-cell @(row.Overload ? "is-overload" : "")"
+                             @ondrop="() => Drop(row.Person.Id, day)"
+                             @ondragover:preventDefault
+                             @onclick="() => Select(row.Person.Id, day)">
+                            @if (cell is not null)
+                            {
+                                <span>@cell.ProjectName @cell.Hours</span>
+                                @if (cell.Pending)
+                                {
+                                    <em>待同步</em>
+                                }
+                            }
+                        </div>
+                    }
+                    <span>@row.Assigned / @row.Cap</span>
+                </div>
+            }
+        }
+    }
+</div>
+<aside class="card">
+    <h2>建立派工</h2>
+    <label>專案
+        <select @bind="_projectId">
+            @foreach (var p in _projects)
+            {
+                <option value="@p.Id">@p.Name</option>
+            }
+        </select>
+    </label>
+    <label>規劃小時／週 <input type="number" @bind="_hours" /></label>
+    <label>角色
+        <select @bind="_role">
+            <option value="@AssignmentRole.Engineer">工程師</option>
+            <option value="@AssignmentRole.Analyst">分析師</option>
+            <option value="@AssignmentRole.Lead">Lead</option>
+            <option value="@AssignmentRole.Pm">PM</option>
+        </select>
+    </label>
+    <label>強制超載原因 <input @bind="_force" /></label>
+    <button class="btn-primary" @onclick="Assign">寫入派工單</button>
+    <button class="btn-sec" @onclick="Suggest">建議名單（不是自動指派）</button>
+    <p>@_message</p>
+    <ul>
+        @foreach (var s in _suggestions)
+        {
+            <li><button class="btn-link" @onclick="() => Pick(s.PersonId)">@s.DisplayName</button> · @s.Reason</li>
+        }
+    </ul>
+    <h2>未派 Issue</h2>
+    <p class="hint">勾選後寫入派工單才會嘗試寫回 GitHub assignee。失敗會標待同步，不會假裝已派。</p>
+    <ul>
+        @foreach (var issue in _issues)
+        {
+            <li>
+                <label class="check">
+                    <input type="checkbox" checked="@_issueNumbers.Contains(issue.Number)" @onchange="e => ToggleIssue(issue.Number, e)" />
+                    #@issue.Number @issue.Title · @issue.Repo
+                </label>
+            </li>
+        }
+    </ul>
+    <h2>本週派工單</h2>
+    <ul>
+        @foreach (var a in _weekAssignments)
+        {
+            <li>
+                @PersonName(a.PersonId) · @ProjectName(a.ProjectId) · @a.PlannedHoursPerWeek 時
+                @(a.SyncState == AssignmentSyncState.Pending ? "待同步" : "")
+                <button class="btn-link" @onclick="() => Cancel(a.Id)">取消（工時保留）</button>
+                @if (a.SyncState == AssignmentSyncState.Pending)
+                {
+                    <button class="btn-link" @onclick="() => Retry(a.Id)">重試寫回</button>
+                }
+            </li>
+        }
+    </ul>
+</aside>
+
+@code {
+    [SupplyParameterFromQuery(Name = "project")] public Guid? Project { get; set; }
+    DateOnly _weekStart;
+    Guid? _dragPerson;
+    Guid _personId;
+    Guid _projectId;
+    decimal _hours = 8;
+    AssignmentRole _role = AssignmentRole.Engineer;
+    string _force = "";
+    string _message = "";
+    IReadOnlyList<Project> _projects = [];
+    IReadOnlyList<AssignmentSuggestion> _suggestions = [];
+    IReadOnlyList<GitHubIssueRef> _issues = [];
+    IReadOnlyList<Assignment> _weekAssignments = [];
+    IReadOnlyList<Person> _people = [];
+    HashSet<int> _issueNumbers = [];
+    List<VendorGroup> _groups = [];
+
+    record Cell(Guid AssignmentId, DateOnly Date, string ProjectName, decimal Hours, bool Pending);
+    record Row(Person Person, decimal Assigned, decimal Cap, bool Overload, List<Cell> Cells);
+    class VendorGroup
+    {
+        public string Key { get; set; } = "";
+        public bool Collapsed { get; set; }
+        public List<Row> Rows { get; set; } = [];
+    }
+
+    IEnumerable<DateOnly> Days => Enumerable.Range(0, 5).Select(i => _weekStart.AddDays(i));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = Directory.Today();
+        _weekStart = today.AddDays(-((int)today.DayOfWeek + 6) % 7);
+        await Reload();
+    }
+
+    async Task Reload()
+    {
+        _projects = await Directory.AssignableProjectsAsync();
+        if (Project is Guid qid && _projects.Any(p => p.Id == qid))
+            _projectId = qid;
+        else if (_projectId == Guid.Empty || _projects.All(p => p.Id != _projectId))
+            _projectId = _projects.FirstOrDefault()?.Id ?? Guid.Empty;
+        var people = await Directory.PeopleAsync();
+        _people = people;
+        var vendors = await Directory.VendorsAsync();
+        var avail = await Directory.WeekAvailabilityAsync(_weekStart);
+        var assignments = await Directory.AssignmentsAsync();
+        _weekAssignments = assignments.Where(x => x.Overlaps(_weekStart, _weekStart.AddDays(6)) && x.Status != AssignmentStatus.Cancelled).ToList();
+        var projects = _projects.ToDictionary(p => p.Id);
+        _groups = people.GroupBy(p => p.VendorId is Guid vid ? vendors.FirstOrDefault(v => v.Id == vid)?.Name ?? "外包" : "正職")
+            .Select(g => new VendorGroup
+            {
+                Key = g.Key,
+                Rows = g.Select(p =>
+                {
+                    var a = avail.FirstOrDefault(x => x.PersonId == p.Id);
+                    var cells = assignments.Where(x => x.PersonId == p.Id && x.Overlaps(_weekStart, _weekStart.AddDays(6)) && x.Status != AssignmentStatus.Cancelled)
+                        .Select(x => new Cell(x.Id, x.Start, projects.TryGetValue(x.ProjectId, out var pr) ? pr.Name : "", x.PlannedHoursPerWeek, x.SyncState == AssignmentSyncState.Pending)).ToList();
+                    return new Row(p, a?.AssignedHours ?? 0, a?.CapHours ?? p.WeeklyHourCap, a?.Overload ?? false, cells);
+                }).ToList()
+            }).ToList();
+        _issues = await Directory.UnassignedIssuesAsync();
+    }
+
+    void Toggle(string key)
+    {
+        var g = _groups.First(x => x.Key == key);
+        g.Collapsed = !g.Collapsed;
+    }
+
+    void Select(Guid personId, DateOnly day)
+    {
+        _personId = personId;
+    }
+
+    async Task Drop(Guid personId, DateOnly day)
+    {
+        _personId = _dragPerson ?? personId;
+        await AssignAt(day);
+    }
+
+    async Task Assign() => await AssignAt(_weekStart);
+
+    async Task AssignAt(DateOnly start)
+    {
+        var result = await Commands.AssignAsync(_personId, _projectId, start, start.AddDays(4), _hours, _role, _issueNumbers.ToList(), null, string.IsNullOrWhiteSpace(_force) ? null : _force);
+        _message = result.Ok ? "已寫入派工單" : result.Message;
+        if (result.Ok)
+        {
+            _issueNumbers.Clear();
+            await Reload();
+        }
+    }
+
+    async Task Suggest()
+    {
+        _suggestions = await Commands.SuggestAsync(_projectId, _weekStart);
+    }
+
+    void Pick(Guid personId) => _personId = personId;
+
+    void ToggleIssue(int number, ChangeEventArgs e)
+    {
+        var on = e.Value is bool b && b || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        if (on)
+            _issueNumbers.Add(number);
+        else
+            _issueNumbers.Remove(number);
+    }
+
+    async Task Cancel(Guid id)
+    {
+        var result = await Commands.CancelAsync(id);
+        _message = result.Ok ? "已取消派工，已上傳工時仍保留。" : result.Message;
+        if (result.Ok)
+            await Reload();
+    }
+
+    async Task Retry(Guid id)
+    {
+        var result = await Commands.RetrySyncAsync(id);
+        _message = result.Ok ? "已重試寫回 GitHub。" : result.Message;
+        await Reload();
+    }
+
+    string PersonName(Guid id) => _people.FirstOrDefault(p => p.Id == id)?.DisplayName ?? id.ToString()[..8];
+    string ProjectName(Guid id) => _projects.FirstOrDefault(p => p.Id == id)?.Name ?? "";
+
+    async Task Prev()
+    {
+        _weekStart = _weekStart.AddDays(-7);
+        await Reload();
+    }
+
+    async Task Next()
+    {
+        _weekStart = _weekStart.AddDays(7);
+        await Reload();
+    }
+
+    async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _personId != Guid.Empty)
+            await Assign();
+        else if (e.Key == "ArrowLeft")
+            await Prev();
+        else if (e.Key == "ArrowRight")
+            await Next();
+    }
+
+    static string Workday(DateOnly d) => d.DayOfWeek switch
+    {
+        DayOfWeek.Monday => "週一",
+        DayOfWeek.Tuesday => "週二",
+        DayOfWeek.Wednesday => "週三",
+        DayOfWeek.Thursday => "週四",
+        _ => "週五",
+    };
+}

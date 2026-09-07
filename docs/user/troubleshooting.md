@@ -77,10 +77,12 @@
 - 開啟已接 GitHub 的專案時會要求登入。沒裝 `gh`：先裝 [GitHub CLI](https://cli.github.com/)。瀏覽器沒跳出：在登入對話框按「在瀏覽器開啟」，或複製一次性代碼後手動打開 https://github.com/login/device。也可到終端機執行 `gh auth login`。
 - 任務清單是空的：開 GitHub 操作台，確認已登入、倉庫有開放 Issue，並按「刷新」。未指派清單預設可收合。
 - 提交需要資料夾是 git 倉，且已安裝 Git。
+- 提交出現 `index.lock`／「Another git process」：通常是控制台刷新狀態與提交重疊，或 IDE 也在跑 git。關掉錯誤視窗再提交一次即可；控制台會清殘留鎖檔並重試一次。
 - 專案列看不到分支：確認目錄是 git 倉。切換分支前必須先提交或還原未提交變更。
-- 不能關閉專案／離開：工作區還有未提交變更，或目前分支尚未 push。請先提交並發布。
+- 不能關閉專案／離開：工作區還有未提交變更，或目前分支尚未 push。請先提交並發布；若仍要走，警示視窗可按「強行關閉」。
 - 開啟專案後自動同步失敗：看警告內容。工作區不乾淨會略過同步；網路或衝突請到終端機處理後再按 Pulse「同步」或操作台日常節奏裡的同步。
 - 同步／發布／Release／PR 需要完成 GitHub 設定（或從 remote 預填）以及網路。
+- 「建立 PR」出現 `argument required when using the --repo flag`：舊版會在 `gh pr view` 加上 `--repo`，這版 GitHub CLI 會誤報。關掉控制台後重開即可；讀 PR 改從目前 git 倉推斷。
 - Release、PR、Actions 需要 `gh auth login`。
 - 私人倉「檢查控制台更新」失敗：登入 `gh` 或設 `GH_TOKEN`。
 - 摘要列「文件 無文件／缺骨架」：按文件 → 建立／補齊體系。已有內容不會被覆蓋。
@@ -95,7 +97,8 @@
 - 開發模式（`dotnet run`）不能用「立即更新」覆蓋。
 - 橫幅被「稍後再說」略過後，同一版號不會再煩你，直到更新的 tag。
 - 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少 `*-win-x64-setup.exe`。請用 GitHub 操作台「發行 Release…」打包並補上安裝包。
-- 可手動按「檢查更新」。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。
+- 發行進度停在「編譯 Windows 執行檔」：這一步可能要 1–3 分鐘，視窗會顯示已過時間與紀錄。找不到 Inno Setup 會立刻失敗並附上安裝連結。
+- 可到設定按「檢查更新」（會問是否包含 RC）。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。也可「從檔案更新…」選已下載的 setup／zip。
 
 ## MCP 審計是空的
 

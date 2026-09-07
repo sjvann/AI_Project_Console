@@ -380,6 +380,37 @@ public static class ConsoleSettingsStore
         Save(data);
     }
 
+    public static string GetCompanyBaseUrl() => JsonUtil.Str(Load()["companyBaseUrl"]);
+
+    public static void SetCompanyBaseUrl(string? value) => SetOptionalString("companyBaseUrl", value);
+
+    public static IReadOnlyDictionary<string, Guid> GetCompanyProjectMap()
+    {
+        var map = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        if (Load()["companyProjectMap"] is not JsonObject obj)
+            return map;
+        foreach (var (key, node) in obj)
+        {
+            var raw = JsonUtil.Str(node);
+            if (Guid.TryParse(raw, out var id) && id != Guid.Empty)
+                map[key] = id;
+        }
+        return map;
+    }
+
+    public static void SetCompanyProjectId(string projectKey, Guid projectId)
+    {
+        var data = Load();
+        var obj = data["companyProjectMap"] as JsonObject ?? [];
+        var key = (projectKey ?? "").Trim();
+        if (string.IsNullOrEmpty(key) || projectId == Guid.Empty)
+            obj.Remove(key);
+        else
+            obj[key] = projectId.ToString();
+        data["companyProjectMap"] = obj;
+        Save(data);
+    }
+
     public static void SetSkippedUpdateTag(string? tag)
     {
         var data = Load();

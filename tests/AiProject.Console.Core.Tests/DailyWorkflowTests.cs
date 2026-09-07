@@ -28,6 +28,10 @@ public class DailyWorkflowTests
         Assert.Contains("遠端追蹤", new GitBriefStatus("feat", 0, null, null, false).LeaveBlockReason());
         Assert.False(new GitBriefStatus("main", 1, 0, 0).IsClearToLeave);
         Assert.True(new GitBriefStatus("main", 0, 0, 1).IsClearToLeave);
+        Assert.Equal("還不能離開", GitBriefStatus.LeaveGateTitle("離開"));
+        Assert.Equal("強行關閉", GitBriefStatus.LeaveGateForceLabel("離開"));
+        Assert.Equal("強行關閉", GitBriefStatus.LeaveGateForceLabel("關閉專案"));
+        Assert.Equal("強行切換專案", GitBriefStatus.LeaveGateForceLabel("切換專案"));
     }
 
     [Fact]
@@ -282,6 +286,13 @@ public class DailyWorkflowTests
             Assert.Equal(0, await GitHubService.DirtyCountAsync(root));
             await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.CommitAsync(root, "   "));
             await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.CommitAsync(root, "nothing left"));
+            Assert.True(GitHubService.LooksLikeIndexLock(
+                "fatal: Unable to create 'D:/proj/.git/index.lock': File exists.\nAnother git process seems to be running"));
+            Assert.False(GitHubService.LooksLikeIndexLock("nothing to commit"));
+            var lockPath = Path.Combine(root, ".git", "index.lock");
+            File.WriteAllText(lockPath, "");
+            Assert.True(GitHubService.TryClearStaleIndexLock(root));
+            Assert.False(File.Exists(lockPath));
         }
         finally
         {

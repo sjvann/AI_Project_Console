@@ -99,6 +99,16 @@ public sealed record GitBriefStatus(
 {
     public bool IsClearToLeave => LeaveBlockReason() is null;
 
+    public static string LeaveGateTitle(string action) => $"還不能{action}";
+
+    public static string LeaveGateForceLabel(string action) => action switch
+    {
+        "離開" or "關閉專案" => "強行關閉",
+        _ => $"強行{action}",
+    };
+
+    public const string LeaveGateHint = "請先在 Pulse 提交，或開 GitHub 操作台發布。專案列的「分支」可確認目前分支。";
+
     public string? LeaveBlockReason()
     {
         if (DirtyCount > 0)

@@ -1,0 +1,341 @@
+@page "/clients/{Id:guid}"
+@rendermode InteractiveServer
+@inject ProjectCommands Commands
+@inject DirectoryQueries Directory
+@inject IContractRepository Contracts
+@inject NavigationManager Nav
+
+<PageTitle>客戶首頁</PageTitle>
+@if (_client is null)
+{
+    <p>找不到客戶。</p>
+}
+else
+{
+    <h1>@_client.Name</h1>
+    <p>@_client.Lifecycle.Display() · @_client.Kind · @_client.Source.Display() · 窗口 @(_client.Contact ?? "未填")</p>
+    <div class="toolbar">
+        @if (Client.AllowsTransition(_client.Lifecycle, ClientLifecycle.Discovery))
+        {
+            <button class="btn-sec" @onclick="() => ChangeLife(ClientLifecycle.Discovery)">進入訪談</button>
+        }
+        @if (Client.AllowsTransition(_client.Lifecycle, ClientLifecycle.Proposal))
+        {
+            <button class="btn-sec" @onclick="() => ChangeLife(ClientLifecycle.Proposal)">進入議約</button>
+        }
+        @if (Client.AllowsTransition(_client.Lifecycle, ClientLifecycle.Active))
+        {
+            <button class="btn-primary" @onclick="() => ChangeLife(ClientLifecycle.Active)">標成交</button>
+        }
+        @if (Client.AllowsTransition(_client.Lifecycle, ClientLifecycle.Dormant))
+        {
+            <button class="btn-danger" @onclick="() => ChangeLife(ClientLifecycle.Dormant)">休眠</button>
+        }
+        @if (Client.AllowsTransition(_client.Lifecycle, ClientLifecycle.Lead))
+        {
+            <button class="btn-sec" @onclick="() => ChangeLife(ClientLifecycle.Lead)">重開為潛在</button>
+        }
+    </div>
+    <section class="card">
+        <h2>主檔</h2>
+        <div class="stack">
+            <label>名稱 <input @bind="_name" /></label>
+            <label>窗口 <input @bind="_contact" /></label>
+            <label>電話 <input @bind="_phone" /></label>
+            <label>Email <input @bind="_email" /></label>
+            <label>來源
+                <select @bind="_source">
+                    <option value="@ClientSource.Existing">既有客戶</option>
+                    <option value="@ClientSource.Referral">轉介</option>
+                    <option value="@ClientSource.SelfDeveloped">自行開發</option>
+                    <option value="@ClientSource.Recruit">招募轉介</option>
+                    <option value="@ClientSource.Other">其他</option>
+                </select>
+            </label>
+            <label>負責 PM
+                <select @bind="_owner">
+                    <option value="">未指定</option>
+                    @foreach (var person in _people)
+                    {
+                        <option value="@person.Id">@person.DisplayName</option>
+                    }
+                </select>
+            </label>
+            <label>下次跟進 <input type="date" @bind="_follow" /></label>
+            <button class="btn-sec" @onclick="SaveProfile">儲存主檔</button>
+        </div>
+    </section>
+    <section class="card">
+        <h2>活動時間線</h2>
+        <ol class="timeline">
+            @foreach (var item in _client.Activities.OrderByDescending(a => a.At))
+            {
+                <li>
+                    <strong>@item.Kind.Display()</strong>
+                    <span class="hint">@item.At.LocalDateTime.ToString("yyyy-MM-dd HH:mm") · @item.Actor</span>
+                    <p>@item.Summary</p>
+                </li>
+            }
+        </ol>
+        @if (_client.Activities.Count == 0)
+        {
+            <p class="empty">還沒有跟進紀錄。</p>
+        }
+        <div class="toolbar">
+            <select @bind="_actKind">
+                <option value="@ClientActivityKind.Call">來電</option>
+                <option value="@ClientActivityKind.Meeting">面談</option>
+                <option value="@ClientActivityKind.RequirementNote">需求紀錄</option>
+                <option value="@ClientActivityKind.ProposalSent">提案送出</option>
+            </select>
+            <input placeholder="摘要（人話，不要填金額）" @bind="_actSummary" style="min-width: 16rem;" />
+            <input type="date" @bind="_actFollow" />
+            <button class="btn-sec" @onclick="AddActivity">記一筆</button>
+        </div>
+    </section>
+    @if (_client.CanEstablish().Ok)
+    {
+        <section class="card">
+            <h2>成立專案</h2>
+            <p class="hint">一次建立合約與專案，客戶會標成合約客戶。同一客戶加第二條請用下方既有合約。</p>
+            <div class="stack">
+                <label>沿用合約
+                    <select @bind="_existingContract">
+                        <option value="">新建合約</option>
+                        @foreach (var contract in _contracts)
+                        {
+                            <option value="@contract.Id">@contract.Name</option>
+                        }
+                    </select>
+                </label>
+                @if (string.IsNullOrEmpty(_existingContract))
+                {
+                    <label>合約名稱 <input @bind="_cName" /></label>
+                    <label>合約開始 <input type="date" @bind="_cStart" /></label>
+                    <label>合約結束 <input type="date" @bind="_cEnd" /></label>
+                    <label>總額 <input type="number" @bind="_cAmount" /></label>
+                    <label>幣別
+                        <select @bind="_cCurrency">
+                            @foreach (var iso in Currencies.Common)
+                            {
+                                <option value="@iso">@iso</option>
+                            }
+                        </select>
+                    </label>
+                    <label>計價
+                        <select @bind="_pricing">
+                            <option value="@PricingKind.FixedPrice">固定價格</option>
+                            <option value="@PricingKind.TimeAndMaterials">T&amp;M</option>
+                            <option value="@PricingKind.Mixed">混合</option>
+                        </select>
+                    </label>
+                    <p>可派外包商</p>
+                    @foreach (var vendor in _vendors)
+                    {
+                        <label class="check"><input type="checkbox" checked="@_vendorIds.Contains(vendor.Id)" @onchange="e => ToggleVendor(vendor.Id, e)" /> @vendor.Name</label>
+                    }
+                }
+                <label>專案名稱 <input @bind="_pName" /></label>
+                <label>專案開始 <input type="date" @bind="_pStart" /></label>
+                <label>目標結束 <input type="date" @bind="_pEnd" /></label>
+                <label>認列
+                    <select @bind="_method">
+                        <option value="@RevenueMethod.Milestone">里程碑認列</option>
+                        <option value="@RevenueMethod.StraightLine">直線攤提</option>
+                        <option value="@RevenueMethod.TimeAndMaterials">T&amp;M</option>
+                    </select>
+                </label>
+                <label>GitHub 倉（選填）
+                    <select @bind="_repo">
+                        <option value="">稍後掛倉</option>
+                        @foreach (var repo in _repos)
+                        {
+                            <option value="@repo">@repo</option>
+                        }
+                    </select>
+                </label>
+                <label>工作區路徑（選填，給進件只讀） <input @bind="_workspace" /></label>
+                <label class="check"><input type="checkbox" @bind="_startActive" /> 直接進入進行中</label>
+                <button class="btn-primary" @onclick="Establish">成立專案</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <p class="hint">潛在或訪談中的客戶要先進入議約，才能成立專案。</p>
+    }
+    <h2>既有合約</h2>
+    <p class="hint">同一客戶加第二條專案，用這裡的合約。</p>
+    <div class="stack card">
+        <label>名稱 <input @bind="_extraContract" /></label>
+        <p>可派外包商</p>
+        @foreach (var vendor in _vendors)
+        {
+            <label class="check"><input type="checkbox" checked="@_vendorIds.Contains(vendor.Id)" @onchange="e => ToggleVendor(vendor.Id, e)" /> @vendor.Name</label>
+        }
+        <button class="btn-sec" @onclick="CreateContract">只建合約</button>
+    </div>
+    @foreach (var contract in _contracts)
+    {
+        <section class="card">
+            <h3>@contract.Name</h3>
+            <p>@contract.Start – @contract.End · @contract.Amount @contract.Currency · @contract.Pricing</p>
+            <div class="toolbar">
+                <input placeholder="專案名稱" @bind="_extraProject" />
+                <button class="btn-primary" @onclick="() => CreateProject(contract.Id)">加專案</button>
+            </div>
+        </section>
+    }
+    <p>@_message</p>
+    <h2>專案</h2>
+    <ul>
+        @foreach (var project in _projects.Where(p => _contracts.Any(c => c.Id == p.ContractId)))
+        {
+            <li><a href="/projects/@project.Id">@project.Name</a> · @project.Status · @(project.CurrentPhase(DateTimeOffset.Now)?.Name)</li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    Client? _client;
+    IReadOnlyList<Contract> _contracts = [];
+    IReadOnlyList<Project> _projects = [];
+    IReadOnlyList<Person> _people = [];
+    IReadOnlyList<Vendor> _vendors = [];
+    IReadOnlyList<string> _repos = [];
+    string _name = "";
+    string _contact = "";
+    string _phone = "";
+    string _email = "";
+    ClientSource _source = ClientSource.Existing;
+    string _owner = "";
+    DateOnly? _follow;
+    ClientActivityKind _actKind = ClientActivityKind.Call;
+    string _actSummary = "";
+    DateOnly? _actFollow;
+    string _cName = "";
+    DateOnly _cStart = DateOnly.FromDateTime(DateTime.Today);
+    DateOnly _cEnd = DateOnly.FromDateTime(DateTime.Today.AddMonths(6));
+    decimal _cAmount;
+    string _cCurrency = "TWD";
+    PricingKind _pricing = PricingKind.FixedPrice;
+    string _pName = "";
+    DateOnly _pStart = DateOnly.FromDateTime(DateTime.Today);
+    DateOnly _pEnd = DateOnly.FromDateTime(DateTime.Today.AddMonths(6));
+    RevenueMethod _method = RevenueMethod.Milestone;
+    string _repo = "";
+    string _workspace = "";
+    bool _startActive = true;
+    string _existingContract = "";
+    HashSet<Guid> _vendorIds = [];
+    string _extraContract = "";
+    string _extraProject = "";
+    string _message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+        var settings = await Directory.SettingsAsync();
+        _cCurrency = settings.Currency;
+        _people = await Directory.PeopleAsync();
+        _vendors = await Directory.VendorsAsync();
+        _repos = await Commands.ListGithubReposAsync();
+        _actFollow = Directory.Today().AddDays(7);
+    }
+
+    async Task Reload()
+    {
+        _client = await Directory.ClientAsync(Id);
+        if (_client is null)
+            return;
+        _contracts = await Contracts.ListByClientAsync(Id);
+        _projects = await Directory.ProjectsAsync();
+        _name = _client.Name;
+        _contact = _client.Contact ?? "";
+        _phone = _client.Phone ?? "";
+        _email = _client.Email ?? "";
+        _source = _client.Source;
+        _owner = _client.OwnerPersonId?.ToString() ?? "";
+        _follow = _client.NextFollowUp;
+        if (string.IsNullOrWhiteSpace(_cName))
+            _cName = _client.Name + " 合約";
+        if (string.IsNullOrWhiteSpace(_pName))
+            _pName = _client.Name + " 專案";
+    }
+
+    async Task SaveProfile()
+    {
+        Guid? owner = Guid.TryParse(_owner, out var id) ? id : null;
+        var result = await Commands.UpdateClientProfileAsync(Id, _name, _client!.Kind, _contact, _phone, _email, _source, _follow, owner);
+        _message = result.Ok ? "主檔已存" : result.Message;
+        await Reload();
+    }
+
+    async Task ChangeLife(ClientLifecycle to)
+    {
+        var result = await Commands.ChangeClientLifecycleAsync(Id, to, _follow);
+        _message = result.Ok ? "狀態已更新" : result.Message;
+        await Reload();
+    }
+
+    async Task AddActivity()
+    {
+        var result = await Commands.AddClientActivityAsync(Id, _actKind, _actSummary, _actFollow);
+        _message = result.Ok ? "已記一筆" : result.Message;
+        if (result.Ok)
+            _actSummary = "";
+        await Reload();
+    }
+
+    void ToggleVendor(Guid id, ChangeEventArgs e)
+    {
+        var on = e.Value is bool b && b || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        if (on)
+            _vendorIds.Add(id);
+        else
+            _vendorIds.Remove(id);
+    }
+
+    async Task Establish()
+    {
+        Guid? existing = Guid.TryParse(_existingContract, out var cid) ? cid : null;
+        var result = await Commands.EstablishAsync(new EstablishProjectRequest(
+            Id,
+            existing,
+            _cName,
+            _cStart,
+            _cEnd,
+            _cAmount,
+            _cCurrency,
+            _pricing,
+            _vendorIds.ToList(),
+            _pName,
+            _pStart,
+            _pEnd,
+            _method,
+            _startActive,
+            string.IsNullOrWhiteSpace(_repo) ? null : _repo,
+            _workspace));
+        if (result.Ok)
+        {
+            Nav.NavigateTo("/projects/" + result.Value);
+            return;
+        }
+        _message = result.Message;
+    }
+
+    async Task CreateContract()
+    {
+        var result = await Commands.CreateContractAsync(Id, _extraContract, _cStart, _cEnd, _cAmount, _cCurrency, _pricing, _vendorIds);
+        _message = result.Ok ? "合約已建立" : result.Message;
+        await Reload();
+    }
+
+    async Task CreateProject(Guid contractId)
+    {
+        var result = await Commands.CreateProjectAsync(contractId, _extraProject, _pStart, _pEnd, _method);
+        _message = result.Ok ? "專案已建立" : result.Message;
+        await Reload();
+    }
+}

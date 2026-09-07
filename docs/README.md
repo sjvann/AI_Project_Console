@@ -2,6 +2,8 @@
 
 這份文件讓**一般使用者**能自己安裝、開啟專案、啟動服務、編譯、提交，以及在卡住時求救。進階主題（工作區清單、Agent、發版）另外放，不會擋在入門前面。
 
+文件站頂列分成四區：**使用文件**（本頁）、[產品規格](product/README.md)、[銷售套件](salekit/README.md)、API。規格裡的公司平台標「規劃」，尚未出貨。
+
 ## 我是誰、該看哪裡
 
 | 角色 | 目標 | 從這裡開始 |
@@ -11,8 +13,14 @@
 | **工作區負責人** | 讓控制台正確掃到多個倉／服務 | [工作區設定（ai-project.json）](workspace/ai-project-json.md) |
 | **團隊導入** | 帶新人走完掃描 → 編譯 → 啟動 → 求救 | [90 分鐘導入](team/trial-90min.md) |
 | **要用 Agent** | 求救後端、MCP、專案問答 | [Agent 後端](agent/backends.md) |
+<<<<<<< HEAD
 | **維護此控制台** | 從原始碼編譯、打包、發 Release、簽署 | [開發與維護](maintainer/develop.md) · [程式碼簽署與 Store](maintainer/code-signing.md) |
 | **業務／採購** | 對外部軟體公司高層說明定位與管理特色 | [銷售套件](salekit/README.md) |
+=======
+| **維護此控制台** | 從原始碼編譯、打包、發 Release | [開發與維護](maintainer/develop.md) |
+| **業務／採購** | 對外部軟體公司說明現況與規劃 | [銷售套件](salekit/README.md) |
+| **產品／實作對齊** | 軟體公司營運層要做什麼 | [產品規格](product/README.md) |
+>>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365
 
 線上版（GitHub Pages）：<https://sjvann.github.io/AI_Project_Console/>
 
@@ -31,7 +39,8 @@
 
 可選：
 
-- [銷售套件](salekit/README.md) — 經營層投影片與講者重點
+- [產品規格](product/README.md) — 買家、六大模組、UI／UX、路線圖（規劃與現況分開標）
+- [銷售套件](salekit/README.md) — 一頁紙、投影片、演示腳本、採購 FAQ
 - [部署](user/deploy.md) — 本機以外的發佈目標
 - [工作區設定](workspace/ai-project-json.md) — 服務清單與產品線
 - [MCP](agent/mcp.md) — 讓 Agent 回呼控制台
