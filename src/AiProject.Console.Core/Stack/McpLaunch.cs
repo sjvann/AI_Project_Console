@@ -92,50 +92,85 @@ public static class McpLaunch
     public static string CursorConfigPath(string projectRoot) =>
         Path.Combine(Path.GetFullPath(projectRoot), ".cursor", "mcp.json");
 
+    /// <summary>
+    /// 目前這份控制台產品的目錄（exe／dll），不是受管理專案的 <c>src</c>。
+    /// </summary>
+    public static string ProductDirectory() => Path.GetFullPath(AppContext.BaseDirectory);
+
+    public static string? FindProductHost()
+    {
+        var dir = ProductDirectory();
+        var exe = Path.Combine(dir, AppInfo.ExeName);
+        if (File.Exists(exe))
+            return exe;
+        var dll = Path.Combine(dir, Path.ChangeExtension(AppInfo.ExeName, ".dll"));
+        if (File.Exists(dll))
+            return dll;
+        return null;
+    }
+
     public static string? FindMcpProject()
     {
-        foreach (var start in new[]
-                 {
-                     AppContext.BaseDirectory,
-                     Directory.GetCurrentDirectory(),
-                 })
+        // 只從控制台產品目錄往上找本倉原始碼，不從「目前目錄／受管理專案」找，
+        // 否則相對路徑 src/AiProject.Console.Mcp 會變成對方方案的 src。
+        var dir = new DirectoryInfo(ProductDirectory());
+        while (dir is not null)
         {
-            var dir = new DirectoryInfo(start);
-            while (dir is not null)
-            {
-                var proj = Path.Combine(dir.FullName, "src", "AiProject.Console.Mcp", "AiProject.Console.Mcp.csproj");
-                if (File.Exists(proj))
-                    return Path.GetFullPath(proj);
-                dir = dir.Parent;
-            }
+            var proj = Path.Combine(dir.FullName, "src", "AiProject.Console.Mcp", "AiProject.Console.Mcp.csproj");
+            if (File.Exists(proj))
+                return Path.GetFullPath(proj);
+            dir = dir.Parent;
         }
         return null;
     }
 
     public static string? FindMcpExecutable()
     {
-        var dir = AppContext.BaseDirectory;
-        foreach (var name in new[] { "AiProject.Console.Mcp.exe", "AiProject.Console.Mcp.dll" })
+        foreach (var dir in ProductSearchDirs())
         {
-            var path = Path.Combine(dir, name);
-            if (File.Exists(path))
-                return path;
+            foreach (var name in new[] { "AiProject.Console.Mcp.exe", "AiProject.Console.Mcp.dll" })
+            {
+                var path = Path.Combine(dir, name);
+                if (File.Exists(path))
+                    return Path.GetFullPath(path);
+            }
         }
         return null;
     }
 
+    static IEnumerable<string> ProductSearchDirs()
+    {
+        var baseDir = ProductDirectory();
+        yield return baseDir;
+        var sibling = baseDir.Replace("AiProject.Console.App", "AiProject.Console.Mcp", StringComparison.OrdinalIgnoreCase);
+        if (!string.Equals(sibling, baseDir, StringComparison.OrdinalIgnoreCase))
+            yield return sibling;
+    }
+
     public static (string Command, string[] Args) ResolveLaunch(string? workspaceRoot = null)
     {
-        var rootArg = string.IsNullOrWhiteSpace(workspaceRoot) ? "${workspaceFolder}" : workspaceRoot;
+        var rootArg = string.IsNullOrWhiteSpace(workspaceRoot)
+            ? "${workspaceFolder}"
+            : Path.GetFullPath(workspaceRoot);
+
+        var host = FindProductHost();
+        if (host is not null && host.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return (host, [McpCli.Flag, "--root", rootArg]);
+        if (host is not null)
+            return ("dotnet", [host, McpCli.Flag, "--root", rootArg]);
+
         var exe = FindMcpExecutable();
         if (exe is not null && exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             return (exe, ["--root", rootArg]);
         if (exe is not null)
             return ("dotnet", [exe, "--root", rootArg]);
+
         var proj = FindMcpProject();
         if (proj is not null)
             return ("dotnet", ["run", "--project", proj, "--", "--root", rootArg]);
-        return ("dotnet", ["run", "--project", "src/AiProject.Console.Mcp", "--", "--root", rootArg]);
+
+        throw new InvalidOperationException(
+            "找不到 AI_Project 控制台 MCP。請從本控制台寫入 mcp.json，不要指向受管理專案的 src。");
     }
 
     public static string CursorSnippet(string? workspaceRoot = null)
@@ -144,18 +179,31 @@ public static class McpLaunch
         var argsArr = new JsonArray();
         foreach (var a in args)
             argsArr.Add(a);
+        var server = new JsonObject
+        {
+            ["command"] = command,
+            ["args"] = argsArr,
+            ["cwd"] = ProductDirectory(),
+        };
         var root = new JsonObject
         {
             ["mcpServers"] = new JsonObject
             {
-                [ServerId] = new JsonObject
-                {
-                    ["command"] = command,
-                    ["args"] = argsArr,
-                },
+                [ServerId] = server,
             },
         };
         return root.ToJsonString(JsonUtil.Options);
+    }
+
+    /// <summary>
+    /// 若專案已加入「本控制台」，把 command 改寫成目前這份產品（避免舊的相對 src 路徑）。
+    /// </summary>
+    public static bool TryRepairOurs(string? projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot) || !IsLinked(projectRoot, ServerId))
+            return false;
+        WriteCursorConfig(projectRoot);
+        return true;
     }
 
     public static IReadOnlyList<ProjectMcpServer> ListReferenced(string? projectRoot)
@@ -307,12 +355,15 @@ public static class McpLaunch
 
     public static string DoctorLine()
     {
+        var host = FindProductHost();
+        if (host is not null)
+            return "MCP 伺服器：本控制台 — " + host;
         var exe = FindMcpExecutable();
         if (exe is not null)
             return "MCP 伺服器：OK — " + exe;
         var proj = FindMcpProject();
         return proj is null
-            ? "MCP 伺服器：可用 `dotnet run --project src/AiProject.Console.Mcp`（設定裡可寫入 .cursor/mcp.json）"
+            ? "MCP 伺服器：請從本控制台寫入 mcp.json（指向 AI_Project 控制台，不是受管理專案的 src）"
             : "MCP 伺服器：原始碼 — " + proj;
     }
 

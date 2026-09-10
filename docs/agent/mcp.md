@@ -45,7 +45,7 @@ stdio 模式（給 IDE 用）不要加 `--invoke`：
 dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 ```
 
-已安裝的控制台寫入 mcp.json 時，會指向本機 exe／dotnet 與目前專案 `--root`，不必每天手打。
+已安裝的控制台寫入 mcp.json 時，會指向**本控制台產品**（`AI_Project_Console.exe --mcp`，或開發時 `dotnet AI_Project_Console.dll --mcp`）以及目前專案 `--root`，不會寫相對路徑 `src/AiProject.Console.Mcp`。相對 `src` 會被 Cursor 當成受管理專案的目錄。
 
 ## 建議並排的其他 MCP
 
@@ -53,7 +53,7 @@ dotnet run --project src/AiProject.Console.Mcp -- --root "${workspaceFolder}"
 
 | 加入方式 | 寫入內容 | 之後要做的事 |
 |----------|----------|----------------|
-| 本控制台 | `dotnet`／exe + `--root` | 重新載入 Cursor |
+| 本控制台 | 控制台 exe／dll + `--mcp` + 專案 `--root` | 重新載入 Cursor |
 | GitHub | `https://api.githubcopilot.com/mcp/` | 在 Cursor 或 mcp.json 補 Personal Access Token |
 | Context7 | `npx -y @upstash/context7-mcp` | 重新載入後即可查套件文件 |
 | 自訂 | 你填的 `command`＋參數，或遠端 `url` | 依該服務補權杖／環境變數 |

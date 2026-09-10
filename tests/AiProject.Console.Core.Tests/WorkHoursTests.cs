@@ -327,6 +327,37 @@ public class WorkHoursTests
     }
 
     [Fact]
+    public void Store_TwoInstances_KeepSeparateOpenProjects()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ai-hours-multi-" + Guid.NewGuid().ToString("N") + ".json");
+        var clock = At(8, 26, 9, 0);
+        try
+        {
+            var first = new WorkHoursStore(path, () => clock);
+            var second = new WorkHoursStore(path, () => clock);
+            first.SwitchProject(@"E:\proj\foo", "Foo");
+            second.SwitchProject(@"E:\proj\bar", "Bar");
+            Assert.Equal("Foo", first.Current!.Value.ProjectName);
+            Assert.Equal("Bar", second.Current!.Value.ProjectName);
+            Assert.Null(first.Current!.Value.EndedAt);
+            Assert.Null(second.Current!.Value.EndedAt);
+            clock = At(8, 26, 10, 0);
+            first.Touch();
+            Assert.Null(second.Current!.Value.EndedAt);
+            Assert.Equal("Bar", second.Current!.Value.ProjectName);
+            Assert.Equal(2, first.Sessions.Count(s => s.EndedAt is null));
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+            var lockFile = path + ".lock";
+            if (File.Exists(lockFile))
+                File.Delete(lockFile);
+        }
+    }
+
+    [Fact]
     public void Store_ReadsLegacySessionsWithoutProject()
     {
         var path = Path.Combine(Path.GetTempPath(), "ai-hours-" + Guid.NewGuid().ToString("N") + ".json");

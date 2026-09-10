@@ -1,9 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using AiProject.Console.Core.Stack;
 
-namespace AiProject.Console.Mcp;
+namespace AiProject.Console.Core.Stack;
 
 /// <summary>
 /// 最小 JSON-RPC MCP stdio（Content-Length 框架），讓 Cursor／Claude Code 呼叫堆疊工具。
@@ -77,7 +76,7 @@ public static class StdioMcpServer
     {
         protocolVersion = "2024-11-05",
         capabilities = new { tools = new { } },
-        serverInfo = new { name = "ai-project-console", version = AiProject.Console.Core.AppInfo.Version },
+        serverInfo = new { name = "ai-project-console", version = AppInfo.Version },
         instructions = "本機多服務堆疊操作台。值班先 duty_summary；修碼後 build；事故看 get_log。stop_all 必須帶 confirm=true。政策拒絕的工具不會出現在清單。",
     };
 

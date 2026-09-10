@@ -44,11 +44,14 @@ AiProject.Console.slnx
 
 動作目錄：`src/AiProject.Console.Core/Actions/actions.json`。版號來源：`src/AiProject.Console.Core/AppInfo.cs` 的 `Version`。
 
-MCP 本機除錯：
+MCP 本機除錯（獨立專案，或控制台 exe 加 `--mcp`）：
 
 ```powershell
 dotnet run --project src/AiProject.Console.Mcp -- --root . --invoke stack_status
+dotnet run --project src/AiProject.Console.App -- --mcp --root . --list-tools
 ```
+
+寫入受管理專案的 `.cursor/mcp.json` 時，會指向控制台產品（`--mcp`），`--root` 才是對方專案，不要寫相對路徑 `src/AiProject.Console.Mcp`。
 
 說明見 [MCP](../agent/mcp.md)。
 

@@ -125,7 +125,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         var installKind = SelfUpdate.DetectInstallKind();
         var agent = AgentBackendRegistry.Inspect();
         var agentCli = CommitMessageSuggester.InspectCli();
-        var mcpExe = McpLaunch.FindMcpExecutable();
+        var mcpHost = McpLaunch.FindProductHost() ?? McpLaunch.FindMcpExecutable();
         var mcpProj = McpLaunch.FindMcpProject();
         var mcpPolicy = catalog is null ? null : McpPolicy.Load(catalog.Root);
         var docfx = DocsService.InspectDocfx(catalog?.Root);
@@ -162,7 +162,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
 
         var mcpItems = new List<DoctorItem>
         {
-            McpServerItem(mcpExe, mcpProj),
+            McpServerItem(mcpHost, mcpProj),
         };
         if (mcpPolicy is not null)
         {
@@ -360,14 +360,14 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
     private static DoctorItem McpServerItem(string? exe, string? proj)
     {
         if (exe is not null)
-            return new("MCP 伺服器", "可用", DoctorLevel.Ok, exe, "正常");
+            return new("MCP 伺服器", "本控制台", DoctorLevel.Ok, exe, "正常");
         if (proj is not null)
             return new("MCP 伺服器", "開發中可用（從原始碼啟動）", DoctorLevel.Ok, proj, "正常");
         return new(
             "MCP 伺服器",
-            "可用 dotnet run",
+            "請從本控制台寫入 mcp.json",
             DoctorLevel.Info,
-            "dotnet run --project src/AiProject.Console.Mcp",
+            "指向 AI_Project 控制台（--mcp），不是受管理專案的 src",
             "可用");
     }
 

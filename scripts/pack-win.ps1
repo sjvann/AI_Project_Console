@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.6.10",
+    [string]$Version = "0.6.11",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [switch]$SkipSign,
@@ -26,7 +26,6 @@ if (-not $Iscc) {
     throw "找不到 Inno Setup（ISCC.exe）。請先安裝 Inno Setup 6 或 7：https://jrsoftware.org/isinfo.php"
 }
 
-<<<<<<< HEAD
 function Invoke-AuthenticodeSign {
     param(
         [string[]]$Files,
@@ -49,10 +48,7 @@ function Invoke-AuthenticodeSign {
     & $SignScript @signArgs
 }
 
-Write-Host "Publishing $Runtime $Configuration v$Version ..."
-=======
 Write-Host "PACK:publish"
->>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365
 if (Test-Path $PublishDir) {
     Remove-Item $PublishDir -Recurse -Force
 }
@@ -68,14 +64,11 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失敗" }
 
 Get-ChildItem $PublishDir -Recurse -Include *.pdb | Remove-Item -Force -ErrorAction SilentlyContinue
 
-<<<<<<< HEAD
 $AppExe = Join-Path $PublishDir "AI_Project_Console.exe"
 if (-not (Test-Path $AppExe)) { throw "publish 後找不到 $AppExe" }
 Invoke-AuthenticodeSign -Files @($AppExe) -CorrelationId "AI_Project_Console-$Version-$Runtime-app"
 
-=======
 Write-Host "PACK:zip"
->>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365
 $Zip = Join-Path $Root "dist\AI_Project_Console-$Version-$Runtime.zip"
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -85,13 +78,9 @@ Write-Host "PACK:installer"
 & $Iscc /Q /DMyAppVersion=$Version /DPublishDir=$PublishDir $Iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup 編譯失敗" }
 
-<<<<<<< HEAD
 $Setup = Join-Path $Root "dist\AI_Project_Console-$Version-$Runtime-setup.exe"
 if (-not (Test-Path $Setup)) { throw "Inno Setup 後找不到 $Setup" }
 Invoke-AuthenticodeSign -Files @($Setup) -CorrelationId "AI_Project_Console-$Version-$Runtime-setup"
 
-Write-Host "Done."
-=======
 Write-Host "PACK:done"
->>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365
 Get-ChildItem (Join-Path $Root "dist") -File | Select-Object Name, @{N="SizeMB";E={[math]::Round($_.Length/1MB,2)}} | Format-Table -AutoSize

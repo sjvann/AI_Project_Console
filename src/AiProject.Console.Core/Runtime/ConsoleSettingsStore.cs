@@ -85,6 +85,21 @@ public static class ConsoleSettingsStore
         Save(data);
     }
 
+    /// <summary>
+    /// 只清掉「目前這個視窗」關掉的專案，避免第二個視窗關閉時把第一個視窗的還原路徑抹掉。
+    /// </summary>
+    public static void ClearLastProjectIf(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return;
+        var last = LastProject();
+        if (last is null)
+            return;
+        if (!string.Equals(last, Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase))
+            return;
+        ClearLastProject();
+    }
+
     public static bool GetRestoreLastProject()
     {
         var data = Load();

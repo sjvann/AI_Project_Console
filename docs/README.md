@@ -13,14 +13,9 @@
 | **工作區負責人** | 讓控制台正確掃到多個倉／服務 | [工作區設定（ai-project.json）](workspace/ai-project-json.md) |
 | **團隊導入** | 帶新人走完掃描 → 編譯 → 啟動 → 求救 | [90 分鐘導入](team/trial-90min.md) |
 | **要用 Agent** | 求救後端、MCP、專案問答 | [Agent 後端](agent/backends.md) |
-<<<<<<< HEAD
 | **維護此控制台** | 從原始碼編譯、打包、發 Release、簽署 | [開發與維護](maintainer/develop.md) · [程式碼簽署與 Store](maintainer/code-signing.md) |
 | **業務／採購** | 對外部軟體公司高層說明定位與管理特色 | [銷售套件](salekit/README.md) |
-=======
-| **維護此控制台** | 從原始碼編譯、打包、發 Release | [開發與維護](maintainer/develop.md) |
-| **業務／採購** | 對外部軟體公司說明現況與規劃 | [銷售套件](salekit/README.md) |
 | **產品／實作對齊** | 軟體公司營運層要做什麼 | [產品規格](product/README.md) |
->>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365
 
 線上版（GitHub Pages）：<https://sjvann.github.io/AI_Project_Console/>
 

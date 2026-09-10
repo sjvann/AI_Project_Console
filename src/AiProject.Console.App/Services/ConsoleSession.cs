@@ -1234,10 +1234,11 @@ public sealed partial class ConsoleSession : IDisposable
                 _native.Warn($"關閉 {AgentDisplayName}", err);
         }
 
+        var closedRoot = Catalog?.Root;
         ResetToStartup();
         try
         {
-            ConsoleSettingsStore.ClearLastProject();
+            ConsoleSettingsStore.ClearLastProjectIf(closedRoot);
         }
         catch
         {
@@ -1287,6 +1288,15 @@ public sealed partial class ConsoleSession : IDisposable
             ClearIssueLists();
             ReloadLog();
             LoadAudit(reloadPolicy: true);
+            try
+            {
+                McpLaunch.TryRepairOurs(catalog.Root);
+            }
+            catch
+            {
+                // 舊 mcp.json 修補失敗不擋載入
+            }
+            RefreshMcpPrefsUi();
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             _workHours.SwitchProject(catalog.Root, catalog.Name);
             RefreshDocs();
@@ -1709,10 +1719,11 @@ public sealed partial class ConsoleSession : IDisposable
 
     private void DropProjectAfterLoginCancel()
     {
+        var closedRoot = Catalog?.Root;
         ResetToStartup();
         try
         {
-            ConsoleSettingsStore.ClearLastProject();
+            ConsoleSettingsStore.ClearLastProjectIf(closedRoot);
         }
         catch
         {
@@ -5356,7 +5367,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     private async Task RestoreLastProjectOnStartAsync()
     {
-        if (!RestoreLastProject)
+        if (!RestoreLastProject || !ConsoleProcess.IsPrimary)
             return;
         var path = ConsoleSettingsStore.LastProject();
         if (string.IsNullOrEmpty(path))
@@ -5431,5 +5442,18 @@ public sealed partial class ConsoleSession : IDisposable
             JobText = Catalog is null ? "待命" : JobText;
     }
 
-    private void Notify() => Changed?.Invoke();
+    private void Notify()
+    {
+        SyncWindowTitle();
+        Changed?.Invoke();
+    }
+
+    private void SyncWindowTitle()
+    {
+        var name = Catalog?.Name;
+        var title = string.IsNullOrWhiteSpace(name)
+            ? $"{AppInfo.Product} v{AppInfo.Version}"
+            : $"{name} · {AppInfo.Product} v{AppInfo.Version}";
+        _native.SetTitle(title);
+    }
 }

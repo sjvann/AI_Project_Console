@@ -46,4 +46,11 @@ public sealed class NativeUi
         Message(title, text, PhotinoDialogButtons.Ok, PhotinoDialogIcon.Error);
 
     public void Close() => Window?.Close();
+
+    public void SetTitle(string title)
+    {
+        if (Window is null || string.IsNullOrWhiteSpace(title))
+            return;
+        Window.SetTitle(title);
+    }
 }
