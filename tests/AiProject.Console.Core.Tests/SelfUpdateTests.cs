@@ -256,6 +256,71 @@ public class SelfUpdateTests
         finally
         {
             Directory.Delete(dir, recursive: true);
+            TryDelete(Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", Path.GetFileName(src)));
+        }
+    }
+
+    [Fact]
+    public void StageUpdateFile_SkipsCopyWhenAlreadyInStagingFolder()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(dir);
+        var src = Path.Combine(dir, "AI_Project_Console-stage-self-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe");
+        File.WriteAllText(src, "setup");
+        try
+        {
+            var staged = SelfUpdate.StageUpdateFile(src);
+            Assert.Equal(Path.GetFullPath(src), staged);
+            Assert.Equal("setup", File.ReadAllText(staged));
+        }
+        finally
+        {
+            TryDelete(src);
+        }
+    }
+
+    [Fact]
+    public void StageUpdateFile_UsesUniqueNameWhenDestLocked()
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(staging);
+        var name = "AI_Project_Console-lock-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe";
+        var dest = Path.Combine(staging, name);
+        var srcDir = Path.Combine(Path.GetTempPath(), "ai-console-stage-lock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(srcDir);
+        var src = Path.Combine(srcDir, name);
+        File.WriteAllText(src, "new");
+        File.WriteAllText(dest, "old");
+        string? staged = null;
+        try
+        {
+            using (new FileStream(dest, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                staged = SelfUpdate.StageUpdateFile(src);
+                Assert.True(File.Exists(staged));
+                Assert.NotEqual(Path.GetFullPath(dest), staged);
+                Assert.Equal("new", File.ReadAllText(staged));
+            }
+        }
+        finally
+        {
+            Directory.Delete(srcDir, recursive: true);
+            TryDelete(dest);
+            if (staged is not null)
+                TryDelete(staged);
+        }
+    }
+
+    static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception)
+        {
+            // ignore leftover temp files
         }
     }
 }
