@@ -88,7 +88,7 @@ $env:Company__Auth__LocalOwner__Password = "請改成你的長密碼"
 
 已有公司帳戶後，重啟不會覆寫密碼。
 
-本機可用 `deploy/docker-compose.yml` 起 PostgreSQL。反向代理範例：`deploy/nginx-company.conf`。
+本機可自備 PostgreSQL；生產請用反向代理終止 TLS，不要把示範密碼或加密金鑰提交進 git。
 
 ## 備份還原
 

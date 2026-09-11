@@ -2,6 +2,7 @@
 **/obj/
 **/*.user
 .vs/
+.cursor/
 **/__pycache__/
 *.pyc
 *.dll

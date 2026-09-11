@@ -15,7 +15,7 @@
 - 在倉庫根目錄執行下列指令
 
 ```powershell
-cd E:\sjvann\AI_Project_Console
+cd <倉庫根目錄>
 ```
 
 ## 1. 改版號
@@ -90,18 +90,6 @@ gh release list
 gh release view v0.3.8
 ```
 
-## 重新產生圖示（可選）
+## 圖示
 
-logo 原始檔在 `assets/brand/`。若改了主圖，可再產生 `.ico` / favicon：
-
-```powershell
-python scripts/make-icons.py
-```
-
-需要 [Pillow](https://pypi.org/project/Pillow/)。圖示會寫入：
-
-- `src/AiProject.Console.App/Assets/app.ico`（執行檔、工作列、安裝程式）
-- `src/AiProject.Console.App/wwwroot/favicon.ico`
-- `src/AiProject.Console.App/wwwroot/img/logo.svg`
-
-工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改，否則 Windows 11 可能再快取成預設圖。
+logo 原始檔在 `assets/brand/`。工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改，否則 Windows 11 可能再快取成預設圖。

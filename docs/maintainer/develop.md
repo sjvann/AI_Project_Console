@@ -2,7 +2,7 @@
 
 這頁給要改 **AI_Project 控制台本身** 的人。操作本機堆疊請回到 [使用文件](../README.md)。
 
-目前主程式為 **C# + Photino.Blazor**（跨平台桌面視窗）。倉庫根目錄仍保留 Python／Tk 對照實作，一般使用者與日常開發請用 C#。
+目前主程式為 **C# + Photino.Blazor**（跨平台桌面視窗）。
 
 ## 從原始碼執行
 
@@ -37,14 +37,6 @@ dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained 
 ```
 
 macOS／Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。此路徑不會出現在 GitHub Releases 的 Windows 安裝包流程裡。
-
-### Python 對照（舊版）
-
-```powershell
-python -m AI_Project_Console
-```
-
-不要把它當成正式產品路徑。
 
 ## 方案結構
 
@@ -94,13 +86,7 @@ dotnet run --project src/AiProject.Company.Web
 
 Windows 安裝包、升版檢查清單、GitHub Release 指令：[scripts/README.md](../../scripts/README.md) 與 [發版](release.md)。用 Azure Artifact Signing（舊稱 Trusted Signing）簽署安裝包、以及之後上 Microsoft Store：[程式碼簽署與 Microsoft Store](code-signing.md)。
 
-圖示原始檔在 `assets/brand/`。改主圖後：
-
-```powershell
-python scripts/make-icons.py
-```
-
-需要 [Pillow](https://pypi.org/project/Pillow/)。工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改。
+圖示原始檔在 `assets/brand/`。工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改。
 
 ## 設定與執行期（開發時）
 

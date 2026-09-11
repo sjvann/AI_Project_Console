@@ -49,6 +49,6 @@ title: 產品規格
 12. [技術架構](architecture.md) — 我們營運多租戶、接收 API
 13. [路線圖](roadmap.md) — 已交付／仲介第一刀／工作區／後續
 
-走讀畫面：[規劃雛型](https://github.com/sjvann/AI_Project_Console/blob/main/prototype/README.md)（兩套獨立產品：仲介、公司工作區；控制台不做雛型。原始碼在倉庫 `prototype/`，不隨文件站發布）。
+走讀畫面見 [UI／UX](ux.md)（兩套獨立產品：仲介、公司工作區；控制台不做雛型）。
 
 買家若只有五分鐘：讀 [銷售套件一頁紙](../salekit/one-pager.md)，再翻本頁的三層表。需求與驗收以 [PRD](prd.md) 為準；施工順序以 [系統執行計劃書](execution-plan.md) 為準。
