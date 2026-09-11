@@ -51,6 +51,109 @@ public class ProjectAskTests
     }
 
     [Fact]
+    public void ModelsUrl_StripsChatPath()
+    {
+        Assert.Equal("http://127.0.0.1:11434/v1/models", ProjectAskService.ModelsUrl("http://127.0.0.1:11434/v1"));
+        Assert.Equal("http://127.0.0.1:11434/v1/models", ProjectAskService.ModelsUrl("http://127.0.0.1:11434/v1/"));
+        Assert.Equal("http://127.0.0.1:11434/v1/models", ProjectAskService.ModelsUrl("http://127.0.0.1:11434/v1/chat/completions"));
+        Assert.Equal("https://api.openai.com/v1/models", ProjectAskService.ModelsUrl("https://api.openai.com/v1/models"));
+    }
+
+    [Fact]
+    public void ModelInList_MatchesTagsAndSlash()
+    {
+        Assert.True(ProjectAskService.ModelInList("llama3.2", ["llama3.2:latest"]));
+        Assert.True(ProjectAskService.ModelInList("gpt-4o-mini", ["openai/gpt-4o-mini"]));
+        Assert.False(ProjectAskService.ModelInList("llama3.2", ["qwen2.5"]));
+    }
+
+    [Fact]
+    public void Providers_MatchLocalOllama()
+    {
+        Assert.Equal("ollama", ProjectAskProviders.MatchId("http://127.0.0.1:11434/v1"));
+        Assert.Equal("ollama", ProjectAskProviders.MatchId("http://localhost:11434/v1/"));
+        Assert.Equal("openai", ProjectAskProviders.MatchId("https://api.openai.com/v1"));
+        Assert.Equal("custom", ProjectAskProviders.MatchId("https://example.internal/v1"));
+        Assert.Equal("本機 Ollama", ProjectAskProviders.TitleFor("http://127.0.0.1:11434/v1"));
+    }
+
+    [Fact]
+    public void Providers_Upsert_KeepsLatestFirst()
+    {
+        var first = ProjectAskProviders.Upsert([], "http://127.0.0.1:11434/v1", "llama3.2", null);
+        var second = ProjectAskProviders.Upsert(first, "https://api.openai.com/v1", "gpt-4o-mini", "sk-test");
+        Assert.Equal("openai", second[0].Id);
+        Assert.Equal("ollama", second[1].Id);
+        var again = ProjectAskProviders.Upsert(second, "http://127.0.0.1:11434/v1/", "llama3.1", null);
+        Assert.Equal("ollama", again[0].Id);
+        Assert.Equal("llama3.1", again[0].Model);
+        Assert.Single(again, s => s.Id == "ollama");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ListsModels_AndFlagsMissing()
+    {
+        var handler = new QueueHandler(HttpStatusCode.OK, """
+            {"data":[{"id":"llama3.2:latest"},{"id":"qwen2.5"}]}
+            """);
+        var ok = await ProjectAskService.ProbeAsync(
+            new ProjectAskOptions("http://127.0.0.1:11434/v1", "llama3.2"),
+            handler);
+        Assert.True(ok.Ok);
+        Assert.True(ok.ModelFound);
+        Assert.Contains("來源正常", ok.Message);
+        Assert.Contains("qwen2.5", ok.Models);
+
+        var missing = await ProjectAskService.ProbeAsync(
+            new ProjectAskOptions("http://127.0.0.1:11434/v1", "missing-model"),
+            handler: new QueueHandler(HttpStatusCode.OK, """
+                {"data":[{"id":"llama3.2"}]}
+                """));
+        Assert.True(missing.Ok);
+        Assert.False(missing.ModelFound);
+        Assert.Contains("沒有 missing-model", missing.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_EmptyModel_ListsWithoutFailing()
+    {
+        var result = await ProjectAskService.ProbeAsync(
+            new ProjectAskOptions("http://127.0.0.1:11434/v1", "", null),
+            handler: new QueueHandler(HttpStatusCode.OK, """{"data":[{"id":"gemma3"}]}"""));
+        Assert.True(result.Ok);
+        Assert.False(result.ModelFound);
+        Assert.Equal(["gemma3"], result.Models);
+        Assert.Contains("請從下方選一個", result.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_Unauthorized_IsFriendly()
+    {
+        var handler = new QueueHandler(HttpStatusCode.Unauthorized, """{"error":{"message":"invalid"}}""");
+        var result = await ProjectAskService.ProbeAsync(
+            new ProjectAskOptions("https://api.openai.com/v1", "gpt-4o-mini", "bad"),
+            handler);
+        Assert.False(result.Ok);
+        Assert.Contains("API key", result.Message);
+    }
+
+    [Fact]
+    public async Task ProbeAsync_FallsBackToChat_WhenModelsMissing()
+    {
+        var handler = new QueueHandler(
+            (HttpStatusCode.NotFound, """{"error":"no"}"""),
+            (HttpStatusCode.OK, """{"choices":[{"message":{"role":"assistant","content":"."}}]}"""));
+        var result = await ProjectAskService.ProbeAsync(
+            new ProjectAskOptions("http://127.0.0.1:9/v1", "test-model"),
+            handler);
+        Assert.True(result.Ok);
+        Assert.True(result.ModelFound);
+        Assert.Contains("沒有模型清單", result.Message);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("ping", handler.Requests[1]);
+    }
+
+    [Fact]
     public async Task AskAsync_CallsLocalTool_ThenReturnsText()
     {
         var root = CreateMini();
@@ -85,17 +188,30 @@ public class ProjectAskTests
 
     sealed class QueueHandler : HttpMessageHandler
     {
-        readonly Queue<string> _replies;
+        readonly Queue<(HttpStatusCode Status, string Body)> _replies;
         public List<string> Requests { get; } = [];
 
-        public QueueHandler(params string[] replies) => _replies = new Queue<string>(replies);
+        public QueueHandler(params string[] replies)
+            : this(replies.Select(r => (HttpStatusCode.OK, r)).ToArray())
+        {
+        }
+
+        public QueueHandler(HttpStatusCode status, string body)
+            : this((status, body))
+        {
+        }
+
+        public QueueHandler(params (HttpStatusCode Status, string Body)[] replies) =>
+            _replies = new Queue<(HttpStatusCode, string)>(replies);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Requests.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
+            Requests.Add(string.IsNullOrEmpty(body) ? request.RequestUri?.ToString() ?? "" : body);
+            var (status, reply) = _replies.Dequeue();
+            return new HttpResponseMessage(status)
             {
-                Content = new StringContent(_replies.Dequeue(), Encoding.UTF8, "application/json"),
+                Content = new StringContent(reply, Encoding.UTF8, "application/json"),
             };
         }
     }

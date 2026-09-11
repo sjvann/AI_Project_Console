@@ -38,7 +38,7 @@
 
 **怎麼開**
 
-1. 設定 → 專案問答：填 Base URL 與模型。本機 [Ollama](https://ollama.com/) 預設 `http://127.0.0.1:11434/v1`、模型如 `llama3.2`，API key 可空白。OpenAI／Groq 則改 URL 並填 key。
+1. 設定 → 專案問答：點來源範本（預設本機 [Ollama](https://ollama.com/)），或改填 OpenAI／Groq／OpenRouter。按「測試連線」確認來源正常後再儲存。本機 API key 可空白。
 2. 點工具列「專案問答」。可點建議題（離線／需重編／MCP 真的失敗時會置頂並標「建議」），或自己打字。
 3. 要中斷按「取消」。
 

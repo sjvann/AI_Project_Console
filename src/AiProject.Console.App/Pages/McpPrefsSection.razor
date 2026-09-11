@@ -1,3 +1,4 @@
+@using AiProject.Console.Core.Agents
 @using AiProject.Console.Core.Stack
 
 <div class="mcp-prefs">
@@ -187,19 +188,81 @@
             <strong id="ask-title">專案問答</strong>
             <span class="hint">控制台內對談 · OpenAI 相容</span>
         </div>
-        <p class="hint">工具列「專案問答」用這裡的端點回答目前專案問題，並本機呼叫值班／Log／審計工具。預設本機 Ollama；也可改成 OpenAI、Groq 或其他相容端點。</p>
+        <p class="hint">點範本帶入網址與模型，再按「測試連線」確認來源。可記住多組來源，之後一鍵切換。工具列「專案問答」用目前這組端點回答，並本機呼叫值班／Log／審計工具。</p>
+
+        <div class="field field-top">
+            <span>來源範本</span>
+            <div class="ask-provider-chips" role="list">
+                @foreach (var p in ProjectAskProviders.Catalog)
+                {
+                    <button type="button" class="ask-chip @(S.AskProviderId == p.Id ? "is-on" : null)" role="listitem"
+                            title="@p.Hint" @onclick="@(() => S.ApplyAskProvider(p.Id))">
+                        @p.Title
+                    </button>
+                }
+            </div>
+        </div>
+        <p class="hint">@ProjectAskProviders.Get(S.AskProviderId).Hint</p>
+
+        @if (S.AskSources.Count > 0)
+        {
+            <div class="field mcp-add">
+                <span>已記住</span>
+                <div class="field-inline">
+                    <select aria-label="已記住的來源" value="@S.AskActiveSourceId" @onchange="OnAskSource">
+                        @if (string.IsNullOrEmpty(S.AskActiveSourceId))
+                        {
+                            <option value="">目前尚未記住這組</option>
+                        }
+                        @foreach (var src in S.AskSources)
+                        {
+                            <option value="@src.Id">@src.Title · @src.Model</option>
+                        }
+                    </select>
+                    <button class="btn-link" type="button" disabled="@(string.IsNullOrEmpty(S.AskActiveSourceId))"
+                            @onclick="@(() => S.RemoveAskSource(S.AskActiveSourceId))">刪除</button>
+                </div>
+            </div>
+        }
+
         <div class="field">
             <span>Base URL</span>
             <input value="@S.AskBaseUrl" @oninput="OnAskUrl" placeholder="http://127.0.0.1:11434/v1" />
         </div>
         <div class="field">
             <span>API key</span>
-            <input value="@S.AskApiKey" @oninput="OnAskKey" placeholder="本機 Ollama 可空白" />
+            <input value="@S.AskApiKey" @oninput="OnAskKey" placeholder="@(ProjectAskProviders.Get(S.AskProviderId).NeedsApiKey ? "必填" : "本機可空白")" />
         </div>
         <div class="field">
             <span>模型</span>
-            <input value="@S.AskModel" @oninput="OnAskModel" placeholder="llama3.2" />
+            <input value="@S.AskModel" @oninput="OnAskModel" list="ask-models" placeholder="llama3.2" />
         </div>
+        <datalist id="ask-models">
+            @foreach (var m in S.AskModelChoices)
+            {
+                <option value="@m"></option>
+            }
+        </datalist>
+        @if (S.AskProbeModels.Count > 0)
+        {
+            <div class="ask-model-picks" role="list">
+                @foreach (var m in S.AskProbeModels.Take(8))
+                {
+                    <button type="button" class="ask-chip @(string.Equals(S.AskModel, m, StringComparison.OrdinalIgnoreCase) ? "is-on" : null)"
+                            role="listitem" @onclick="@(() => S.SetAskModel(m))">@m</button>
+                }
+            </div>
+        }
+        <div class="row ask-probe-row">
+            <button class="btn-sec" type="button" disabled="@(S.AskProbeBusy || string.IsNullOrWhiteSpace(S.AskBaseUrl))" @onclick="S.ProbeAskAsync">
+                @(S.AskProbeBusy ? "測試中…" : "測試連線")
+            </button>
+            <button class="btn-sec" type="button" disabled="@string.IsNullOrWhiteSpace(S.AskBaseUrl)" @onclick="S.RememberAskSource" title="儲存偏好設定時一併寫入">記住目前</button>
+        </div>
+        @if (!string.IsNullOrEmpty(S.AskProbeMessage))
+        {
+            <p class="hint ask-probe @S.AskProbeTone">@S.AskProbeMessage</p>
+        }
     </section>
     }
 </div>
@@ -228,9 +291,11 @@
     void OnToolAccess(string name, ChangeEventArgs e) =>
         S.SetMcpToolAccess(name, e.Value?.ToString() ?? "allow");
 
-    void OnAskUrl(ChangeEventArgs e) => S.AskBaseUrl = e.Value?.ToString() ?? "";
+    void OnAskUrl(ChangeEventArgs e) => S.SetAskBaseUrl(e.Value?.ToString() ?? "");
 
-    void OnAskKey(ChangeEventArgs e) => S.AskApiKey = e.Value?.ToString() ?? "";
+    void OnAskKey(ChangeEventArgs e) => S.SetAskApiKey(e.Value?.ToString() ?? "");
 
-    void OnAskModel(ChangeEventArgs e) => S.AskModel = e.Value?.ToString() ?? "";
+    void OnAskModel(ChangeEventArgs e) => S.SetAskModel(e.Value?.ToString() ?? "");
+
+    void OnAskSource(ChangeEventArgs e) => S.ApplyAskSource(e.Value?.ToString());
 }

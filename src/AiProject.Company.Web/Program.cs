@@ -24,7 +24,10 @@ builder.Services.AddAuthentication(options =>
         options.AccessDeniedPath = "/denied";
         options.Cookie.Name = "aiproject.company";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
     });
 
 var app = builder.Build();
@@ -41,7 +44,8 @@ app.UseAuthorization();
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
-app.MapOpenApi();
+if (app.Environment.IsDevelopment())
+    app.MapOpenApi();
 app.MapGet("/health", async (CompanyDbContext db) =>
 {
     var ok = await db.Database.CanConnectAsync();

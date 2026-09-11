@@ -1,3 +1,4 @@
+using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Runtime;
 
 namespace AiProject.Console.Core.Tests;
@@ -64,6 +65,23 @@ public class ConsoleSettingsStoreTests
             string.Equals(p, Path.GetFullPath(current), StringComparison.OrdinalIgnoreCase));
         Assert.Equal(Path.GetFullPath(current), selected);
         Assert.NotEqual(Path.GetFullPath(other), selected);
+    }
+
+    [Fact]
+    public void AskSources_RoundTrip()
+    {
+        using var scope = SettingsScope.Create();
+        ConsoleSettingsStore.SetAskSources(
+        [
+            new ProjectAskSource("ollama", "本機 Ollama", "http://127.0.0.1:11434/v1", "llama3.2"),
+            new ProjectAskSource("openai", "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", "sk-test"),
+        ]);
+        var loaded = ConsoleSettingsStore.GetAskSources();
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal("ollama", loaded[0].Id);
+        Assert.Equal("sk-test", loaded[1].ApiKey);
+        ConsoleSettingsStore.SetAskSources([]);
+        Assert.Empty(ConsoleSettingsStore.GetAskSources());
     }
 
     sealed class SettingsScope : IDisposable

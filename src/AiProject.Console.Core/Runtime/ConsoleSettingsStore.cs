@@ -292,6 +292,20 @@ public static class ConsoleSettingsStore
 
     public static void SetAskModel(string? value) => SetOptionalString("askModel", value);
 
+    public static IReadOnlyList<ProjectAskSource> GetAskSources() =>
+        ProjectAskProviders.Parse(Load()["askSources"]);
+
+    public static void SetAskSources(IReadOnlyList<ProjectAskSource> sources)
+    {
+        Mutate(data =>
+        {
+            if (sources.Count == 0)
+                data.Remove("askSources");
+            else
+                data["askSources"] = ProjectAskProviders.ToJson(sources);
+        });
+    }
+
     static void SetOptionalString(string key, string? value)
     {
         Mutate(data =>

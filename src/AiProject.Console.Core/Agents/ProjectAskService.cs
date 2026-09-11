@@ -10,6 +10,12 @@ public sealed record ProjectAskOptions(string BaseUrl, string Model, string? Api
 
 public sealed record ProjectAskChatItem(string Role, string Text, string? Tool = null);
 
+public sealed record ProjectAskProbeResult(
+    bool Ok,
+    bool ModelFound,
+    string Message,
+    IReadOnlyList<string> Models);
+
 /// <summary>
 /// 控制台內專案問答：OpenAI 相容 HTTP + 本機唯讀堆疊工具。不佔用桌面 JobBusy。
 /// </summary>
@@ -28,6 +34,78 @@ public static class ProjectAskService
         if (u.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
             return u;
         return u + "/chat/completions";
+    }
+
+    public static string ModelsUrl(string baseUrl)
+    {
+        var u = (baseUrl ?? "").Trim().TrimEnd('/');
+        if (u.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+            u = u[..^"/chat/completions".Length].TrimEnd('/');
+        if (u.EndsWith("/models", StringComparison.OrdinalIgnoreCase))
+            return u;
+        return u + "/models";
+    }
+
+    public static bool ModelInList(string? model, IReadOnlyList<string> models)
+    {
+        var m = (model ?? "").Trim();
+        if (string.IsNullOrEmpty(m) || models.Count == 0)
+            return false;
+        foreach (var id in models)
+        {
+            if (id.Equals(m, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (id.StartsWith(m + ":", StringComparison.OrdinalIgnoreCase))
+                return true;
+            var slash = id.LastIndexOf('/');
+            if (slash >= 0 && id[(slash + 1)..].Equals(m, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>測 OpenAI 相容端點：先 GET /models，不行再送極短 chat。</summary>
+    public static async Task<ProjectAskProbeResult> ProbeAsync(
+        ProjectAskOptions options,
+        HttpMessageHandler? handler = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(options.BaseUrl))
+            return new ProjectAskProbeResult(false, false, "請先填 Base URL。", []);
+
+        using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+        client.Timeout = TimeSpan.FromSeconds(8);
+        try
+        {
+            var listed = await TryListModelsAsync(client, options, ct).ConfigureAwait(false);
+            if (listed is not null)
+                return listed;
+            if (string.IsNullOrWhiteSpace(options.Model))
+                return Fail("此端點沒有模型清單。請填模型名稱後再測。");
+
+            await PingChatAsync(client, options, ct).ConfigureAwait(false);
+            return new ProjectAskProbeResult(
+                true,
+                true,
+                "來源正常 · 端點有回應，但沒有模型清單，請自行確認模型名稱。",
+                []);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return Fail("連線逾時。本機請確認服務已啟動；雲端請檢查網址。");
+        }
+        catch (HttpRequestException ex)
+        {
+            return Fail(FormatHttpError(options.BaseUrl, ex));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Fail(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
     }
 
     public static IReadOnlyList<StackToolSpec> AskTools =>
@@ -224,4 +302,126 @@ public static class ProjectAskService
 
     static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";
+
+    static async Task<ProjectAskProbeResult?> TryListModelsAsync(
+        HttpClient client,
+        ProjectAskOptions options,
+        CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, ModelsUrl(options.BaseUrl));
+        if (!string.IsNullOrWhiteSpace(options.ApiKey))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey.Trim());
+        using var res = await client.SendAsync(req, ct).ConfigureAwait(false);
+        var raw = await res.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if ((int)res.StatusCode is 404 or 405)
+            return null;
+        if (!res.IsSuccessStatusCode)
+            throw new InvalidOperationException(FormatStatusError((int)res.StatusCode, raw));
+        JsonObject? obj;
+        try { obj = JsonNode.Parse(raw) as JsonObject; }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new InvalidOperationException("模型清單不是 JSON 物件。");
+        }
+        if (obj is null)
+            throw new InvalidOperationException("模型清單不是 JSON 物件。");
+        if (obj["error"] is JsonObject err)
+            throw new InvalidOperationException(JsonUtil.Str(err["message"]) is { Length: > 0 } msg ? msg : err.ToJsonString());
+
+        var models = ParseModelIds(obj);
+        var wanted = options.Model.Trim();
+        var found = ModelInList(wanted, models);
+        if (models.Count == 0)
+        {
+            return new ProjectAskProbeResult(
+                true,
+                false,
+                "來源正常 · 已連上，但清單是空的。請確認該端點已載入模型。",
+                []);
+        }
+
+        var sample = string.Join("、", models.Take(4));
+        if (string.IsNullOrEmpty(wanted))
+        {
+            return new ProjectAskProbeResult(
+                true,
+                false,
+                $"來源正常 · 已連上，共 {models.Count} 個模型。請從下方選一個。",
+                models);
+        }
+        if (found)
+        {
+            return new ProjectAskProbeResult(
+                true,
+                true,
+                $"來源正常 · 已連上，清單含 {wanted}（共 {models.Count} 個）。",
+                models);
+        }
+
+        return new ProjectAskProbeResult(
+            true,
+            false,
+            $"已連上，但清單沒有 {wanted}。可改選下方模型，或先 pull。目前例如：{sample}",
+            models);
+    }
+
+    static async Task PingChatAsync(HttpClient client, ProjectAskOptions options, CancellationToken ct)
+    {
+        var url = ChatCompletionsUrl(options.BaseUrl);
+        var body = new JsonObject
+        {
+            ["model"] = options.Model.Trim(),
+            ["messages"] = new JsonArray { Msg("user", "ping") },
+            ["max_tokens"] = 1,
+        };
+        await PostChatAsync(client, url, options.ApiKey, body, ct).ConfigureAwait(false);
+    }
+
+    static IReadOnlyList<string> ParseModelIds(JsonObject obj)
+    {
+        var ids = new List<string>();
+        var data = obj["data"] as JsonArray ?? obj["models"] as JsonArray;
+        if (data is null)
+            return ids;
+        foreach (var node in data)
+        {
+            var id = node is JsonObject item
+                ? JsonUtil.Pick(JsonUtil.Str(item["id"]), JsonUtil.Str(item["name"]))
+                : JsonUtil.Str(node);
+            if (!string.IsNullOrEmpty(id))
+                ids.Add(id);
+        }
+        return ids
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    static ProjectAskProbeResult Fail(string message) =>
+        new(false, false, message, []);
+
+    static string FormatStatusError(int status, string raw)
+    {
+        var detail = Truncate(raw.Trim(), 180);
+        return status switch
+        {
+            401 or 403 => "API key 被拒。雲端請填正確金鑰；本機 Ollama 通常可留空。",
+            404 => "端點沒有模型清單（HTTP 404）。請確認 Base URL 是否含 /v1。",
+            _ => $"模型 HTTP {status}：{detail}",
+        };
+    }
+
+    static string FormatHttpError(string baseUrl, HttpRequestException ex)
+    {
+        var host = Uri.TryCreate((baseUrl ?? "").Trim(), UriKind.Absolute, out var uri) ? uri.Host : baseUrl;
+        var text = ex.InnerException?.Message ?? ex.Message;
+        if (text.Contains("refused", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("actively refused", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("無法連線", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("連線嘗試失敗", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"連不上 {host}。本機 Ollama 請先啟動；LM Studio 請開啟本機伺服器。";
+        }
+        return $"連不上 {host}：{Truncate(text, 180)}";
+    }
 }
