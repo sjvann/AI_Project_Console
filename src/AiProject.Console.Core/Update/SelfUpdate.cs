@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
@@ -147,8 +148,7 @@ public static class SelfUpdate
         IProgress<string>? progress = null,
         CancellationToken ct = default)
     {
-        var dir = StagingDirectory();
-        var dest = AllocateStagingPath(Path.GetFileName(asset.Name));
+        var dest = ReserveUpdatePath(asset.Name);
 
         if (CliUtil.CommandExists("gh"))
         {
@@ -158,18 +158,8 @@ public static class SelfUpdate
                 "release", "download", update.Tag,
                 "--repo", AppInfo.GitHubSlug,
                 "--pattern", asset.Name,
-                "--clobber",
+                "--output", dest,
             };
-            if (PathsEqual(dest, Path.Combine(dir, Path.GetFileName(asset.Name))))
-            {
-                args.Add("--dir");
-                args.Add(dir);
-            }
-            else
-            {
-                args.Add("--output");
-                args.Add(dest);
-            }
             var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
                 "gh",
                 args,
@@ -257,7 +247,7 @@ public static class SelfUpdate
             Thread.Sleep(400);
             return pid;
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
             throw new InvalidOperationException(
                 "無法啟動安裝程式：暫存安裝檔被其他程式占用（常見於防毒軟體掃描）。請關閉控制台後，改從 GitHub Releases 手動執行 setup.exe。\n" + ex.Message,
@@ -265,29 +255,29 @@ public static class SelfUpdate
         }
     }
 
+    public static string ReserveUpdatePath(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("安裝檔名是空的。");
+        var dest = Path.Combine(StagingDirectory(), name);
+        if (!File.Exists(dest))
+            return dest;
+        if (TryRetireFile(dest))
+            return dest;
+        return Path.Combine(StagingDirectory(), Guid.NewGuid().ToString("N")[..8] + "-" + name);
+    }
+
     public static string StageUpdateFile(string path)
     {
         var src = Path.GetFullPath(path);
         if (!File.Exists(src))
             throw new InvalidOperationException("找不到檔案：" + src);
-        var dest = Path.Combine(StagingDirectory(), Path.GetFileName(src));
-        // Download already writes into this folder. Copying a file onto itself on Windows
-        // throws IOException: "The process cannot access the file because it is being used by another process."
-        if (PathsEqual(src, dest))
-        {
-            TryUnblock(src);
-            return src;
-        }
 
-        try
-        {
-            File.Copy(src, dest, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            dest = AllocateStagingPath(Path.GetFileName(src), forceUnique: true);
-            File.Copy(src, dest, overwrite: true);
-        }
+        // Never copy onto the download itself. Same-path File.Copy on Windows throws
+        // "The process cannot access the file because it is being used by another process."
+        var dest = AllocateRunPath(Path.GetFileName(src));
+        CopyWithRetry(src, dest);
         TryUnblock(dest);
         return dest;
     }
@@ -421,24 +411,56 @@ public static class SelfUpdate
         return dir;
     }
 
-    private static string AllocateStagingPath(string fileName, bool forceUnique = false)
+    private static string AllocateRunPath(string fileName)
     {
-        var dir = StagingDirectory();
-        var dest = Path.Combine(dir, fileName);
-        if (!forceUnique && (!File.Exists(dest) || TryDeleteFile(dest)))
-            return dest;
-        return Path.Combine(dir, Guid.NewGuid().ToString("N")[..8] + "-" + fileName);
+        var dir = Path.Combine(StagingDirectory(), "run-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, fileName);
     }
 
-    private static bool TryDeleteFile(string path)
+    private static void CopyWithRetry(string src, string dest)
     {
+        if (PathsEqual(src, dest))
+            dest = AllocateRunPath(Path.GetFileName(src));
+
+        Exception? last = null;
         for (var i = 0; i < 8; i++)
         {
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(src, dest, overwrite: false);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                last = ex;
+                dest = AllocateRunPath(Path.GetFileName(src));
+                Thread.Sleep(150);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "無法複製安裝檔（檔案被占用）。請關閉控制台後，改從 GitHub Releases 手動執行 setup.exe。",
+            last);
+    }
+
+    private static bool TryRetireFile(string path)
+    {
+        var dir = Path.GetDirectoryName(path);
+        var name = Path.GetFileNameWithoutExtension(path);
+        var ext = Path.GetExtension(path);
+        if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(name))
+            return false;
+
+        for (var i = 0; i < 8; i++)
+        {
+            var retired = Path.Combine(dir, name + ".old-" + Guid.NewGuid().ToString("N")[..8] + ext);
+            try
+            {
                 if (!File.Exists(path))
                     return true;
-                File.Delete(path);
+                File.Move(path, retired);
                 return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
