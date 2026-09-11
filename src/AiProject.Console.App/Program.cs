@@ -5,6 +5,7 @@ using Photino.NET;
 using AiProject.Console.App.Services;
 using AiProject.Console.CompanyClient;
 using AiProject.Console.Core;
+using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Stack;
 
 namespace AiProject.Console.App;
@@ -33,6 +34,7 @@ internal static class Program
         }
 
         Win32WindowIcon.BindProcessIdentity();
+        LockedOutput.Sweep(AppContext.BaseDirectory);
         var webViewDir = ConsoleProcess.Register();
 
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);

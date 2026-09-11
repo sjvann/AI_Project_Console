@@ -21,6 +21,8 @@
     <UseAppHost>false</UseAppHost>
   </PropertyGroup>
 
+  <Import Project="UnlockLockedOutputs.targets" />
+
   <ItemGroup>
     <PackageReference Include="Markdig" Version="0.41.3" />
     <PackageReference Include="Photino.Blazor" Version="4.0.13" />
