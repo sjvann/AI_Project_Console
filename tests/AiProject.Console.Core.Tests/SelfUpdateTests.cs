@@ -343,6 +343,9 @@ public class SelfUpdateTests
     [Fact]
     public void ReserveUpdatePath_UsesNewNameWhenOldLocked()
     {
+        if (!OperatingSystem.IsWindows())
+            return;
+
         var staging = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
         Directory.CreateDirectory(staging);
         var name = "AI_Project_Console-lockres-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe";
