@@ -346,6 +346,7 @@ public sealed record ReleaseRequest(
     bool Prerelease = false,
     bool GenerateNotes = true,
     bool MakeLatest = true,
+    bool IncludeSource = false,
     IReadOnlyList<string>? Assets = null);
 
 public static class GitHubService
@@ -1335,16 +1336,16 @@ public static class GitHubService
             args.Add("--prerelease");
         if (!req.Draft)
             args.Add(req.MakeLatest && !req.Prerelease ? "--latest" : "--latest=false");
-        foreach (var asset in req.Assets ?? [])
+
+        var assets = await PrepareReleaseAssetsAsync(catalog, req, cfg, progress).ConfigureAwait(false);
+        foreach (var asset in assets)
         {
-            if (string.IsNullOrWhiteSpace(asset))
-                continue;
             if (!File.Exists(asset))
                 throw new InvalidOperationException("找不到附加檔案：" + asset);
             args.Add(asset);
         }
 
-        var hasAssets = req.Assets is { Count: > 0 };
+        var hasAssets = assets.Count > 0;
         progress?.Report(ReleaseRunState.StageLine(
             "upload",
             hasAssets ? "正在建立 GitHub Release 並上傳安裝包…" : "正在建立 GitHub Release…"));
@@ -1360,6 +1361,29 @@ public static class GitHubService
         return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
     }
 
+    public static async Task<IReadOnlyList<string>> PrepareReleaseAssetsAsync(
+        ProjectCatalog catalog,
+        ReleaseRequest req,
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
+    {
+        var assets = ReleaseSource.SelectUploadAssets(req.Assets, req.IncludeSource).ToList();
+        if (!req.IncludeSource || assets.Any(ReleaseSource.IsSourceAsset))
+            return assets;
+
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var tag = (req.Tag ?? "").Trim();
+        if (ReleaseVersion.TryParse(tag, out var parsed))
+            tag = string.IsNullOrEmpty(parsed.Prefix) ? "v" + parsed.ToTag() : parsed.ToTag();
+        var repo = string.IsNullOrWhiteSpace(cfg.Repo)
+            ? Path.GetFileName(Path.GetFullPath(catalog.Root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            : cfg.Repo;
+        var dest = Path.Combine(Path.GetTempPath(), "ai-project-release", ReleaseSource.FileName(repo, tag));
+        var committish = string.IsNullOrWhiteSpace(req.Target) ? "HEAD" : req.Target.Trim();
+        assets.Add(await ReleaseSource.ArchiveAsync(catalog.Root, tag, dest, committish, progress).ConfigureAwait(false));
+        return assets;
+    }
+
     public static async Task<string> PublishReleaseAsync(
         ProjectCatalog catalog,
         ReleaseRequest req,
@@ -1370,10 +1394,15 @@ public static class GitHubService
         {
             return await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (LooksLikeReleaseExists(ex.Message) && req.Assets is { Count: > 0 })
+        catch (InvalidOperationException ex) when (
+            LooksLikeReleaseExists(ex.Message)
+            && (req.IncludeSource || req.Assets is { Count: > 0 }))
         {
+            var assets = await PrepareReleaseAssetsAsync(catalog, req, cfg, progress).ConfigureAwait(false);
+            if (assets.Count == 0)
+                throw;
             progress?.Report(ReleaseRunState.StageLine("upload", "Release 已存在，改為補上傳安裝包…"));
-            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, req.Assets, cfg, progress).ConfigureAwait(false);
+            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, assets, cfg, progress).ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(uploaded)
                 ? $"Release {req.Tag.Trim()} 已存在，已補上安裝包。"
                 : uploaded;

@@ -260,6 +260,7 @@ public sealed partial class ConsoleSession : IDisposable
     public bool ReleasePrerelease { get; set; }
     public bool ReleaseGenerateNotes { get; set; } = true;
     public bool ReleaseMakeLatest { get; set; } = true;
+    public bool ReleaseIncludeSource { get; set; }
     public List<string> ReleaseAssets { get; } = [];
     public bool ReleasePackable { get; private set; }
     public bool ReleaseHasSetup => ConsoleReleasePack.HasSetupAsset(ReleaseAssets);
@@ -3579,6 +3580,9 @@ public sealed partial class ConsoleSession : IDisposable
         var extra = ConsoleReleasePack.RequiresInstaller(packable, draft)
             ? "\n\n會附加 Windows 安裝包（沒有則先打包，並把版號寫進 AppInfo 等檔案）。畫面會顯示步驟與紀錄，編譯可能要數分鐘。已安裝使用者才能自動啟動安裝程式。"
             : "";
+        extra += ReleaseIncludeSource
+            ? "\n會另外上傳原始碼 zip（git archive）。"
+            : "\n不另傳原始碼壓縮檔。GitHub 頁面底部仍可能顯示 Source code 連結（平台無法關閉）。";
         if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}{extra}\n\n確定發行？"))
             return;
         var notes = ReleaseNotes;
@@ -3587,6 +3591,7 @@ public sealed partial class ConsoleSession : IDisposable
         var prerelease = ReleasePrerelease;
         var generateNotes = ReleaseGenerateNotes;
         var makeLatest = ReleaseMakeLatest;
+        var includeSource = ReleaseIncludeSource;
         var run = needsPack ? ReleaseRunState.PackAndPublish() : ReleaseRunState.PublishOnly();
         var ok = await RunReleaseProgressAsync(run, returnDialog: null, fn: async progress =>
         {
@@ -3607,6 +3612,7 @@ public sealed partial class ConsoleSession : IDisposable
                 if (!ConsoleReleasePack.HasSetupAsset(assets))
                     throw new InvalidOperationException("正式發行此控制台必須附加 *-win-x64-setup.exe，否則已安裝使用者的自動更新會改開 GitHub 頁。");
             }
+            notes = ReleaseSource.MergeNotes(notes, includeSource);
             var req = new ReleaseRequest(
                 Tag: tag,
                 Title: title,
@@ -3616,6 +3622,7 @@ public sealed partial class ConsoleSession : IDisposable
                 Prerelease: prerelease,
                 GenerateNotes: generateNotes,
                 MakeLatest: makeLatest,
+                IncludeSource: includeSource,
                 Assets: assets);
             return await GitHubService.PublishReleaseAsync(Catalog, req, progress: progress).ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -4327,6 +4334,7 @@ public sealed partial class ConsoleSession : IDisposable
         ReleasePrerelease = false;
         ReleaseGenerateNotes = true;
         ReleaseMakeLatest = true;
+        ReleaseIncludeSource = false;
         ReleaseAssets.Clear();
         ReleasePackable = ConsoleReleasePack.LooksPackable(Catalog!.Root);
         ReleaseLatestTag = "";
@@ -4357,6 +4365,7 @@ public sealed partial class ConsoleSession : IDisposable
         ReleasePrerelease = false;
         ReleaseGenerateNotes = true;
         ReleaseMakeLatest = true;
+        ReleaseIncludeSource = false;
         ReleaseAssets.Clear();
         ReleaseHint = inspect.Summary;
         AttachReleaseDistAssets();
@@ -5332,6 +5341,7 @@ public sealed partial class ConsoleSession : IDisposable
         ReleasePrerelease = false;
         ReleaseGenerateNotes = true;
         ReleaseMakeLatest = true;
+        ReleaseIncludeSource = false;
         ReleasePackable = false;
         ReleaseAssets.Clear();
         _pendingOpenCursor = false;
