@@ -103,9 +103,10 @@ public sealed class WorkHoursStore
     {
         lock (_gate)
         {
+            using var fileLock = AcquireLock();
             ReloadUnlocked();
             CloseOpenSessions(at: null);
-            return StartUnlocked(personKey, personLabel, projectRoot, projectName, githubSlug, closeAt: null);
+            return StartUnlocked(personKey, personLabel, projectRoot, projectName, githubSlug);
         }
     }
 
@@ -119,6 +120,7 @@ public sealed class WorkHoursStore
             var root = WorkHoursProject.NormalizeRoot(projectRoot);
             if (string.IsNullOrEmpty(root))
                 throw new ArgumentException("專案路徑不可為空。", nameof(projectRoot));
+            using var fileLock = AcquireLock();
             ReloadUnlocked();
             if (_current is { } current && WorkHoursProject.SameProject(current, root, githubSlug))
             {
@@ -136,7 +138,27 @@ public sealed class WorkHoursStore
                 return updated;
             }
 
-            return StartUnlocked(null, null, root, projectName, githubSlug, closeAt: _now());
+            if (_current is { } mine)
+                CloseSession(mine.Id, _now());
+
+            foreach (var session in _sessions)
+            {
+                if (session.EndedAt is not null)
+                    continue;
+                if (!WorkHoursProject.SameProject(session, root, githubSlug))
+                    continue;
+                var claimed = session with
+                {
+                    ProjectRoot = string.IsNullOrWhiteSpace(session.ProjectRoot) ? root : session.ProjectRoot,
+                    ProjectName = string.IsNullOrWhiteSpace(projectName) ? session.ProjectName : projectName.Trim(),
+                    GithubSlug = string.IsNullOrWhiteSpace(githubSlug) ? session.GithubSlug : githubSlug.Trim(),
+                };
+                ReplaceCurrent(claimed);
+                Persist();
+                return claimed;
+            }
+
+            return StartUnlocked(null, null, root, projectName, githubSlug);
         }
     }
 
@@ -144,6 +166,8 @@ public sealed class WorkHoursStore
     {
         lock (_gate)
         {
+            using var fileLock = AcquireLock();
+            ReloadUnlocked();
             if (_current is null || string.IsNullOrWhiteSpace(githubSlug))
                 return;
             if (!WorkHoursProject.SameRoot(_current.Value.ProjectRoot, projectRoot))
@@ -163,6 +187,8 @@ public sealed class WorkHoursStore
     {
         lock (_gate)
         {
+            using var fileLock = AcquireLock();
+            ReloadUnlocked();
             if (string.IsNullOrWhiteSpace(personKey))
                 return;
             ApplyPerson(personKey, personLabel);
@@ -186,6 +212,8 @@ public sealed class WorkHoursStore
     {
         lock (_gate)
         {
+            using var fileLock = AcquireLock();
+            ReloadUnlocked();
             if (_current is null)
                 return;
             var now = _now();
@@ -198,6 +226,8 @@ public sealed class WorkHoursStore
     {
         lock (_gate)
         {
+            using var fileLock = AcquireLock();
+            ReloadUnlocked();
             if (_current is null)
                 return;
             var now = _now();
@@ -215,6 +245,7 @@ public sealed class WorkHoursStore
 
     void ReloadUnlocked()
     {
+        var ownedId = _current?.Id;
         _sessions.Clear();
         _current = null;
         var data = JsonUtil.LoadObject(_path);
@@ -234,10 +265,15 @@ public sealed class WorkHoursStore
             if (session is not null)
                 _sessions.Add(session.Value);
         }
+        if (string.IsNullOrEmpty(ownedId))
+            return;
         foreach (var session in _sessions)
         {
-            if (session.EndedAt is null)
+            if (session.Id == ownedId && session.EndedAt is null)
+            {
                 _current = session;
+                return;
+            }
         }
     }
 
@@ -246,10 +282,8 @@ public sealed class WorkHoursStore
         string? personLabel,
         string? projectRoot,
         string? projectName,
-        string? githubSlug,
-        DateTimeOffset? closeAt)
+        string? githubSlug)
     {
-        CloseOpenSessions(closeAt);
         ApplyPerson(personKey, personLabel);
         var now = _now();
         var root = WorkHoursProject.NormalizeRoot(projectRoot);
@@ -281,6 +315,58 @@ public sealed class WorkHoursStore
             _sessions[i] = session with { EndedAt = closed, LastSeenAt = closed };
         }
         _current = null;
+    }
+
+    void CloseSession(string id, DateTimeOffset at)
+    {
+        for (var i = 0; i < _sessions.Count; i++)
+        {
+            var session = _sessions[i];
+            if (session.Id != id || session.EndedAt is not null)
+                continue;
+            var closed = at < session.StartedAt ? session.StartedAt : at;
+            _sessions[i] = session with { EndedAt = closed, LastSeenAt = closed };
+        }
+        if (_current?.Id == id)
+            _current = null;
+    }
+
+    FileStream? TryOpenLock()
+    {
+        var dir = Path.GetDirectoryName(_path);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        var lockPath = _path + ".lock";
+        for (var i = 0; i < 80; i++)
+        {
+            try
+            {
+                return new FileStream(
+                    lockPath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    FileOptions.DeleteOnClose);
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(25);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    IDisposable AcquireLock() => (IDisposable?)TryOpenLock() ?? NoopLock.Instance;
+
+    sealed class NoopLock : IDisposable
+    {
+        public static readonly NoopLock Instance = new();
+        public void Dispose() { }
     }
 
     void ReplaceCurrent(WorkSession session)

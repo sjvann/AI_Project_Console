@@ -9,12 +9,13 @@
 ## 前置需求
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [Inno Setup 6](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，用於 `*-setup.exe`）
+- [Inno Setup 6 或 7](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，用於 `*-setup.exe`）
 - [GitHub CLI](https://cli.github.com/) 已登入：`gh auth login`
+- （可選）Azure Artifact Signing：`.NET 8 Runtime`、`az login`、`installer/windows/trusted-signing.json`。見 [程式碼簽署](../docs/maintainer/code-signing.md)
 - 在倉庫根目錄執行下列指令
 
 ```powershell
-cd E:\sjvann\AI_Project_Console
+cd <倉庫根目錄>
 ```
 
 ## 1. 改版號
@@ -49,6 +50,8 @@ powershell -ExecutionPolicy Bypass -File scripts/pack-win.ps1 -Version 0.3.8
 - `AI_Project_Console-0.3.8-win-x64-setup.exe`：安裝程式（開始選單捷徑，可選桌面捷徑）
 - `AI_Project_Console-0.3.8-win-x64.zip`：免安裝壓縮包，解壓後執行 `AI_Project_Console.exe`
 
+已設定 Azure Artifact Signing 時，主程式與 setup.exe 會一併簽署。正式發行請加 `-RequireSign`；本機試包可加 `-SkipSign`。步驟見 [程式碼簽署](../docs/maintainer/code-signing.md)。
+
 只產生單檔執行檔（不經 Inno Setup）可用：
 
 ```powershell
@@ -56,6 +59,8 @@ dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained 
 ```
 
 macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
+
+也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節打包，並把兩個檔附上 Release。畫面會顯示步驟與紀錄（編譯可能要數分鐘）。沒有 `*-win-x64-setup.exe` 時，已安裝使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。
 
 ## 4. 建立 GitHub Release
 
@@ -85,18 +90,6 @@ gh release list
 gh release view v0.3.8
 ```
 
-## 重新產生圖示（可選）
+## 圖示
 
-logo 原始檔在 `assets/brand/`。若改了主圖，可再產生 `.ico` / favicon：
-
-```powershell
-python scripts/make-icons.py
-```
-
-需要 [Pillow](https://pypi.org/project/Pillow/)。圖示會寫入：
-
-- `src/AiProject.Console.App/Assets/app.ico`（執行檔、工作列、安裝程式）
-- `src/AiProject.Console.App/wwwroot/favicon.ico`
-- `src/AiProject.Console.App/wwwroot/img/logo.svg`
-
-工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改，否則 Windows 11 可能再快取成預設圖。
+logo 原始檔在 `assets/brand/`。工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改，否則 Windows 11 可能再快取成預設圖。

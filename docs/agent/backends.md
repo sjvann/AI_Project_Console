@@ -8,7 +8,7 @@
 
 | 後端 | 類型 | 求救時做什麼 |
 |------|------|----------------|
-| Cursor（預設） | 本機 IDE | 開專案 + `cursor://` deeplink（New Agent） |
+| Cursor（預設） | 本機 IDE | 開啟／聚焦**這個方案**的視窗（一份 Cursor、多視窗）+ `cursor://` deeplink（New Agent） |
 | Claude Code | 本機 CLI | `claude-cli://open?cwd=&q=` |
 | Aider | 本機 CLI | 新終端機 `aider --message`／`--message-file` |
 | OpenAI Codex CLI | 本機 CLI | 新終端機 `codex`／`codex exec` |
@@ -18,7 +18,7 @@
 
 自動偵測失敗時，在設定填「CLI 路徑覆寫」。自訂命令再填可執行檔與參數範本。
 
-「關閉專案」或「離開」時，若目前後端會開本機 IDE／終端機，會詢問是否一併關閉該應用程式（對話框使用目前後端名稱）。雲端後端不詢問。
+「關閉專案」或「離開」時，若目前後端會開本機 IDE／終端機，會詢問是否一併關閉。IDE（Cursor／VS Code／Windsurf）只關**這個專案的視窗**，其他專案的視窗不受影響；CLI 終端機仍關閉該次開啟的應用。雲端後端不詢問。
 
 ## 什麼時候會叫後端
 

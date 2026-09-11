@@ -9,7 +9,7 @@
         <span class="grow"></span>
         @if (S.GithubLoggedIn)
         {
-            <span class="gh-id" title="目前遠端帳號">
+            <span class="gh-id is-@S.GithubStatusTone" title="@S.GithubStatusTitle">
                 <span class="gh-id-dot" aria-hidden="true"></span>
                 <span>@S.GithubAccountText</span>
             </span>
@@ -23,7 +23,7 @@
         }
         <button type="button" class="btn-sec" @onclick="S.CloseGithubHub">收合</button>
     </div>
-    <p class="gh-hub-advice" role="status">@S.GithubNext.Hint</p>
+    <p class="gh-hub-advice" role="status">@(S.JobBusy ? $"忙碌中：{S.JobText}" : S.GithubNext.Hint)</p>
     <div class="gh-hub-lanes">
         @foreach (var lane in GithubActionLanes.All)
         {
@@ -35,6 +35,7 @@
                     <button type="button"
                             class="@(a.Handler == S.GithubNext.Handler ? "is-cta" : null)"
                             disabled="@S.JobBusy"
+                            title="@(S.JobBusy ? $"忙碌中：{S.JobText}" : a.Label)"
                             data-hub-focus="@(IsFocus(a) ? "true" : null)"
                             @onclick="@(() => S.OnActionAsync(a))">
                         @a.Label
@@ -48,7 +49,7 @@
         <TaskList />
     </div>
     <div class="dialog-actions">
-        <button type="button" class="btn-sec" disabled="@S.JobBusy" @onclick="OpenStatus">狀態報告</button>
+        <button type="button" class="btn-sec" disabled="@S.JobBusy" title="@(S.JobBusy ? $"忙碌中：{S.JobText}" : "Git 與 GitHub 狀態報告")" @onclick="OpenStatus">狀態報告</button>
     </div>
 </div>
 

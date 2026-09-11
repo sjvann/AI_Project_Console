@@ -34,8 +34,9 @@ public static class GhCli
         GithubConfig? cfg = null,
         int timeoutMs = 60_000,
         CancellationToken ct = default,
-        string? stdin = null) =>
-        CliUtil.RunAsync("gh", args, cwd, timeoutMs, ct, stdin, Env(cfg));
+        string? stdin = null,
+        Action<string>? onLine = null) =>
+        CliUtil.RunAsync("gh", args, cwd, timeoutMs, ct, stdin, Env(cfg), onLine);
 
     public static Task<(int Code, string StdOut, string StdErr)> RunCaptureAsync(
         IEnumerable<string> args,

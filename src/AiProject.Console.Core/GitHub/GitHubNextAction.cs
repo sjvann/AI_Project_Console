@@ -31,6 +31,7 @@ public static class GitHubNextAction
     public const string KindPublish = "publish";
     public const string KindPr = "pr";
     public const string KindActions = "actions";
+    public const string KindRelease = "release";
     public const string KindHub = "hub";
 
     public static GitHubNextStep Decide(
@@ -110,11 +111,21 @@ public static class GitHubNextAction
                 GithubActionLanes.Ship);
         }
 
+        if (brief is not null && IsDefaultBranch(brief.Branch, defaultBranch))
+        {
+            return new GitHubNextStep(
+                KindRelease,
+                "github_release",
+                "發行 Release…",
+                "已與遠端一致。可發行正式版。",
+                GithubActionLanes.Ship);
+        }
+
         return new GitHubNextStep(
             KindHub,
             "",
             "全部動作",
-            brief is null ? "尚未讀到 git 狀態。可從操作台接入遠端或看全部動作。" : "已與遠端一致。",
+            brief is null ? "尚未讀到 git 狀態。可從操作台接入遠端或看全部動作。" : "已與遠端一致。其餘動作在操作台。",
             GithubActionLanes.Daily,
             OpensHub: true);
     }

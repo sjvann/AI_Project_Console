@@ -1,0 +1,79 @@
+@page "/budget"
+@rendermode InteractiveServer
+@inject BudgetCommands Commands
+@inject DirectoryQueries Directory
+@inject IAuthorizationGate Gate
+
+<PageTitle>預算</PageTitle>
+<h1>預算費用</h1>
+@if (!Gate.Can(PlatformCapability.ManageBudget))
+{
+    <p>你沒有預算權限，對客戶費率也不會顯示。</p>
+}
+else
+{
+    <div class="toolbar">
+        <button class="btn-primary" @onclick="Export">匯出本月 CSV</button>
+    </div>
+    <p>@_message</p>
+    @if (!string.IsNullOrEmpty(_csv))
+    {
+        <pre>@_csv</pre>
+    }
+    @foreach (var project in _projects)
+    {
+        <section class="card">
+            <h2><a href="/projects/@project.Id#pnl">@project.Name</a></h2>
+            <button class="btn-sec" @onclick="() => Load(project.Id)">看損益</button>
+            @if (_pnl?.ProjectId == project.Id)
+            {
+                <p>收入計劃 @_pnl.Margin.PlannedRevenue / 實際 @_pnl.Margin.ActualRevenue</p>
+                <p>人事計劃 @_pnl.Margin.PlannedCost / 實際 @_pnl.Margin.ActualCost</p>
+                <p>其他費用計劃 @_pnl.Margin.OtherPlanned / 實際 @_pnl.Margin.OtherActual</p>
+                <p>毛利率 @MarginResult.Display(_pnl.Margin.ActualRate)（收入為 0 顯示 —）</p>
+            }
+            <div class="toolbar">
+                <input placeholder="其他費用名稱" @bind="_expLabel" />
+                <input type="number" placeholder="計劃" @bind="_expPlan" />
+                <input type="number" placeholder="實際" @bind="_expActual" />
+                <label class="check"><input type="checkbox" @bind="_expIsActual" /> 已發生</label>
+                <button class="btn-sec" @onclick="() => AddExpense(project.Id)">加一筆其他費用</button>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    IReadOnlyList<Project> _projects = [];
+    ProjectPnl? _pnl;
+    string _csv = "";
+    string _message = "";
+    string _expLabel = "";
+    decimal _expPlan;
+    decimal _expActual;
+    bool _expIsActual = true;
+    protected override async Task OnInitializedAsync() => _projects = await Directory.ProjectsAsync();
+
+    async Task AddExpense(Guid projectId)
+    {
+        var result = await Commands.AddExpenseAsync(projectId, _expLabel, _expPlan, _expActual, _expIsActual);
+        _message = result.Ok ? "已加其他費用" : result.Message;
+        if (result.Ok)
+        {
+            _expLabel = "";
+            await Load(projectId);
+        }
+    }
+    async Task Load(Guid id)
+    {
+        try { _pnl = await Commands.PnlAsync(id); }
+        catch (DomainException ex) { _message = ex.Message; }
+    }
+    async Task Export()
+    {
+        var today = Directory.Today();
+        var result = await Commands.ExportMonthAsync(today.Year, today.Month);
+        _csv = result.Ok ? result.Value! : "";
+        _message = result.Ok ? "欄位固定，可給會計再加工。" : result.Message;
+    }
+}

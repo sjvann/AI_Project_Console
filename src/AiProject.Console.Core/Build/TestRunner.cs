@@ -1,11 +1,10 @@
-using System.Diagnostics;
-using System.Text;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Tech;
 
 namespace AiProject.Console.Core.Build;
 
 /// <summary>
-/// 本機一次跑完整測試（方案或測試專案）。不是 IDE 的測試總管。
+/// 本機一次跑完整測試（依偵測到的技術棧）。不是 IDE 的測試總管。
 /// </summary>
 public static class TestRunner
 {
@@ -20,15 +19,39 @@ public static class TestRunner
 
     public static IReadOnlyList<string> TargetsFor(ProjectCatalog catalog)
     {
-        var sln = FindSolution(catalog.Root);
-        if (!string.IsNullOrEmpty(sln))
-            return [sln];
-        return catalog.Projects
-            .Where(p => p.IsTest)
-            .Select(p => p.Csproj)
-            .Where(File.Exists)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var targets = new List<string>();
+        var hasDotnet = catalog.Projects.Any(p =>
+            p.StackId is "dotnet" or "" && TechStackCatalog.IsDotnetProject(p.Csproj)
+            || p.StackId == "dotnet"
+            || TechStackCatalog.IsDotnetProject(p.Csproj));
+        if (hasDotnet || catalog.Projects.Count == 0)
+        {
+            var sln = FindSolution(catalog.Root);
+            if (!string.IsNullOrEmpty(sln))
+                targets.Add(sln);
+            else
+            {
+                foreach (var p in catalog.Projects.Where(p => p.IsTest && TechStackCatalog.IsDotnetProject(p.Csproj)))
+                {
+                    if (File.Exists(p.Csproj))
+                        targets.Add(p.Csproj);
+                }
+            }
+        }
+
+        var seenDir = new HashSet<string>(targets.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+        foreach (var p in catalog.Projects)
+        {
+            if (p.StackId is "dotnet" or "")
+                continue;
+            var dir = Path.Combine(catalog.Root, p.RelDir.Replace('/', Path.DirectorySeparatorChar));
+            var key = Path.GetFullPath(Directory.Exists(dir) ? dir : (File.Exists(p.Csproj) ? Path.GetDirectoryName(p.Csproj)! : dir));
+            if (!seenDir.Add(key))
+                continue;
+            var target = File.Exists(p.Csproj) ? p.Csproj : key;
+            targets.Add(target);
+        }
+        return targets.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public static async Task<(int ExitCode, string Log)> TestAsync(
@@ -37,42 +60,8 @@ public static class TestRunner
         IProgress<string>? progress,
         CancellationToken ct = default)
     {
-        var lines = new List<string>();
-        void Emit(string line)
-        {
-            lines.Add(line);
-            progress?.Report(line);
-        }
-
-        var psi = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = cwd,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        psi.ArgumentList.Add("test");
-        psi.ArgumentList.Add(target);
-        psi.ArgumentList.Add("-v");
-        psi.ArgumentList.Add("minimal");
-        psi.ArgumentList.Add("--nologo");
-
-        using var proc = new Process { StartInfo = psi };
-        proc.Start();
-        var stdout = proc.StandardOutput.ReadToEndAsync(ct);
-        var stderr = proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-        var combined = await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false);
-        foreach (var line in combined.Split('\n'))
-        {
-            var text = line.TrimEnd('\r');
-            if (text.Length > 0)
-                Emit(text);
-        }
-        return (proc.ExitCode, string.Join('\n', lines));
+        var plan = StackCommands.PlanTest(cwd, target);
+        return await StackCommands.RunAsync(plan, progress, ct).ConfigureAwait(false);
     }
 
     static string? PickOne(string[] files, string root)

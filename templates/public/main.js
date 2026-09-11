@@ -6,6 +6,9 @@ export default {
       title: "GitHub",
     },
   ],
+  mermaid: {
+    theme: "neutral",
+  },
   start: () => {
     const input = document.getElementById("search-query");
     if (input && !input.dataset.zhPlaceholder) {

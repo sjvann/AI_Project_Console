@@ -30,10 +30,34 @@ public class AgentBackendTests
     }
 
     [Fact]
-    public void LocalAppCloser_UnknownProcess_IsNotRunning()
+    public void TitleMatches_UsesFolderSegmentNotSubstring()
     {
-        Assert.False(LocalAppCloser.IsRunning("this-process-should-not-exist-ai-console-xyz"));
-        Assert.False(LocalAppCloser.HasWindowTitle("___ai-console-no-such-window___"));
+        var root = Path.Combine(Path.GetTempPath(), "AI_Project_Console");
+        Assert.True(WorkspaceWindow.TitleMatches("StdioMcpServer.cs - AI_Project_Console - Cursor", root));
+        Assert.True(WorkspaceWindow.TitleMatches("AI_Project_Console - Cursor", root));
+        Assert.True(WorkspaceWindow.TitleMatches("\u25CF README.md - AI_Project_Console - Cursor", root));
+        Assert.False(WorkspaceWindow.TitleMatches("README.md - OtherApp - Cursor", root));
+        Assert.False(WorkspaceWindow.TitleMatches("src - Console - Cursor", root));
+        Assert.False(WorkspaceWindow.TitleMatches("", root));
+    }
+
+    [Fact]
+    public void IdeOpenArgs_DoNotReuseWindowByDefault()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-ide-open-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var args = IdeWorkspaceLaunch.OpenArgs(root);
+            Assert.DoesNotContain("--reuse-window", args);
+            Assert.Contains(Path.GetFullPath(root), args);
+            var reused = IdeWorkspaceLaunch.OpenArgs(root, reuseWindow: true);
+            Assert.Equal("--reuse-window", reused[0]);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Actions\actions.json" />
+    <EmbeddedResource Include="Stack\mcp-icon.png" />
+    <EmbeddedResource Include="..\..\assets\brand\logo.svg" LogicalName="AiProject.Console.Core.Brand.logo.svg" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AiProject.Console.Core.Tests" />

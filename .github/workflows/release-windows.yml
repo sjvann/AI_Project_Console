@@ -1,0 +1,71 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版號（例如 0.6.10，不含 v）
+        required: true
+        type: string
+      require_sign:
+        description: 沒有 Azure Artifact Signing 設定就失敗
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup .NET 8 runtime
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Azure login
+        if: ${{ vars.TRUSTED_SIGNING_ACCOUNT != '' }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Pack Windows installer
+        env:
+          TRUSTED_SIGNING_ENDPOINT: ${{ vars.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ vars.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_PROFILE: ${{ vars.TRUSTED_SIGNING_PROFILE }}
+        run: |
+          if ("${{ inputs.require_sign }}" -eq "true") {
+            .\scripts\pack-win.ps1 -Version "${{ inputs.version }}" -RequireSign
+          } else {
+            .\scripts\pack-win.ps1 -Version "${{ inputs.version }}"
+          }
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI_Project_Console-${{ inputs.version }}-win-x64
+          path: |
+            dist/AI_Project_Console-${{ inputs.version }}-win-x64-setup.exe
+            dist/AI_Project_Console-${{ inputs.version }}-win-x64.zip
+          if-no-files-found: error

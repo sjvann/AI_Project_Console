@@ -3,7 +3,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Photino.Blazor;
 using Photino.NET;
 using AiProject.Console.App.Services;
+using AiProject.Console.CompanyClient;
 using AiProject.Console.Core;
+using AiProject.Console.Core.Stack;
 
 namespace AiProject.Console.App;
 
@@ -24,21 +26,32 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (McpCli.IsRequested(args))
+        {
+            Environment.ExitCode = McpCli.Run(args);
+            return;
+        }
+
         Win32WindowIcon.BindProcessIdentity();
+        var webViewDir = ConsoleProcess.Register();
 
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.Services.AddLogging();
+        builder.Services.AddTransient<CompanyBaseAddressHandler>();
+        builder.Services.AddHttpClient<ICompanyPlatformClient, CompanyPlatformClient>()
+            .AddHttpMessageHandler<CompanyBaseAddressHandler>();
         builder.Services.AddSingleton<NativeUi>();
         builder.Services.AddSingleton<ConsoleSession>();
         builder.RootComponents.Add<App>("app");
 
         var app = builder.Build();
-        app.MainWindow.LogVerbosity = 0;
+        var window = app.MainWindow.SetTemporaryFilesPath(webViewDir);
+        window.LogVerbosity = 0;
         var native = app.Services.GetRequiredService<NativeUi>();
-        native.Window = app.MainWindow;
+        native.Window = window;
 
         var iconFile = ResolveWindowIcon();
-        var window = app.MainWindow
+        window
             .SetTitle($"{AppInfo.Product} v{AppInfo.Version}")
             .SetNotificationRegistrationId(AppInfo.AppUserModelId)
             .SetNotificationsEnabled(false)
@@ -55,6 +68,7 @@ internal static class Program
         window.RegisterWindowClosingHandler((_, _) =>
         {
             app.Services.GetRequiredService<ConsoleSession>().CloseWorkSession();
+            ConsoleProcess.Release();
             return false;
         });
 

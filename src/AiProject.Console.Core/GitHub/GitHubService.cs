@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -115,15 +116,9 @@ public static class GithubConfigResolver
             cfg.Host = GitHost.HostFromUrl(url);
             cfg.Kind = GitHost.InferKind(cfg.Host, url);
         }
-        (code, var branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root, 60_000).ConfigureAwait(false);
-        if (code == 0 && !string.IsNullOrEmpty(branch) && branch != "HEAD")
-            cfg.DefaultBranch = branch;
-        else
-        {
-            (code, var sym) = await CliUtil.RunAsync("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], root, 60_000).ConfigureAwait(false);
-            if (code == 0 && !string.IsNullOrEmpty(sym))
-                cfg.DefaultBranch = sym.Split('/')[^1];
-        }
+        (code, var sym) = await CliUtil.RunAsync("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], root, 60_000).ConfigureAwait(false);
+        if (code == 0 && !string.IsNullOrEmpty(sym))
+            cfg.DefaultBranch = sym.Split('/')[^1];
         return cfg;
     }
 
@@ -173,11 +168,12 @@ public static class GithubConfigResolver
 
     public static void SaveLocal(string root, GithubConfig cfg)
     {
-        var data = ConsoleSettingsStore.Load();
-        var byRoot = JsonUtil.Obj(data["githubByProject"]) ?? new JsonObject();
-        byRoot[Path.GetFullPath(root)] = cfg.AsObject();
-        data["githubByProject"] = byRoot;
-        ConsoleSettingsStore.Save(data);
+        ConsoleSettingsStore.Mutate(data =>
+        {
+            var byRoot = JsonUtil.Obj(data["githubByProject"]) ?? new JsonObject();
+            byRoot[Path.GetFullPath(root)] = cfg.AsObject();
+            data["githubByProject"] = byRoot;
+        });
     }
 
     public static string WriteManifest(ProjectCatalog catalog, GithubConfig cfg)
@@ -288,16 +284,37 @@ public sealed class ReleaseInspect
     public string CurrentBranch { get; init; } = "";
     public string Summary { get; init; } = "";
     public bool GhOk { get; init; }
+    public IReadOnlyList<string> LatestAssetNames { get; init; } = [];
+    public bool LatestHasSetup { get; init; }
+    public bool Packable { get; init; }
 }
 
 public sealed record GitChange(string Code, string Path, string? OriginalPath = null)
 {
+    public string KindLabel => Describe(Code);
+
+    public string KindTone => KindLabel switch
+    {
+        "新增" or "未追蹤" or "複製" => "add",
+        "刪除" => "del",
+        "衝突" => "conflict",
+        "重新命名" => "rename",
+        _ => "mod",
+    };
+
     public string Display()
     {
-        var kind = Describe(Code);
+        var kind = KindLabel;
         return OriginalPath is null
             ? $"{kind}  {Path}"
             : $"{kind}  {OriginalPath} → {Path}";
+    }
+
+    public IReadOnlyList<string> StagePaths()
+    {
+        if (string.IsNullOrEmpty(OriginalPath))
+            return [Path];
+        return [OriginalPath, Path];
     }
 
     public static string Describe(string code)
@@ -420,6 +437,47 @@ public static class GitHubService
         return ParsePorcelain(stdout);
     }
 
+    public static bool LooksLikeIndexLock(string? text)
+    {
+        var t = text ?? "";
+        return t.Contains("index.lock", StringComparison.OrdinalIgnoreCase)
+            && (t.Contains("File exists", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Unable to create", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("Another git process", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public const string IndexLockHint =
+        "剛才有另一個 git 動作還在跑（或上次沒清掉鎖檔）。請關閉此視窗後再提交一次。";
+
+    public static bool TryClearStaleIndexLock(string root)
+    {
+        var path = Path.Combine(root, ".git", "index.lock");
+        if (!File.Exists(path))
+            return false;
+        try
+        {
+            File.Delete(path);
+            return !File.Exists(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    static async Task<(int Code, string Output)> RunGitWriteAsync(string root, params string[] args)
+    {
+        var (code, output) = await CliUtil.RunAsync("git", args, root).ConfigureAwait(false);
+        if (code == 0 || !LooksLikeIndexLock(output))
+            return (code, output);
+        await Task.Delay(400).ConfigureAwait(false);
+        TryClearStaleIndexLock(root);
+        (code, output) = await CliUtil.RunAsync("git", args, root).ConfigureAwait(false);
+        if (code != 0 && LooksLikeIndexLock(output))
+            return (code, IndexLockHint);
+        return (code, output);
+    }
+
     public static async Task<string> CommitAsync(string root, string message, bool stageAll = true)
     {
         if (!await IsGitRepoAsync(root).ConfigureAwait(false))
@@ -430,7 +488,7 @@ public static class GitHubService
 
         if (stageAll)
         {
-            var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "-A"], root).ConfigureAwait(false);
+            var (addCode, addOut) = await RunGitWriteAsync(root, "add", "-A").ConfigureAwait(false);
             if (addCode != 0)
                 throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? "git add 失敗。" : addOut);
         }
@@ -441,7 +499,7 @@ public static class GitHubService
         if (diffCode != 1)
             throw new InvalidOperationException(string.IsNullOrEmpty(diffOut) ? "無法判斷暫存區狀態。" : diffOut);
 
-        var (code, output) = await CliUtil.RunAsync("git", ["commit", "-m", msg], root).ConfigureAwait(false);
+        var (code, output) = await RunGitWriteAsync(root, "commit", "-m", msg).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "git commit 失敗。" : output);
 
@@ -456,6 +514,106 @@ public static class GitHubService
         if (!string.IsNullOrEmpty(output))
             lines.Add(output);
         return string.Join('\n', lines);
+    }
+
+    public static async Task StageSelectedAsync(string root, IReadOnlyList<GitChange> selected)
+    {
+        if (selected is null || selected.Count == 0)
+            throw new InvalidOperationException("請至少選擇一個檔案。");
+        if (!await IsGitRepoAsync(root).ConfigureAwait(false))
+            throw new InvalidOperationException("不是 git 倉庫。");
+
+        var (headCode, _) = await CliUtil.RunAsync("git", ["rev-parse", "--verify", "HEAD"], root).ConfigureAwait(false);
+        if (headCode == 0)
+        {
+            var (resetCode, resetOut) = await RunGitWriteAsync(root, "reset", "-q", "HEAD").ConfigureAwait(false);
+            if (resetCode != 0 && !string.IsNullOrWhiteSpace(resetOut))
+                throw new InvalidOperationException(resetOut);
+        }
+        else
+        {
+            await RunGitWriteAsync(root, "rm", "-r", "--cached", "-f", ".").ConfigureAwait(false);
+        }
+
+        foreach (var change in selected)
+        {
+            foreach (var rel in change.StagePaths())
+            {
+                var path = (rel ?? "").Trim().Replace('\\', '/');
+                if (string.IsNullOrEmpty(path) || path.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(path))
+                    continue;
+                var (addCode, addOut) = await RunGitWriteAsync(root, "add", "-A", "--", path).ConfigureAwait(false);
+                if (addCode == 0)
+                    continue;
+                if (change.KindLabel == "刪除")
+                {
+                    var (rmCode, rmOut) = await RunGitWriteAsync(root, "rm", "--cached", "--ignore-unmatch", "--", path).ConfigureAwait(false);
+                    if (rmCode == 0)
+                        continue;
+                    throw new InvalidOperationException(string.IsNullOrEmpty(rmOut) ? addOut : rmOut);
+                }
+                throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? $"無法暫存 {path}" : addOut);
+            }
+        }
+    }
+
+    public static async Task<string> CommitSelectedAsync(string root, string message, IReadOnlyList<GitChange> selected)
+    {
+        await StageSelectedAsync(root, selected).ConfigureAwait(false);
+        return await CommitAsync(root, message, stageAll: false).ConfigureAwait(false);
+    }
+
+    public static async Task<string> PreviewDiffAsync(string root, GitChange change, int maxLines = 200)
+    {
+        if (change.Code.Contains('?'))
+            return PreviewUntracked(root, change, maxLines);
+
+        var args = new List<string> { "-c", "core.quotepath=false", "diff", "HEAD", "-U3", "--" };
+        if (!string.IsNullOrEmpty(change.OriginalPath))
+            args.Add(change.OriginalPath);
+        args.Add(change.Path);
+        var (_, stdout, stderr) = await CliUtil.RunCaptureAsync("git", args, root, trim: false).ConfigureAwait(false);
+        var text = string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+        if (string.IsNullOrWhiteSpace(text))
+            return $"（{change.KindLabel} {change.Path}：沒有可顯示的 diff，可能是二進位或與 HEAD 相同）";
+        return TruncateLines(text.Replace("\r\n", "\n").TrimEnd(), maxLines);
+    }
+
+    private static string PreviewUntracked(string root, GitChange change, int maxLines)
+    {
+        var full = Path.GetFullPath(Path.Combine(root, change.Path.Replace('/', Path.DirectorySeparatorChar)));
+        var rootFull = Path.GetFullPath(root);
+        if (!full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(full, rootFull, StringComparison.OrdinalIgnoreCase))
+            return $"（未追蹤 {change.Path}：路徑無效）";
+        if (Directory.Exists(full))
+            return $"（未追蹤 {change.Path}：這是資料夾，提交時會一併加入內容）";
+        if (!File.Exists(full))
+            return $"（未追蹤 {change.Path}：檔案不存在）";
+        var info = new FileInfo(full);
+        if (info.Length > 256_000)
+            return $"（未追蹤 {change.Path}：檔案過大，不預覽）";
+        var bytes = File.ReadAllBytes(full);
+        if (Array.IndexOf(bytes, (byte)0) >= 0)
+            return $"（未追蹤 {change.Path}：二進位檔，不預覽）";
+        var lines = Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n").Split('\n');
+        var sb = new StringBuilder();
+        sb.AppendLine("--- /dev/null");
+        sb.AppendLine("+++ b/" + change.Path);
+        var n = Math.Min(lines.Length, maxLines);
+        for (var i = 0; i < n; i++)
+            sb.AppendLine("+" + lines[i]);
+        if (lines.Length > maxLines)
+            sb.AppendLine($"…（其餘 {lines.Length - maxLines} 行已省略）");
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string TruncateLines(string text, int maxLines)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        if (lines.Length <= maxLines)
+            return text;
+        return string.Join('\n', lines.Take(maxLines)) + $"\n…（其餘 {lines.Length - maxLines} 行已省略）";
     }
 
     public static async Task<string?> CommitPathsIfDirtyAsync(string root, string message, IEnumerable<string> relPaths)
@@ -478,7 +636,7 @@ public static class GitHubService
                 continue;
             if (!File.Exists(full) && !Directory.Exists(full))
                 continue;
-            var (addCode, addOut) = await CliUtil.RunAsync("git", ["add", "--", rel], root).ConfigureAwait(false);
+            var (addCode, addOut) = await RunGitWriteAsync(root, "add", "--", rel).ConfigureAwait(false);
             if (addCode != 0)
                 throw new InvalidOperationException(string.IsNullOrEmpty(addOut) ? "git add 失敗。" : addOut);
             added++;
@@ -848,25 +1006,40 @@ public static class GitHubService
         return true;
     }
 
-    public static async Task<string> CreatePullRequestAsync(ProjectCatalog catalog, GithubConfig? cfg = null)
+    public static string PullRequestClosesBody(int issueNumber) =>
+        issueNumber > 0 ? "Closes #" + issueNumber : "";
+
+    public static IReadOnlyList<string> BuildCreatePrArgs(GithubConfig cfg, int? closesIssue = null)
+    {
+        var args = new List<string> { "pr", "create" };
+        args.AddRange(["--base", string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch, "--fill"]);
+        var closes = closesIssue is > 0 ? PullRequestClosesBody(closesIssue.Value) : "";
+        if (!string.IsNullOrEmpty(closes))
+            args.AddRange(["--body", closes]);
+        return args;
+    }
+
+    public static async Task<string> CreatePullRequestAsync(
+        ProjectCatalog catalog,
+        GithubConfig? cfg = null,
+        int? closesIssue = null)
     {
         if (!GhAvailable())
             throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
         cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
-        var args = new List<string> { "pr", "create" };
-        if (!string.IsNullOrEmpty(cfg.Slug()))
-            args.AddRange(["--repo", cfg.Slug()]);
-        args.AddRange(["--base", string.IsNullOrEmpty(cfg.DefaultBranch) ? "main" : cfg.DefaultBranch, "--fill"]);
+        var brief = await TryBriefStatusAsync(catalog.Root).ConfigureAwait(false);
+        var block = IssueCompletion.CreatePrBlockReason(brief, cfg.DefaultBranch, hasPr: false);
+        if (!string.IsNullOrEmpty(block))
+            throw new InvalidOperationException(block);
+        var args = BuildCreatePrArgs(cfg, closesIssue);
         var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg).ConfigureAwait(false);
         if (code != 0)
         {
             var viewArgs = new List<string> { "pr", "view", "--web" };
-            if (!string.IsNullOrEmpty(cfg.Slug()))
-                viewArgs.AddRange(["--repo", cfg.Slug()]);
             var (code2, out2) = await GhCli.RunAsync(viewArgs, catalog.Root, cfg, 60_000).ConfigureAwait(false);
             if (code2 == 0)
                 return string.IsNullOrEmpty(out2) ? "已開啟既有 PR。" : out2;
-            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? "建立 PR 失敗。" : output);
+            throw new InvalidOperationException(IssueCompletion.ExplainCreatePrFailure(output));
         }
         return string.IsNullOrEmpty(output) ? "PR 已建立。" : output;
     }
@@ -991,8 +1164,6 @@ public static class GitHubService
             "pr", "view",
             "--json", "title,url,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup",
         };
-        if (!string.IsNullOrEmpty(cfg.Slug()))
-            args.AddRange(["--repo", cfg.Slug()]);
         var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
         if (code != 0)
             return PrStatus.LooksLikeNoPr(output)
@@ -1046,6 +1217,20 @@ public static class GitHubService
         if (cBranch != 0 || branch == "HEAD")
             branch = cfg.DefaultBranch;
         var suggested = ReleaseVersion.SuggestTag(latestGh, gitTag, projectVer);
+        var packable = ConsoleReleasePack.LooksPackable(catalog.Root);
+        IReadOnlyList<string> latestAssets = [];
+        if (ghOk && !string.IsNullOrEmpty(latestGh))
+        {
+            try
+            {
+                latestAssets = await ListReleaseAssetNamesAsync(catalog, cfg, latestGh).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                recentLines.Add("無法讀取最新 Release 資產：" + FirstLine(ex.Message));
+            }
+        }
+        var latestHasSetup = ConsoleReleasePack.HasSetupAsset(latestAssets);
 
         var summary = new List<string>
         {
@@ -1055,7 +1240,24 @@ public static class GitHubService
             $"建議下一版：{suggested}",
             "",
         };
+        if (packable)
+        {
+            if (string.IsNullOrEmpty(latestGh))
+                summary.Add("自動更新需要附加 *-win-x64-setup.exe。正式發行時會先打包再上傳。");
+            else if (!latestHasSetup)
+                summary.Add($"最新 {latestGh} 沒有 *-win-x64-setup.exe。已安裝使用者的自動更新會改開 GitHub 頁。發行時會打包並補上。");
+            else
+                summary.Add($"最新 {latestGh} 已附安裝程式。");
+            summary.Add("");
+        }
         summary.AddRange(recentLines);
+        if (latestAssets.Count > 0)
+        {
+            summary.Add("");
+            summary.Add("最新資產：");
+            foreach (var name in latestAssets)
+                summary.Add("  " + name);
+        }
 
         return new ReleaseInspect
         {
@@ -1066,6 +1268,9 @@ public static class GitHubService
             CurrentBranch = branch,
             Summary = string.Join('\n', summary),
             GhOk = ghOk,
+            LatestAssetNames = latestAssets,
+            LatestHasSetup = latestHasSetup,
+            Packable = packable,
         };
     }
 
@@ -1096,7 +1301,11 @@ public static class GitHubService
         return true;
     }
 
-    public static async Task<string> CreateReleaseAsync(ProjectCatalog catalog, ReleaseRequest req, GithubConfig? cfg = null)
+    public static async Task<string> CreateReleaseAsync(
+        ProjectCatalog catalog,
+        ReleaseRequest req,
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
     {
         if (!GhAvailable())
             throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
@@ -1136,10 +1345,138 @@ public static class GitHubService
             args.Add(asset);
         }
 
-        var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 300_000).ConfigureAwait(false);
+        var hasAssets = req.Assets is { Count: > 0 };
+        progress?.Report(ReleaseRunState.StageLine(
+            "upload",
+            hasAssets ? "正在建立 GitHub Release 並上傳安裝包…" : "正在建立 GitHub Release…"));
+        var timeout = hasAssets ? 600_000 : 300_000;
+        var (code, output) = await GhCli.RunAsync(
+            args,
+            catalog.Root,
+            cfg,
+            timeout,
+            onLine: progress is null ? null : line => ForwardGhLine(progress, line)).ConfigureAwait(false);
         if (code != 0)
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"建立 Release {tag} 失敗。" : output);
         return string.IsNullOrEmpty(output) ? $"已建立 Release {tag}。" : output;
+    }
+
+    public static async Task<string> PublishReleaseAsync(
+        ProjectCatalog catalog,
+        ReleaseRequest req,
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
+    {
+        try
+        {
+            return await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (LooksLikeReleaseExists(ex.Message) && req.Assets is { Count: > 0 })
+        {
+            progress?.Report(ReleaseRunState.StageLine("upload", "Release 已存在，改為補上傳安裝包…"));
+            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, req.Assets, cfg, progress).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(uploaded)
+                ? $"Release {req.Tag.Trim()} 已存在，已補上安裝包。"
+                : uploaded;
+        }
+    }
+
+    public static async Task<string> UploadReleaseAssetsAsync(
+        ProjectCatalog catalog,
+        string tag,
+        IReadOnlyList<string> assets,
+        GithubConfig? cfg = null,
+        IProgress<string>? progress = null)
+    {
+        if (!GhAvailable())
+            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
+        var name = (tag ?? "").Trim();
+        if (!ReleaseVersion.IsValidTag(name))
+            throw new InvalidOperationException("請填寫有效版號／Tag，例如 v1.2.3。");
+        if (ReleaseVersion.TryParse(name, out var parsed))
+            name = string.IsNullOrEmpty(parsed.Prefix) ? "v" + parsed.ToTag() : parsed.ToTag();
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var args = new List<string> { "release", "upload", name };
+        GhCli.AddRepo(args, cfg);
+        args.Add("--clobber");
+        var any = false;
+        foreach (var asset in assets)
+        {
+            if (string.IsNullOrWhiteSpace(asset))
+                continue;
+            if (!File.Exists(asset))
+                throw new InvalidOperationException("找不到附加檔案：" + asset);
+            args.Add(asset);
+            any = true;
+        }
+        if (!any)
+            throw new InvalidOperationException("沒有可上傳的安裝包。");
+        progress?.Report(ReleaseRunState.StageLine("upload", "正在上傳安裝包到 GitHub…"));
+        var (code, output) = await GhCli.RunAsync(
+            args,
+            catalog.Root,
+            cfg,
+            600_000,
+            onLine: progress is null ? null : line => ForwardGhLine(progress, line)).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"上傳 Release {name} 資產失敗。" : output);
+        return string.IsNullOrEmpty(output) ? $"已補上 Release {name} 的安裝包。" : output;
+    }
+
+    static void ForwardGhLine(IProgress<string> progress, string line)
+    {
+        var user = ConsoleReleasePack.InterpretGhLine(line);
+        if (!string.IsNullOrEmpty(user))
+            progress.Report(user);
+    }
+
+    public static bool LooksLikeReleaseExists(string? text)
+    {
+        var t = text ?? "";
+        return t.Contains("already exists", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("already_exists", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("HTTP 422", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static async Task<IReadOnlyList<string>> ListReleaseAssetNamesAsync(
+        ProjectCatalog catalog,
+        GithubConfig cfg,
+        string tag)
+    {
+        var name = (tag ?? "").Trim();
+        if (string.IsNullOrEmpty(name))
+            return [];
+        var args = new List<string> { "release", "view", name, "--json", "assets" };
+        GhCli.AddRepo(args, cfg);
+        var (code, stdout, stderr) = await GhCli.RunCaptureAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(stderr) ? (string.IsNullOrEmpty(stdout) ? "無法讀取 Release 資產。" : stdout) : stderr);
+        return ParseReleaseAssetNames(stdout);
+    }
+
+    public static IReadOnlyList<string> ParseReleaseAssetNames(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+                return [];
+            var list = new List<string>();
+            foreach (var el in assets.EnumerateArray())
+            {
+                var name = el.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                if (!string.IsNullOrWhiteSpace(name))
+                    list.Add(name);
+            }
+            return list;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     public static async Task<IReadOnlyList<ReleaseItem>> ListReleaseItemsAsync(ProjectCatalog catalog, GithubConfig cfg, int limit)

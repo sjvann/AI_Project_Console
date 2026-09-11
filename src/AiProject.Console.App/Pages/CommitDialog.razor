@@ -1,0 +1,108 @@
+@inject ConsoleSession S
+
+<div class="overlay" @onclick="S.CloseDialog">
+    <div class="dialog dialog-commit" @onclick:stopPropagation="true" role="dialog" aria-labelledby="commit-title" aria-modal="true">
+        <div class="commit-head">
+            <div>
+                <h2 id="commit-title">提交變更</h2>
+                <p class="hint">@S.CommitHint。未勾選的檔案會留在工作區，不會進入本次提交。</p>
+            </div>
+        </div>
+        <div class="commit-layout">
+            <section class="commit-files" aria-label="異動檔案">
+                <div class="commit-files-head">
+                    <strong>異動檔案</strong>
+                    <span class="hint">@S.CommitSelected.Count / @S.CommitChanges.Count</span>
+                    <span class="grow"></span>
+                    <button type="button" class="btn-link" @onclick="@(() => S.SetCommitSelectionAll(!S.AllCommitSelected))">
+                        @(S.AllCommitSelected ? "全不選" : "全選")
+                    </button>
+                </div>
+                <input class="commit-filter"
+                       value="@S.CommitFileQuery"
+                       placeholder="篩選路徑或類型…"
+                       @oninput="OnFilter" />
+                @if (S.VisibleCommitChanges.Count == 0)
+                {
+                    <p class="hint">沒有符合篩選的檔案。</p>
+                }
+                else
+                {
+                    <div class="commit-file-list">
+                        @foreach (var c in S.VisibleCommitChanges)
+                        {
+                            var on = S.IsCommitSelected(c);
+                            var preview = string.Equals(S.CommitPreviewPath, c.Path, StringComparison.Ordinal);
+                            <div class="commit-file @(on ? "is-on" : null) @(preview ? "is-preview" : null)">
+                                <label class="commit-file-main">
+                                    <input type="checkbox"
+                                           checked="@on"
+                                           @onchange="e => S.ToggleCommitChange(c, (bool)(e.Value ?? false))" />
+                                    <span class="commit-kind is-@c.KindTone">@c.KindLabel</span>
+                                    <span class="commit-path" title="@(c.OriginalPath is null ? c.Path : c.OriginalPath + " → " + c.Path)">
+                                        @(c.OriginalPath is null ? c.Path : c.OriginalPath + " → " + c.Path)
+                                    </span>
+                                </label>
+                                <button type="button"
+                                        class="btn-link"
+                                        title="預覽 diff"
+                                        @onclick="@(() => S.PreviewCommitChangeAsync(c))">
+                                    @(preview ? "收合" : "預覽")
+                                </button>
+                            </div>
+                            @if (preview)
+                            {
+                                <pre class="commit-diff">@(S.CommitPreviewBusy ? "讀取 diff…" : S.CommitPreviewDiff)</pre>
+                            }
+                        }
+                    </div>
+                }
+            </section>
+            <section class="commit-msg" aria-label="本次交付">
+                <div class="field commit-field">
+                    <span>標題</span>
+                    <input @bind="S.CommitSubject" @bind:event="oninput" placeholder="一句話說明這次交付做了什麼" />
+                </div>
+                <div class="field commit-field" style="align-items:start">
+                    <span>本次交付說明</span>
+                    <textarea @bind="S.CommitBody" @bind:event="oninput" placeholder="選填。可寫為什麼、影響範圍、驗收重點。也可用「AI 建議」依已勾選檔案產生草稿。"></textarea>
+                </div>
+                <div class="btn-row">
+                    <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.SuggestCommitMessageAsync">AI 建議</button>
+                </div>
+                @if (!string.IsNullOrEmpty(S.CommitSuggestHint))
+                {
+                    <p class="hint">@S.CommitSuggestHint</p>
+                }
+                <div class="commit-preview-msg">
+                    <strong>將寫入的提交說明</strong>
+                    @if (string.IsNullOrWhiteSpace(S.CombinedCommitMessage))
+                    {
+                        <p class="hint">填寫標題後會顯示完整訊息。</p>
+                    }
+                    else
+                    {
+                        <pre>@S.CombinedCommitMessage</pre>
+                    }
+                </div>
+                <label class="check">
+                    <input type="checkbox" checked="@S.CommitPushAfter" @onchange="e => S.CommitPushAfter = (bool)(e.Value ?? false)" />
+                    提交後發布（push）目前分支
+                </label>
+            </section>
+        </div>
+        <div class="dialog-actions">
+            <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+            <button class="btn-primary" disabled="@(S.JobBusy || S.CommitSelected.Count == 0)" @onclick="S.ConfirmCommitAsync">
+                @(S.CommitPushAfter
+                    ? $"提交 {S.CommitSelected.Count} 個檔案並發布"
+                    : $"提交 {S.CommitSelected.Count} 個檔案")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    void OnFilter(ChangeEventArgs e) =>
+        S.SetCommitFileQuery(e.Value?.ToString() ?? "");
+}

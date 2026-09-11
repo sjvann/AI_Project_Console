@@ -36,7 +36,7 @@ public sealed class CursorAgentBackend : IAgentBackend
         return CursorLauncher.OpenPromptDeeplink(prompt);
     }
 
-    public string? CloseIde() => CursorLauncher.CloseCursor();
+    public string? CloseIde(string? workspaceRoot = null) => CursorLauncher.CloseCursor(workspaceRoot);
 
     static string? Resolve(string? cliOverride)
     {

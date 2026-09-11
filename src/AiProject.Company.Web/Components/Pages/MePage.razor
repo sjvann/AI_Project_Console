@@ -1,0 +1,46 @@
+@page "/me"
+@rendermode InteractiveServer
+@inject MeQueries Me
+@inject DirectoryQueries Directory
+
+<PageTitle>我的工時</PageTitle>
+<h1>我的工時／薪資條</h1>
+<p class="hint">@_hours?.DrawHint</p>
+<a class="btn-primary" href="#">到控制台畫狀態並上傳</a>
+<table class="grid">
+    <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th><th>退回原因</th></tr></thead>
+    <tbody>
+        @foreach (var row in _hours?.Rows ?? [])
+        {
+            <tr>
+                <td>@row.Date</td>
+                <td>@row.ProjectName</td>
+                <td>@row.Hours</td>
+                <td>@(row.Status == TimesheetStatus.PendingPm ? "待 PM 確認" : row.Status == TimesheetStatus.Approved ? "已核准" : "已退回")</td>
+                <td>@row.ReturnReason</td>
+            </tr>
+        }
+    </tbody>
+</table>
+@if (_slip is not null)
+{
+    <h2>薪資條</h2>
+    <p>@_slip.PeriodStart – @_slip.PeriodEnd · 實發 @_slip.PayableTotal</p>
+    <ul>
+        @foreach (var line in _slip.Lines)
+        {
+            <li>@line.Kind · @line.Amount · @line.Note</li>
+        }
+    </ul>
+}
+
+@code {
+    MyHoursView? _hours;
+    PayslipDto? _slip;
+    protected override async Task OnInitializedAsync()
+    {
+        _hours = await Me.MyHoursAsync();
+        try { _slip = await Me.LatestPayslipAsync(); }
+        catch (DomainException) { _slip = null; }
+    }
+}

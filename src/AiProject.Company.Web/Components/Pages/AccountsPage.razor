@@ -1,0 +1,220 @@
+@page "/accounts"
+@rendermode InteractiveServer
+@inject AccountCommands Accounts
+@inject SettingsCommands Settings
+@inject DirectoryQueries Directory
+@inject IAuthorizationGate Gate
+@inject ICurrentUser User
+
+<PageTitle>帳戶</PageTitle>
+<h1>帳戶管理</h1>
+@if (!Gate.Can(PlatformCapability.InviteUser) && !User.Role.UsesCompanyAccount())
+{
+    <p>你不能管理帳戶。後台帳戶由公司管理員開；招募進來的工程師用 GitHub 邀請，走控制台。</p>
+}
+else
+{
+    <p>@_message</p>
+    @if (User.Role.UsesCompanyAccount())
+    {
+        <section class="card stack">
+            <h2>改自己的密碼</h2>
+            <label>目前密碼 <input type="password" @bind="_current" autocomplete="current-password" /></label>
+            <label>新密碼 <input type="password" @bind="_ownNew" autocomplete="new-password" /></label>
+            <button class="btn-sec" @onclick="ChangeOwn">更新密碼</button>
+        </section>
+    }
+    @if (Gate.Can(PlatformCapability.InviteUser))
+    {
+        <section class="card stack">
+            <h2>開公司帳戶</h2>
+            <p class="hint">給經營層、人資、財務、交付主管、專案經理、外包窗口。工程師與招募進來的外部工程師請用下方 GitHub 邀請，他們用控制台上傳，不登這個後台。</p>
+            <label>顯示名 <input @bind="_display" /></label>
+            <label>登入帳號 <input @bind="_userName" autocomplete="off" /></label>
+            <label>初始密碼 <input type="password" @bind="_password" autocomplete="new-password" /></label>
+            <label>角色
+                <select @bind="_role">
+                    @foreach (var role in PlatformRoles.CompanyAccountRoles)
+                    {
+                        @if (role != PlatformRole.Owner || User.Role == PlatformRole.Owner)
+                        {
+                            <option value="@role">@role.Display()</option>
+                        }
+                    }
+                </select>
+            </label>
+            @if (_role == PlatformRole.VendorAdmin)
+            {
+                <label>外包商
+                    <select @bind="_vendorId">
+                        <option value="@Guid.Empty">請選外包商</option>
+                        @foreach (var vendor in _vendors)
+                        {
+                            <option value="@vendor.Id">@vendor.Name</option>
+                        }
+                    </select>
+                </label>
+            }
+            <button class="btn-primary" @onclick="Create">建立帳戶</button>
+        </section>
+        <h2>公司帳戶</h2>
+        <table class="grid">
+            <thead><tr><th>帳號</th><th>姓名</th><th>角色</th><th>狀態</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr>
+                        <td>@row.Account.UserName</td>
+                        <td>@row.Name</td>
+                        <td>@row.Account.Role.Display()</td>
+                        <td>@(row.Account.Enabled ? "可登入" : "已停用")</td>
+                        <td>
+                            <input type="password" @bind="row.ResetTo" placeholder="重設密碼" autocomplete="new-password" />
+                            <input @bind="row.Reason" placeholder="原因" />
+                            <button class="btn-sec" @onclick="() => Reset(row)">重設密碼</button>
+                            @if (row.Account.Enabled)
+                            {
+                                <button class="btn-danger" @onclick="() => SetEnabled(row.Account.Id, false)">停用</button>
+                            }
+                            else
+                            {
+                                <button class="btn-sec" @onclick="() => SetEnabled(row.Account.Id, true)">啟用</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <section class="card stack">
+            <h2>邀請 GitHub（線上招募／外部工程師）</h2>
+            <p class="hint">從招募系統找來的外部工程師、外包工程師、Tech Lead：填他們的 GitHub 帳號。系統會建人員檔並綁定，控制台上傳就能對到人。他們不會拿到後台密碼。</p>
+            <label>GitHub 帳號 <input @bind="_github" /></label>
+            <label>角色
+                <select @bind="_gitRole">
+                    @foreach (var role in PlatformRoles.GitHubSignInRoles)
+                    {
+                        <option value="@role">@role.Display()</option>
+                    }
+                </select>
+            </label>
+            @if (_gitRole.IsVendor())
+            {
+                <label>外包商
+                    <select @bind="_inviteVendorId">
+                        <option value="@Guid.Empty">請選外包商</option>
+                        @foreach (var vendor in _vendors)
+                        {
+                            <option value="@vendor.Id">@vendor.Name</option>
+                        }
+                    </select>
+                </label>
+            }
+            <button class="btn-primary" @onclick="InviteGitHub">送出邀請</button>
+        </section>
+        <h2>GitHub 邀請</h2>
+        <table class="grid">
+            <thead><tr><th>GitHub</th><th>角色</th><th>狀態</th></tr></thead>
+            <tbody>
+                @foreach (var invite in _invites)
+                {
+                    <tr>
+                        <td>@invite.GitHubLogin</td>
+                        <td>@invite.Role.Display()</td>
+                        <td>@(invite.Revoked ? "已撤銷" : invite.AcceptedAt is null ? "待接受" : "已接受")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    string _message = "";
+    string _display = "";
+    string _userName = "";
+    string _password = "";
+    PlatformRole _role = PlatformRole.Hr;
+    Guid _vendorId;
+    Guid _inviteVendorId;
+    string _github = "";
+    PlatformRole _gitRole = PlatformRole.Engineer;
+    string _current = "";
+    string _ownNew = "";
+    IReadOnlyList<Vendor> _vendors = [];
+    IReadOnlyList<Invitation> _invites = [];
+    List<AccountRow> _rows = [];
+
+    sealed class AccountRow
+    {
+        public StaffAccount Account { get; set; } = default!;
+        public string Name { get; set; } = "";
+        public string ResetTo { get; set; } = "";
+        public string Reason { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Gate.Can(PlatformCapability.InviteUser))
+            await Reload();
+    }
+
+    async Task Reload()
+    {
+        var people = (await Directory.PeopleAsync()).ToDictionary(p => p.Id);
+        _vendors = await Directory.VendorsAsync();
+        _invites = await Directory.InvitesAsync();
+        _rows = (await Directory.StaffAccountsAsync()).Select(a => new AccountRow
+        {
+            Account = a,
+            Name = people.TryGetValue(a.PersonId, out var p) ? p.DisplayName : "",
+        }).ToList();
+    }
+
+    async Task Create()
+    {
+        Guid? vendor = _role == PlatformRole.VendorAdmin && _vendorId != Guid.Empty ? _vendorId : null;
+        var result = await Accounts.CreateAsync(_userName, _display, _role, _password, vendor);
+        _message = result.Ok ? "已開帳戶 " + _userName : result.Message;
+        if (result.Ok)
+        {
+            _userName = "";
+            _password = "";
+            _display = "";
+            await Reload();
+        }
+    }
+
+    async Task Reset(AccountRow row)
+    {
+        var result = await Accounts.ResetPasswordAsync(row.Account.Id, row.ResetTo, row.Reason);
+        _message = result.Ok ? "已重設 " + row.Account.UserName + " 的密碼。" : result.Message;
+    }
+
+    async Task SetEnabled(Guid id, bool enabled)
+    {
+        var result = await Accounts.SetEnabledAsync(id, enabled);
+        _message = result.Ok ? (enabled ? "已啟用" : "已停用") : result.Message;
+        if (result.Ok)
+            await Reload();
+    }
+
+    async Task InviteGitHub()
+    {
+        Guid? vendor = _gitRole.IsVendor() && _inviteVendorId != Guid.Empty ? _inviteVendorId : null;
+        var result = await Settings.InviteAsync(_github, _gitRole, vendor);
+        _message = result.Ok ? "已邀請 " + _github : result.Message;
+        if (result.Ok)
+            await Reload();
+    }
+
+    async Task ChangeOwn()
+    {
+        var result = await Accounts.ChangeOwnPasswordAsync(_current, _ownNew);
+        _message = result.Ok ? "密碼已更新。" : result.Message;
+        if (result.Ok)
+        {
+            _current = "";
+            _ownNew = "";
+        }
+    }
+}

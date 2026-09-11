@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞（請走非公開回報）
+    url: https://github.com/sjvann/AI_Project_Console/security/advisories/new
+    about: 可被利用的漏洞請不要開公開 Issue。
+  - name: 使用文件
+    url: https://sjvann.github.io/AI_Project_Console/
+    about: 安裝、操作與版權說明。
+  - name: 授權與商業洽詢
+    url: https://sjvann.github.io/AI_Project_Console/docs/legal/copyright.html
+    about: 本倉公開可見，不是開源授權。

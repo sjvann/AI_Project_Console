@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.6.9"
+  #define MyAppVersion "0.6.13"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\..\dist\win-x64"
@@ -16,6 +16,8 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppCopyright=Copyright (C) 2026 sjvann. All rights reserved.
+LicenseFile=..\..\LICENSE
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases
@@ -30,6 +32,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+; 靜默安裝（企業／Microsoft Store EXE 上架）：setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\..\src\AiProject.Console.App\Assets\app.ico
 MinVersion=10.0

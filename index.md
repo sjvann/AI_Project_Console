@@ -9,13 +9,14 @@ _disableNextArticle: true
 # AI_Project 控制台
 
 <div class="home-hero">
-  <p class="home-kicker">本機堆疊控制台</p>
+  <p class="home-kicker">本機堆疊控制台 · 給軟體公司</p>
   <h1>選專案、編譯、一鍵啟動</h1>
-  <p class="home-lead">掃描服務與需重編項目，看 Log、提交 GitHub。卡住時把說明交給本機 Agent。一般使用者請用安裝包，不必編譯原始碼。</p>
+  <p class="home-lead">掃描服務與需重編項目，看 Log、提交 GitHub。卡住時把說明交給本機 Agent。一般使用者請用安裝包，不必編譯原始碼。現行出貨 0.6.13。經營層與採購請走產品規格與銷售套件；公司營運層（人員、派工、戰情室）標為規劃，尚未出貨。倉庫公開可見，授權為保留一切權利，不是開源。</p>
   <div class="home-actions">
     <a class="home-btn home-btn-primary" href="docs/user/getting-started.md">開始使用</a>
     <a class="home-btn home-btn-ghost" href="https://github.com/sjvann/AI_Project_Console/releases">下載安裝包</a>
-    <a class="home-btn home-btn-ghost" href="docs/README.md">文件地圖</a>
+    <a class="home-btn home-btn-ghost" href="docs/product/README.md">產品規格</a>
+    <a class="home-btn home-btn-ghost" href="docs/salekit/README.md">銷售套件</a>
   </div>
 </div>
 
@@ -28,6 +29,14 @@ _disableNextArticle: true
 </ol>
 </section>
 
+<section class="home-section" aria-labelledby="home-buyers">
+<h2 id="home-buyers">給軟體公司決策者</h2>
+<div class="home-cards">
+  <a class="home-card" href="docs/salekit/one-pager.md"><strong>現況可買</strong><span>本機控制台：堆疊真相、進件關卡、工時對帳、Agent 閉環。90 分鐘用自己的倉試完。</span></a>
+  <a class="home-card" href="docs/product/vision.md"><strong>規劃中</strong><span>公司平台（Blazor Web App）：人員與外包、派工、專案與客戶、預算、薪資、戰情室。尚未出貨，見產品規格。</span></a>
+</div>
+</section>
+
 <section class="home-section" aria-labelledby="home-roles">
 <h2 id="home-roles">依角色閱讀</h2>
 <div class="home-cards">
@@ -37,8 +46,10 @@ _disableNextArticle: true
   <a class="home-card" href="docs/user/help.md"><strong>卡住時</strong><span>UAT／編譯求救與專案問答。</span></a>
   <a class="home-card" href="docs/agent/mcp.md"><strong>Agent／MCP</strong><span>讓 Agent 回呼控制台查堆疊與編譯。</span></a>
   <a class="home-card" href="docs/maintainer/develop.md"><strong>維護者</strong><span>從原始碼編譯、打包，或查 API 參考。</span></a>
-  <a class="home-card" href="docs/salekit/README.md"><strong>業務／採購</strong><span>經營層投影片：角色定位、專案與人員管理。</span></a>
+  <a class="home-card" href="docs/product/README.md"><strong>產品規格</strong><span>軟體公司買家、六大營運模組、UI／UX 與路線圖。規劃與現況分開標。</span></a>
+  <a class="home-card" href="docs/salekit/README.md"><strong>業務／採購</strong><span>一頁紙、經營層投影片、演示腳本與採購 FAQ。</span></a>
+  <a class="home-card" href="docs/legal/copyright.md"><strong>版權與授權</strong><span>公開可見、保留一切權利。第三方元件見 NOTICE。</span></a>
 </div>
 </section>
 
-<p class="home-note">關閉控制台<strong>不會</strong>停止已啟動的服務。請用「停止全部」。更細的畫面說明見 <a href="docs/user/interface.md">畫面導覽</a>、<a href="docs/user/daily-use.md">日常操作</a> 與 <a href="docs/user/troubleshooting.md">常見問題</a>。</p>
+<p class="home-note">關閉控制台<strong>不會</strong>停止已啟動的服務。請用「停止全部」。更細的畫面說明見 <a href="docs/user/interface.md">畫面導覽</a>、<a href="docs/user/daily-use.md">日常操作</a> 與 <a href="docs/user/troubleshooting.md">常見問題</a>。授權全文 <a href="https://github.com/sjvann/AI_Project_Console/blob/main/LICENSE">LICENSE</a>。</p>

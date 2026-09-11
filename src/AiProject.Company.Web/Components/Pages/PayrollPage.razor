@@ -1,0 +1,179 @@
+@page "/payroll"
+@rendermode InteractiveServer
+@inject PayrollCommands Commands
+@inject DirectoryQueries Directory
+@inject TimesheetCommands Timesheets
+@inject IAuthorizationGate Gate
+
+<PageTitle>薪資週期</PageTitle>
+<h1>薪資週期</h1>
+@if (!Gate.Can(PlatformCapability.LockPayroll) && !Gate.Can(PlatformCapability.ConfirmTimesheet))
+{
+    <p>你沒有薪資或工時確認權限。</p>
+}
+else
+{
+    @if (Gate.Can(PlatformCapability.LockPayroll))
+    {
+        <div class="toolbar">
+            <input type="date" @bind="_start" />
+            <input type="date" @bind="_end" />
+            <button class="btn-primary" @onclick="Open">開週期並核算</button>
+        </div>
+    }
+    <p>@_message</p>
+    @foreach (var period in _periods)
+    {
+        <section class="card">
+            <h2>@period.Start – @period.End · @StatusLabel(period.Status)</h2>
+            <table class="grid">
+                <thead><tr><th>人</th><th>類型</th><th>實發</th><th>成本</th><th>小時</th><th>專案</th><th>備註</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var line in period.Lines)
+                    {
+                        <tr>
+                            <td>@PersonName(line.PersonId)</td>
+                            <td>@KindLabel(line.Kind)</td>
+                            <td>@(line.Payable ? line.Amount : 0)</td>
+                            <td>@line.CostAmount</td>
+                            <td>@line.Hours</td>
+                            <td>@ProjectName(line.ProjectId)</td>
+                            <td>@line.Note</td>
+                            <td>
+                                @if (line.Kind == PayrollLineKind.OvertimePending && Gate.Can(PlatformCapability.LockPayroll) && period.Status != PayrollPeriodStatus.Locked)
+                                {
+                                    <input type="number" @bind="_overtime" placeholder="加班金額" />
+                                    <input @bind="_overtimeReason" placeholder="人資填金額原因" />
+                                    <button class="btn-sec" @onclick="() => SetOvertime(period.Id, line.Id)">寫入待核准加班</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (Gate.Can(PlatformCapability.LockPayroll))
+            {
+                <div class="toolbar">
+                    <input placeholder="鎖定原因" @bind="_reason" />
+                    <button class="btn-primary" @onclick="() => Lock(period.Id)">鎖定本月</button>
+                    <button class="btn-sec" @onclick="() => Export(period.Id)">匯出 CSV</button>
+                </div>
+            }
+        </section>
+    }
+    @if (Gate.Can(PlatformCapability.ConfirmTimesheet))
+    {
+        <h2>待 PM 確認</h2>
+        <p class="hint">PM 確認專案歸屬與狀態圖，不核定薪水金額。繪圖入口在控制台。</p>
+        <table class="grid">
+            <thead><tr><th>日</th><th>人</th><th>專案</th><th>小時</th><th>狀態圖</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var sheet in _pending)
+                {
+                    <tr>
+                        <td>@sheet.WorkDate</td>
+                        <td>@PersonName(sheet.PersonId)</td>
+                        <td>@ProjectName(sheet.ProjectId)</td>
+                        <td>@sheet.Hours</td>
+                        <td>@(sheet.Chart.Count == 0 ? "未繪" : sheet.Chart.Count + " 格")</td>
+                        <td>
+                            <button class="btn-primary" @onclick="() => Confirm(sheet.Id)">確認歸屬</button>
+                            <button class="btn-sec" @onclick="() => Return(sheet.Id)">退回</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (!string.IsNullOrEmpty(_csv))
+    {
+        <pre>@_csv</pre>
+    }
+}
+
+@code {
+    DateOnly _start = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    DateOnly _end;
+    string _reason = "";
+    string _message = "";
+    string _csv = "";
+    decimal _overtime;
+    string _overtimeReason = "";
+    IReadOnlyList<PayrollPeriod> _periods = [];
+    IReadOnlyList<Timesheet> _pending = [];
+    Dictionary<Guid, string> _people = [];
+    Dictionary<Guid, string> _projects = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _end = _start.AddMonths(1).AddDays(-1);
+        await Reload();
+    }
+
+    async Task Reload()
+    {
+        _people = (await Directory.PeopleAsync()).ToDictionary(p => p.Id, p => p.DisplayName);
+        _projects = (await Directory.ProjectsAsync()).ToDictionary(p => p.Id, p => p.Name);
+        _periods = await Directory.PeriodsAsync();
+        _pending = (await Directory.TimesheetsAsync()).Where(t => t.Status == TimesheetStatus.PendingPm).ToList();
+    }
+
+    string PersonName(Guid id) => _people.TryGetValue(id, out var n) ? n : "（已停用或不在名冊）";
+    string ProjectName(Guid? id) => id is Guid pid && _projects.TryGetValue(pid, out var n) ? n : "";
+    static string StatusLabel(PayrollPeriodStatus status) => status switch
+    {
+        PayrollPeriodStatus.Locked => "已鎖定",
+        PayrollPeriodStatus.PmConfirming => "核算中",
+        _ => status.ToString(),
+    };
+    static string KindLabel(PayrollLineKind kind) => kind switch
+    {
+        PayrollLineKind.Monthly => "月薪",
+        PayrollLineKind.Hourly => "時計",
+        PayrollLineKind.OvertimePending => "待核准加班（非法規引擎）",
+        PayrollLineKind.ProjectBonus => "專案獎金",
+        _ => kind.ToString(),
+    };
+
+    async Task Open()
+    {
+        var result = await Commands.OpenAsync(_start, _end, null);
+        _message = result.Ok ? "已開週期" : result.Message;
+        await Reload();
+    }
+
+    async Task Lock(Guid id)
+    {
+        var result = await Commands.LockAsync(id, _reason);
+        _message = result.Ok ? "已鎖定，不能默默改歷史。" : result.Message;
+        await Reload();
+    }
+
+    async Task Export(Guid id)
+    {
+        var result = await Commands.ExportCsvAsync(id);
+        _csv = result.Ok ? result.Value! : result.Message;
+        _message = result.Ok ? "CSV 欄位固定，可給既有發薪。" : result.Message;
+    }
+
+    async Task SetOvertime(Guid periodId, Guid lineId)
+    {
+        var result = await Commands.SetOvertimeAsync(periodId, lineId, _overtime, _overtimeReason);
+        _message = result.Ok ? "已寫入加班金額，不是勞基法自動計算。" : result.Message;
+        await Reload();
+    }
+
+    async Task Confirm(Guid id)
+    {
+        var result = await Timesheets.ConfirmAsync(id);
+        _message = result.Ok ? "已確認專案歸屬（不是核定薪水）。" : result.Message;
+        await Reload();
+    }
+
+    async Task Return(Guid id)
+    {
+        var result = await Timesheets.ReturnAsync(id, "狀態圖或專案歸屬不合理");
+        _message = result.Ok ? "已退回" : result.Message;
+        await Reload();
+    }
+}

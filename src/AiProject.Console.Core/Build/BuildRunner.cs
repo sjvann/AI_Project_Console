@@ -1,6 +1,5 @@
-using System.Diagnostics;
-using System.Text;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Tech;
 
 namespace AiProject.Console.Core.Build;
 
@@ -12,42 +11,8 @@ public static class BuildRunner
         IProgress<string>? progress,
         CancellationToken ct = default)
     {
-        var lines = new List<string>();
-        void Emit(string line)
-        {
-            lines.Add(line);
-            progress?.Report(line);
-        }
-
-        var psi = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = cwd,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        psi.ArgumentList.Add("build");
-        psi.ArgumentList.Add(target);
-        psi.ArgumentList.Add("-v");
-        psi.ArgumentList.Add("minimal");
-        psi.ArgumentList.Add("--nologo");
-
-        using var proc = new Process { StartInfo = psi };
-        proc.Start();
-        var stdout = proc.StandardOutput.ReadToEndAsync(ct);
-        var stderr = proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-        var combined = (await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false));
-        foreach (var line in combined.Split('\n'))
-        {
-            var text = line.TrimEnd('\r');
-            if (text.Length > 0)
-                Emit(text);
-        }
-        return (proc.ExitCode, string.Join('\n', lines));
+        var plan = StackCommands.PlanBuild(cwd, target);
+        return await StackCommands.RunAsync(plan, progress, ct).ConfigureAwait(false);
     }
 
     public static IReadOnlyList<string> TargetsFor(ProjectCatalog catalog, string handler)
@@ -85,6 +50,34 @@ public static class BuildRunner
             foreach (var p in catalog.Projects)
                 targets.Add(Path.Combine(catalog.Root, p.RelDir.Replace('/', Path.DirectorySeparatorChar)));
         }
-        return targets;
+        return Canonicalize(catalog.Root, targets);
+    }
+
+    /// <summary>
+    /// 略過沒有專案檔、不能編譯的靜態資料夾；同一工作目錄只編一次。
+    /// </summary>
+    public static IReadOnlyList<string> Canonicalize(string workspaceRoot, IReadOnlyList<string> targets)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var target in targets)
+        {
+            var plan = StackCommands.PlanBuild(workspaceRoot, target);
+            if (plan.MissingToolIds.Count > 0)
+            {
+                if (seen.Add(Path.GetFullPath(target)))
+                    result.Add(target);
+                continue;
+            }
+            if (string.IsNullOrEmpty(plan.FileName))
+                continue;
+            var key = string.IsNullOrEmpty(plan.WorkingDirectory)
+                ? Path.GetFullPath(target)
+                : Path.GetFullPath(plan.WorkingDirectory);
+            if (!seen.Add(key))
+                continue;
+            result.Add(plan.WorkingDirectory);
+        }
+        return result;
     }
 }

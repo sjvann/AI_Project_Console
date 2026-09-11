@@ -28,8 +28,10 @@ dotnet docfx docfx.json
 | 檔案 | 用途 |
 |------|------|
 | `docfx.json` | 要掃的專案、markdown、範本、站名 |
-| `toc.yml` | 頂列：使用文件／API |
+| `toc.yml` | 頂列：使用文件／產品規格／銷售套件／API |
 | `docs/toc.yml` | 使用文件側欄 |
+| `docs/product/toc.yml` | 產品規格側欄 |
+| `docs/salekit/toc.yml` | 銷售套件側欄 |
 | `index.md` | 網站首頁 |
 | `templates/public/` | 自訂樣式與頂列 GitHub 圖示 |
 | `.config/dotnet-tools.json` | 鎖定 DocFX 2.78.5 |
@@ -41,3 +43,7 @@ API 來自 `AiProject.Console.Core` 與 `AiProject.Console.Mcp`（不含桌面 U
 推送到 `main` 後，[`.github/workflows/docs.yml`](https://github.com/sjvann/AI_Project_Console/blob/main/.github/workflows/docs.yml) 會建置並部署。倉庫 **Settings → Pages → Source** 須為 **GitHub Actions**。也可在 Actions 手動跑「Deploy docs」。
 
 Pull request 只建置、不發佈，用來確認文件沒破。
+
+銷售套件的 HTML／PDF 不經 Markdown 引擎，由 `docfx.json` 的 `resource` 複製到 `_site/docs/salekit/`。改 `executive-pitch.html` 後請重出 PDF，見 [銷售套件](../salekit/README.md)。
+
+授權全文、NOTICE、SECURITY、CONTRIBUTING 會複製到 `_site/legal-source/`。頁尾與 [版權與授權](../legal/copyright.md) 連回去。站上的「編輯此頁」已關掉，避免被誤解為開源專案。

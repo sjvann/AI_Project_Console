@@ -1,3 +1,5 @@
+using AiProject.Console.Core.Tech;
+
 namespace AiProject.Console.Core.Catalog;
 
 public sealed record CatalogRefreshDiff(
@@ -58,6 +60,9 @@ public static class CatalogRefresh
     internal static string ProjectKey(ProjectInfo info)
     {
         var rel = (info.RelDir ?? "").Replace('\\', '/').Trim();
+        var file = Path.GetFileName(info.Csproj ?? "");
+        if (!string.IsNullOrEmpty(file) && TechStackCatalog.IsProjectManifest(file))
+            return string.IsNullOrEmpty(rel) ? file : rel.TrimEnd('/') + "/" + file;
         return string.IsNullOrEmpty(rel) ? info.Name : rel;
     }
 

@@ -33,12 +33,13 @@ public sealed class WindsurfBackend : IAgentBackend
         return Task.FromResult(OpenWorkspace(root, cliOverride));
     }
 
-    public string? CloseIde() => LocalAppCloser.Close(
+    public string? CloseIde(string? workspaceRoot = null) => LocalAppCloser.Close(
         DisplayName,
         ["Windsurf", "windsurf", "Devin"],
-        windowsImages: ["Windsurf.exe", "Devin.exe"],
+        windowsImages: workspaceRoot is null ? ["Windsurf.exe", "Devin.exe"] : null,
         macAppNames: ["Windsurf", "Devin"],
-        unixPattern: "windsurf");
+        unixPattern: workspaceRoot is null ? "windsurf" : null,
+        workspaceRoot: workspaceRoot);
 
     static string? OpenFolder(string cli, string root)
     {

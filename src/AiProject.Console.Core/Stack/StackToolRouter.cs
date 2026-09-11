@@ -24,7 +24,7 @@ public static class StackToolRouter
         new("start_all", "啟動尚未在線的服務（依 startOrder，並先起 dependsOn）。", ""),
         new("stop_all", "停止全部服務。破壞性操作：必須先向使用者確認，再帶 confirm=true。", "confirm"),
         new("get_log", "讀取服務 Log 尾端。", "id tail"),
-        new("doctor", "環境體檢（dotnet／git／Agent 後端／MCP 政策）。", ""),
+        new("doctor", "環境體檢（git、依專案偵測的語言環境／Agent 後端／MCP 政策）。", ""),
         new("git_status", "目前分支、未提交、領先／落後。", ""),
         new("ci_status", "遠端 GitHub Actions 最近執行：通過／失敗／進行中。只摘要，不含 log。", ""),
         new("pr_status", "目前分支的 PR 與檢查是否通過。只回答能不能請人審，不含審查內容。", ""),

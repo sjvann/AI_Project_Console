@@ -21,25 +21,31 @@
             <span class="hours-chip-v">@S.TodayWorkText</span>
         </button>
         <button class="btn-sec" @onclick="@(() => S.OpenPreferences())">設定</button>
-        <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
-        <button type="button" class="gh-id @(S.GithubLoggedIn ? null : "is-muted")" title="GitHub 操作台（Ctrl+G）" @onclick="S.ToggleGithubHub">
-            @if (S.GithubLoggedIn)
-            {
+        <div class="gh-cluster">
+            <button type="button"
+                    class="git-pulse-mark @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
+                    title="開啟 GitHub 操作台（Ctrl+G）"
+                    aria-haspopup="true"
+                    aria-expanded="@S.GithubHubOpen"
+                    @onclick="S.ToggleGithubHub">
+                GitHub 操作台
+                @if (S.HasUncommitted)
+                {
+                    <span class="gh-hub-badge">@S.GitBrief!.DirtyCount</span>
+                }
+            </button>
+            <button type="button" class="gh-id is-@S.GithubStatusTone" title="@S.GithubStatusTitle" @onclick="S.ToggleGithubHub">
                 <span class="gh-id-dot" aria-hidden="true"></span>
-                <span>@S.GithubAccountText</span>
-            }
-            else
-            {
-                <span>GitHub</span>
-            }
-        </button>
+                <span>@S.GithubAccountLabel</span>
+            </button>
+        </div>
         <button class="btn-danger" @onclick="S.ExitAsync">離開</button>
     </div>
 
     @if (S.UpdateAvailable is not null)
     {
         <div class="update-banner">
-            <span>發現新版本 @S.UpdateAvailable.Tag（目前 v@(AppInfo.Version)）</span>
+            <span>發現新版本 @S.UpdateAvailable.Tag（目前 v@(AppInfo.Version)）@(S.UpdateAvailable.Prerelease ? "（RC／預發行）" : "")</span>
             <span class="grow"></span>
             <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ApplyUpdateAsync">立即更新</button>
             <button class="btn-sec" @onclick="S.OpenUpdatePage">查看說明</button>
@@ -49,7 +55,13 @@
 
     <div class="card">
         <div class="row">
-            <strong>@(S.Catalog?.Name ?? "尚未選擇專案")</strong>
+            <strong class="project-heading">
+                @if (S.WorkspaceAppIconUrl is { } projectIcon)
+                {
+                    <img class="app-icon" src="@projectIcon" width="20" height="20" alt="" />
+                }
+                <span>@(S.Catalog?.Name ?? "尚未選擇專案")</span>
+            </strong>
             @if (S.HasProject && S.GitBrief is not null)
             {
                 <button type="button"
@@ -65,7 +77,7 @@
             <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄、從歷史載入，或從 GitHub 開啟。")</span>
             <select class="history" @key="HistorySelectValue" value="@HistorySelectValue" @onchange="OnRecent">
                 <option value="">歷史專案</option>
-                @foreach (var p in S.RecentProjects)
+                @foreach (var p in S.HistoryProjects)
                 {
                     <option value="@p">@System.IO.Path.GetFileName(p) — @p</option>
                 }
@@ -109,15 +121,7 @@
             <ActionMenu Title="部署" Actions="S.DeployActions" Session="S" @bind-Open="openMenu" Key="deploy" />
             <ActionMenu Title="文件" Actions="S.DocsActions" Session="S" @bind-Open="openMenu" Key="docs" />
             <button type="button"
-                    class="git-pulse-mark row-end @(S.GithubHubOpen ? "is-open" : null) @(S.GitPulseBlocked ? "is-warn" : null)"
-                    title="開啟 GitHub 操作台（Ctrl+G）"
-                    aria-haspopup="true"
-                    aria-expanded="@S.GithubHubOpen"
-                    @onclick="S.ToggleGithubHub">
-                GitHub 操作台
-            </button>
-            <button type="button"
-                    class="btn-sec @(S.AskPanelOpen ? "is-open" : null)"
+                    class="btn-sec row-end @(S.AskPanelOpen ? "is-open" : null)"
                     title="用本機堆疊事實回答專案問題"
                     aria-haspopup="dialog"
                     aria-expanded="@S.AskPanelOpen"
@@ -253,7 +257,11 @@
                                 <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null) @(activity is not null ? "is-busy" : null)" style="padding-left: @(8 + (node.Depth + 1) * 14)px" @onclick="@(() => S.SelectService(svc.Id))">
                                     <span class="@(on ? "status-on" : "status-off")">@(self ? "本機" : on ? "線上" : "離線")</span>
                                     <span class="svc-label">
-                                        <span>@svc.Label</span>
+                                        @if (S.AppIconDataUrl(svc.IconPath) is { } svcIcon)
+                                        {
+                                            <img class="app-icon" src="@svcIcon" width="16" height="16" alt="" />
+                                        }
+                                        <span class="svc-name">@svc.Label</span>
                                         @if (activity is not null)
                                         {
                                             <span class="svc-busy" aria-live="polite">@activity</span>
@@ -327,7 +335,13 @@
                             var badge = BuildFreshness.BadgeText(p);
                             var ago = BuildFreshness.FormatAgo(p.LastBuildUtc);
                             <div class="prj prj-@kind" title="@p.Reason">
-                                <span class="prj-name">@p.Name</span>
+                                <span class="prj-name">
+                                    @if (S.AppIconDataUrl(p.IconPath) is { } prjIcon)
+                                    {
+                                        <img class="app-icon" src="@prjIcon" width="16" height="16" alt="" />
+                                    }
+                                    <span>@p.Name</span>
+                                </span>
                                 <span class="meta">@ProjectMeta(p, ago)</span>
                                 <span class="badge-stale badge-@kind">@badge</span>
                                 <span class="prj-actions">
@@ -751,34 +765,7 @@
 
 @if (S.Dialog == "commit")
 {
-    <div class="overlay" @onclick="S.CloseDialog">
-        <div class="dialog dialog-lg" @onclick:stopPropagation="true">
-            <h2>提交變更</h2>
-            <p class="hint">@S.CommitHint</p>
-            <div class="field" style="align-items:start">
-                <span>檔案</span>
-                <pre class="change-list">@string.Join('\n', S.CommitChanges.Select(c => c.Display()))</pre>
-            </div>
-            <div class="field" style="align-items:start">
-                <span>說明</span>
-                <div>
-                    <textarea @bind="S.CommitMessage" placeholder="例如：修正搜尋條件驗證。也可按「AI 建議」。" style="min-height:110px"></textarea>
-                    <div class="btn-row">
-                        <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.SuggestCommitMessageAsync">AI 建議</button>
-                    </div>
-                    @if (!string.IsNullOrEmpty(S.CommitSuggestHint))
-                    {
-                        <p class="hint">@S.CommitSuggestHint</p>
-                    }
-                </div>
-            </div>
-            <label class="check"><input type="checkbox" checked="@S.CommitPushAfter" @onchange="e => S.CommitPushAfter = (bool)(e.Value ?? false)" /> 提交後發布（push）目前分支</label>
-            <div class="dialog-actions">
-                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
-                <button class="btn-primary" disabled="@S.JobBusy" @onclick="S.ConfirmCommitAsync">提交</button>
-            </div>
-        </div>
-    </div>
+    <CommitDialog />
 }
 
 @if (S.Dialog == "release")
@@ -808,7 +795,11 @@
             <div class="field" style="align-items:start">
                 <span>附加檔案</span>
                 <div>
-                    @if (S.ReleaseAssets.Count == 0)
+                    @if (S.ReleasePackable)
+                    {
+                        <p class="hint">@S.ReleasePackHint</p>
+                    }
+                    else if (S.ReleaseAssets.Count == 0)
                     {
                         <p class="hint">選填。可附加安裝包、zip 等資產。</p>
                     }
@@ -816,7 +807,13 @@
                     {
                         <div class="row"><span class="grow hint">@f</span><button class="btn-link" @onclick="@(() => S.RemoveReleaseAsset(f))">移除</button></div>
                     }
-                    <button class="btn-sec" @onclick="S.AddReleaseAssetAsync">加入檔案…</button>
+                    <div class="btn-row">
+                        @if (S.ReleasePackable)
+                        {
+                            <button class="btn-sec" disabled="@S.JobBusy" @onclick="S.PackReleaseAssetsAsync">打包 Windows 安裝包</button>
+                        }
+                        <button class="btn-sec" @onclick="S.AddReleaseAssetAsync">加入檔案…</button>
+                    </div>
                 </div>
             </div>
             <div class="dialog-actions">
@@ -983,6 +980,18 @@
                             }
                         </datalist>
                         <p class="hint">大型公司可填自建 Git 主機。GitHub 相容主機用 gh；其他種類先可設，任務功能尚未接時會明白停用。</p>
+                        <h3 class="prefs-sub">公司平台</h3>
+                        <p class="hint">送到公司與讀取派工條用的自架網址，例如 https://company.example.com。不含原始碼，只傳時段與狀態圖。</p>
+                        <div class="field">
+                            <span>公司平台網址</span>
+                            <input @bind="S.CompanyBaseUrl" placeholder="https://company.example.com" />
+                        </div>
+                        <h3 class="prefs-sub">控制台更新</h3>
+                        <p class="hint">目前版本 v@(AppInfo.Version)。檢查時會詢問是否包含 RC／預發行。也可選本機安裝程式或 zip 直接套用。</p>
+                        <div class="row">
+                            <button class="btn-sec" type="button" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
+                            <button class="btn-sec" type="button" disabled="@S.JobBusy" @onclick="S.ApplyUpdateFromFileAsync">從檔案更新…</button>
+                        </div>
                     </div>
                 }
                 else if (S.PrefsTab == "agent")
@@ -1081,6 +1090,21 @@
     <JobResultDialog S="S" />
 }
 
+@if (S.Dialog == "release-progress")
+{
+    <ReleaseProgressDialog S="S" />
+}
+
+@if (S.Dialog == "leave-gate")
+{
+    <LeaveGateDialog S="S" />
+}
+
+@if (S.Dialog == "issue")
+{
+    <IssueDialog S="S" />
+}
+
 @code {
     string? openMenu;
     DotNetObjectReference<Index>? _hubKeys;
@@ -1088,7 +1112,7 @@
 
     string HistorySelectValue =>
         S.Catalog?.Root is { } root
-            ? S.RecentProjects.FirstOrDefault(p => string.Equals(p, root, StringComparison.OrdinalIgnoreCase)) ?? ""
+            ? S.HistoryProjects.FirstOrDefault(p => string.Equals(p, System.IO.Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase)) ?? System.IO.Path.GetFullPath(root)
             : "";
 
     static string ProjectMeta(BuildState p, string ago)
@@ -1142,6 +1166,8 @@
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "build-view");
         if (S.AskPanelOpen)
             await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "ask-view");
+        if (S.Dialog == "release-progress")
+            await Js.InvokeVoidAsync("aiConsole.scrollToEnd", "release-log");
     }
 
     void OnChanged() => InvokeAsync(StateHasChanged);

@@ -19,11 +19,11 @@
    - Agent 後端選團隊主力。見 [Agent 後端](../agent/backends.md)。
    - 確認偵測狀態為可用；必要時填 CLI 路徑覆寫。
    - 可選深色外觀。
-3. 按「環境體檢」，確認 dotnet、git，以及目前後端。
+3. 按「環境體檢」，確認 git、工作區需要的語言環境，以及目前後端。
 
 ## 10–30 分：打開真實倉
 
-1. 「選擇專案目錄…」指向多服務倉根（含多個 `.csproj` 或薄工作區）。
+1. 「選擇專案目錄…」指向多服務倉根（含 `.csproj`／`package.json`／`pyproject.toml` 等，或薄工作區）。
 2. 若是薄工作區，依 [工作區設定](../workspace/ai-project-json.md) 建立 `ai-project.json`，填 `productLines`／`services`／`startOrder`。範例：[`schema/ai-project.example.json`](../../schema/ai-project.example.json)。
 3. 左側「服務」應出現可啟動項目；「專案」顯示需重編／未建置／最新。
 4. 把滑鼠停在「需重編」上看原因（哪個檔比 DLL 新）。這是編譯可信度的核心。

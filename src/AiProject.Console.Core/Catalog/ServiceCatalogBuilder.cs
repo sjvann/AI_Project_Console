@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using AiProject.Console.Core.Scan;
+using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Catalog;
@@ -130,6 +131,7 @@ public static class ServiceCatalogBuilder
         }
         if (startOrder.Count == 0)
             startOrder = services.Where(s => s.HostedBy is null).Select(s => s.Id).ToList();
+        services = FillIcons(root, services, projects);
 
         var frontend = JsonUtil.Str(manifest["frontend"]);
         if (string.IsNullOrEmpty(frontend))
@@ -210,6 +212,16 @@ public static class ServiceCatalogBuilder
         var n = (project ?? "").Replace('\\', '/').Trim().Trim('/');
         if (n.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             n = n[..^".csproj".Length];
+        else if (n.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase))
+            n = n[..^".fsproj".Length];
+        else if (n.EndsWith(".vbproj", StringComparison.OrdinalIgnoreCase))
+            n = n[..^".vbproj".Length];
+        else
+        {
+            var file = n.Split('/').LastOrDefault() ?? "";
+            if (TechStackCatalog.IsExactManifestName(file) && n.Length > file.Length)
+                n = n[..^(file.Length)].TrimEnd('/');
+        }
         return n.TrimEnd('/');
     }
 
@@ -229,16 +241,55 @@ public static class ServiceCatalogBuilder
         return IsSameOrUnder(procDir, projectDir);
     }
 
-    internal static string? ResolveProjectDirectory(ProjectCatalog catalog, ServiceEntry svc)
+    internal static string? ResolveProjectDirectory(ProjectCatalog catalog, ServiceEntry svc) =>
+        ResolveProjectDirectory(catalog.Root, svc.Project);
+
+    internal static string? ResolveProjectDirectory(string root, string project)
     {
-        var rel = (svc.Project ?? "").Replace('/', Path.DirectorySeparatorChar);
-        var full = Path.GetFullPath(Path.Combine(catalog.Root, rel));
-        if (Directory.Exists(full))
-            return full;
+        var rel = (project ?? "").Replace('/', Path.DirectorySeparatorChar);
+        var full = Path.GetFullPath(Path.Combine(root, rel));
         if (File.Exists(full))
             return Path.GetDirectoryName(full);
+        if (Directory.Exists(full))
+            return full;
         var csproj = full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? full : full + ".csproj";
-        return File.Exists(csproj) ? Path.GetDirectoryName(csproj) : null;
+        if (File.Exists(csproj))
+            return Path.GetDirectoryName(csproj);
+        var manifest = TechStackCatalog.FindPreferredManifest(full);
+        return manifest is null ? null : Path.GetDirectoryName(manifest);
+    }
+
+    internal static List<ServiceEntry> FillIcons(string root, List<ServiceEntry> services, IReadOnlyList<ProjectInfo> projects)
+    {
+        var byKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in projects)
+        {
+            if (string.IsNullOrEmpty(p.IconPath) || !byKey.TryAdd(ProjectKey(p.RelDir), p.IconPath))
+                continue;
+        }
+        for (var i = 0; i < services.Count; i++)
+        {
+            var svc = services[i];
+            if (!string.IsNullOrEmpty(svc.IconPath))
+            {
+                var declared = AppIconLocator.ResolveAbsolute(root, svc.IconPath);
+                if (declared is not null)
+                {
+                    services[i] = svc with { IconPath = AppIconLocator.RelPath(root, declared) };
+                    continue;
+                }
+            }
+            if (byKey.TryGetValue(ProjectKey(svc.Project), out var fromProj))
+            {
+                services[i] = svc with { IconPath = fromProj };
+                continue;
+            }
+            var dir = ResolveProjectDirectory(root, svc.Project);
+            var found = dir is null ? null : AppIconLocator.FindRel(root, dir);
+            if (!string.IsNullOrEmpty(found))
+                services[i] = svc with { IconPath = found };
+        }
+        return services;
     }
 
     internal static bool IsSameOrUnder(string path, string root)
@@ -336,8 +387,13 @@ public static class ServiceCatalogBuilder
             return null;
         var stem = Path.GetFileName(project);
         if (stem.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
-            || stem.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+            || stem.EndsWith(".py", StringComparison.OrdinalIgnoreCase)
+            || stem.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+            || stem.EndsWith(".vbproj", StringComparison.OrdinalIgnoreCase))
             stem = Path.GetFileNameWithoutExtension(stem);
+        else if (stem.Equals("package.json", StringComparison.OrdinalIgnoreCase)
+            || TechStackCatalog.IsExactManifestName(stem))
+            stem = Path.GetFileName(project.TrimEnd('/').Contains('/') ? project[..project.LastIndexOf('/')] : project);
         var label = JsonUtil.Pick(JsonUtil.Str(item["label"]), stem);
         var sid = JsonUtil.Pick(JsonUtil.Str(item["id"]), Slug(label));
         int? port = null;
@@ -354,6 +410,7 @@ public static class ServiceCatalogBuilder
         var hosted = JsonUtil.Pick(JsonUtil.Str(item["hostedBy"]), JsonUtil.Str(item["hosted_by"]));
         var preStart = JsonUtil.Pick(JsonUtil.Str(item["preStart"]), JsonUtil.Str(item["pre_start"]), JsonUtil.Str(item["ensure"]));
         var ready = JsonUtil.Pick(JsonUtil.Str(item["ready"]), JsonUtil.Str(item["readyUrl"]), JsonUtil.Str(item["ready_url"]));
+        var icon = JsonUtil.Pick(JsonUtil.Str(item["icon"])).Replace('\\', '/');
         if (project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             project = project[..^".csproj".Length];
         return new ServiceEntry(
@@ -371,7 +428,8 @@ public static class ServiceCatalogBuilder
             Source: "manifest",
             DependsOn: ReadDependsOn(item),
             Ready: string.IsNullOrEmpty(ready) ? null : ready,
-            ReadyTimeoutMs: ReadReadyTimeoutMs(item));
+            ReadyTimeoutMs: ReadReadyTimeoutMs(item),
+            IconPath: icon);
     }
 
     private static IReadOnlyList<ServiceDependency> ReadDependsOn(JsonObject item)

@@ -41,49 +41,21 @@ public static class CursorLauncher
 
     public static int NewAgentLaunchDelayMs() => IsCursorRunning() ? 400 : 2200;
 
-    public static string? OpenInCursor(string path, bool reuseWindow = true, IEnumerable<string>? extraPaths = null)
+    public static string? OpenInCursor(string path, bool reuseWindow = false, IEnumerable<string>? extraPaths = null)
     {
         var cli = ResolveCli();
         if (cli is null)
             return "找不到 Cursor CLI（請確認已安裝並把 cursor 加到 PATH）";
-        var target = Path.GetFullPath(path);
-        if (!File.Exists(target) && !Directory.Exists(target))
-            return $"路徑不存在：{target}";
-        var psi = new ProcessStartInfo(cli)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        if (reuseWindow)
-            psi.ArgumentList.Add("--reuse-window");
-        psi.ArgumentList.Add(Directory.Exists(target) ? target : Path.GetDirectoryName(target)!);
-        if (extraPaths is not null)
-        {
-            foreach (var extra in extraPaths)
-            {
-                if (File.Exists(extra))
-                    psi.ArgumentList.Add(Path.GetFullPath(extra));
-            }
-        }
-        try
-        {
-            Process.Start(psi);
-        }
-        catch (Exception ex)
-        {
-            return $"無法啟動 Cursor：{ex.Message}";
-        }
-        return null;
+        return IdeWorkspaceLaunch.OpenFolder(cli, path, reuseWindow, extraPaths, "Cursor");
     }
 
-    public static string? CloseCursor() => LocalAppCloser.Close(
+    public static string? CloseCursor(string? workspaceRoot = null) => LocalAppCloser.Close(
         "Cursor",
         ["Cursor", "cursor"],
-        windowsImages: ["Cursor.exe"],
+        windowsImages: workspaceRoot is null ? ["Cursor.exe"] : null,
         macAppNames: ["Cursor"],
-        unixPattern: "cursor");
+        unixPattern: workspaceRoot is null ? "cursor" : null,
+        workspaceRoot: workspaceRoot);
 
     public static IReadOnlyList<string> ExtractBuildErrors(string logText)
     {
@@ -215,7 +187,11 @@ public static class CursorLauncher
         return string.Join('\n', lines) + "\n" + AgentPlaybook.VerificationHint();
     }
 
-    public static string BuildIssueAgentPrompt(string root, GithubIssue issue)
+    public static string BuildIssueAgentPrompt(
+        string root,
+        GithubIssue issue,
+        IReadOnlyList<GithubIssueComment>? comments = null,
+        string? confirmedNotes = null)
     {
         var title = string.IsNullOrWhiteSpace(issue.Title) ? "（未命名）" : issue.Title.Trim();
         var body = string.IsNullOrWhiteSpace(issue.Body) ? "（沒有內文）" : issue.Body.Trim();
@@ -223,17 +199,38 @@ public static class CursorLauncher
             body = body[..MaxLogChars].TrimEnd() + "\n…（內文過長，已截斷）";
         var labels = issue.Labels.Count == 0 ? "（無）" : string.Join(", ", issue.Labels);
         var url = string.IsNullOrEmpty(issue.Url) ? "（無）" : issue.Url;
-        return
-            "請協助處理指派給我的 GitHub Issue。先理解需求，再直接在此工作區實作；優先完成任務，不要只做說明。"
-            + "改完後簡短說明改了什麼、如何驗證。\n\n"
-            + $"專案根目錄：{root}\n"
-            + $"Issue：{issue.NumberText} {title}\n"
-            + $"網址：{url}\n"
-            + $"標籤：{labels}\n\n"
-            + "Issue 內容：\n"
-            + body
-            + "\n"
-            + AgentPlaybook.VerificationHint();
+        var lines = new List<string>
+        {
+            "請協助處理指派給我的 GitHub Issue。這是我自己處理不了、才請你實作的。先理解需求與討論紀錄，再直接在此工作區實作；優先完成任務，不要只做說明。",
+            "改完後簡短說明改了什麼、如何驗證。",
+            "",
+            $"專案根目錄：{root}",
+            $"Issue：{issue.NumberText} {title}",
+            $"網址：{url}",
+            $"標籤：{labels}",
+            "",
+            "Issue 內容：",
+            body,
+        };
+        if (comments is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("討論紀錄：");
+            foreach (var comment in comments.TakeLast(8))
+            {
+                var text = string.IsNullOrWhiteSpace(comment.Body) ? "（無）" : comment.Body.Trim();
+                if (text.Length > 800)
+                    text = text[..800].TrimEnd() + "…";
+                lines.Add($"- {comment.AuthorText}：{text}");
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(confirmedNotes))
+        {
+            lines.Add("");
+            lines.Add("確認補充：");
+            lines.Add(confirmedNotes.Trim());
+        }
+        return string.Join('\n', lines) + "\n" + AgentPlaybook.VerificationHint();
     }
 
     public static string PromptDeeplinkUrl(string promptText) =>
@@ -281,7 +278,7 @@ public static class CursorLauncher
         return null;
     }
 
-    public static string? OpenProjectForNewAgent(string root) => OpenInCursor(root, reuseWindow: true);
+    public static string? OpenProjectForNewAgent(string root) => OpenInCursor(root);
 
     public static string? SaveClipboardImageWindows(string dest)
     {

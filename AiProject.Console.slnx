@@ -3,8 +3,18 @@
     <Project Path="src/AiProject.Console.Core/AiProject.Console.Core.csproj" />
     <Project Path="src/AiProject.Console.App/AiProject.Console.App.csproj" />
     <Project Path="src/AiProject.Console.Mcp/AiProject.Console.Mcp.csproj" />
+    <Project Path="src/AiProject.Console.CompanyClient/AiProject.Console.CompanyClient.csproj" />
+    <Project Path="src/AiProject.Company.Domain/AiProject.Company.Domain.csproj" />
+    <Project Path="src/AiProject.Company.Application/AiProject.Company.Application.csproj" />
+    <Project Path="src/AiProject.Company.Infrastructure/AiProject.Company.Infrastructure.csproj" />
+    <Project Path="src/AiProject.Company.Contracts/AiProject.Company.Contracts.csproj" />
+    <Project Path="src/AiProject.Company.Web/AiProject.Company.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AiProject.Console.Core.Tests/AiProject.Console.Core.Tests.csproj" />
+    <Project Path="tests/AiProject.Company.Domain.Tests/AiProject.Company.Domain.Tests.csproj" />
+    <Project Path="tests/AiProject.Company.Application.Tests/AiProject.Company.Application.Tests.csproj" />
+    <Project Path="tests/AiProject.Company.Web.Tests/AiProject.Company.Web.Tests.csproj" />
+    <Project Path="tests/AiProject.Console.CompanyClient.Tests/AiProject.Console.CompanyClient.Tests.csproj" />
   </Folder>
 </Solution>

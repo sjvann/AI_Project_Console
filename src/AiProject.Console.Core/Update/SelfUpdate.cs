@@ -148,7 +148,12 @@ public static class SelfUpdate
         IProgress<string>? progress = null,
         CancellationToken ct = default)
     {
+<<<<<<< HEAD
         var dest = ReserveUpdatePath(asset.Name);
+=======
+        var dir = StagingDirectory();
+        var dest = AllocateStagingPath(Path.GetFileName(asset.Name));
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
 
         if (CliUtil.CommandExists("gh"))
         {
@@ -158,8 +163,23 @@ public static class SelfUpdate
                 "release", "download", update.Tag,
                 "--repo", AppInfo.GitHubSlug,
                 "--pattern", asset.Name,
+<<<<<<< HEAD
                 "--output", dest,
             };
+=======
+                "--clobber",
+            };
+            if (PathsEqual(dest, Path.Combine(dir, Path.GetFileName(asset.Name))))
+            {
+                args.Add("--dir");
+                args.Add(dir);
+            }
+            else
+            {
+                args.Add("--output");
+                args.Add(dest);
+            }
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
                 "gh",
                 args,
@@ -247,7 +267,11 @@ public static class SelfUpdate
             Thread.Sleep(400);
             return pid;
         }
+<<<<<<< HEAD
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+=======
+        catch (IOException ex)
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         {
             throw new InvalidOperationException(
                 "無法啟動安裝程式：暫存安裝檔被其他程式占用（常見於防毒軟體掃描）。請關閉控制台後，改從 GitHub Releases 手動執行 setup.exe。\n" + ex.Message,
@@ -255,6 +279,7 @@ public static class SelfUpdate
         }
     }
 
+<<<<<<< HEAD
     public static string ReserveUpdatePath(string fileName)
     {
         var name = Path.GetFileName(fileName);
@@ -268,16 +293,39 @@ public static class SelfUpdate
         return Path.Combine(StagingDirectory(), Guid.NewGuid().ToString("N")[..8] + "-" + name);
     }
 
+=======
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
     public static string StageUpdateFile(string path)
     {
         var src = Path.GetFullPath(path);
         if (!File.Exists(src))
             throw new InvalidOperationException("找不到檔案：" + src);
+<<<<<<< HEAD
 
         // Never copy onto the download itself. Same-path File.Copy on Windows throws
         // "The process cannot access the file because it is being used by another process."
         var dest = AllocateRunPath(Path.GetFileName(src));
         CopyWithRetry(src, dest);
+=======
+        var dest = Path.Combine(StagingDirectory(), Path.GetFileName(src));
+        // Download already writes into this folder. Copying a file onto itself on Windows
+        // throws IOException: "The process cannot access the file because it is being used by another process."
+        if (PathsEqual(src, dest))
+        {
+            TryUnblock(src);
+            return src;
+        }
+
+        try
+        {
+            File.Copy(src, dest, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            dest = AllocateStagingPath(Path.GetFileName(src), forceUnique: true);
+            File.Copy(src, dest, overwrite: true);
+        }
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         TryUnblock(dest);
         return dest;
     }
@@ -411,6 +459,7 @@ public static class SelfUpdate
         return dir;
     }
 
+<<<<<<< HEAD
     private static string AllocateRunPath(string fileName)
     {
         var dir = Path.Combine(StagingDirectory(), "run-" + Guid.NewGuid().ToString("N")[..8]);
@@ -424,10 +473,24 @@ public static class SelfUpdate
             dest = AllocateRunPath(Path.GetFileName(src));
 
         Exception? last = null;
+=======
+    private static string AllocateStagingPath(string fileName, bool forceUnique = false)
+    {
+        var dir = StagingDirectory();
+        var dest = Path.Combine(dir, fileName);
+        if (!forceUnique && (!File.Exists(dest) || TryDeleteFile(dest)))
+            return dest;
+        return Path.Combine(dir, Guid.NewGuid().ToString("N")[..8] + "-" + fileName);
+    }
+
+    private static bool TryDeleteFile(string path)
+    {
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         for (var i = 0; i < 8; i++)
         {
             try
             {
+<<<<<<< HEAD
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 File.Copy(src, dest, overwrite: false);
                 return;
@@ -461,6 +524,11 @@ public static class SelfUpdate
                 if (!File.Exists(path))
                     return true;
                 File.Move(path, retired);
+=======
+                if (!File.Exists(path))
+                    return true;
+                File.Delete(path);
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
                 return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

@@ -290,14 +290,15 @@ public static class DeployConfigResolver
 
     public static void SaveLocal(string root, DeployConfig cfg)
     {
-        var data = ConsoleSettingsStore.Load();
-        var byRoot = JsonUtil.Obj(data["deployByProject"]) ?? new JsonObject();
-        byRoot[Path.GetFullPath(root)] = cfg.AsObject();
-        data["deployByProject"] = byRoot;
-        var gcpBy = JsonUtil.Obj(data["gcpByProject"]) ?? new JsonObject();
-        gcpBy[Path.GetFullPath(root)] = cfg.Gcp.AsObject();
-        data["gcpByProject"] = gcpBy;
-        ConsoleSettingsStore.Save(data);
+        ConsoleSettingsStore.Mutate(data =>
+        {
+            var byRoot = JsonUtil.Obj(data["deployByProject"]) ?? new JsonObject();
+            byRoot[Path.GetFullPath(root)] = cfg.AsObject();
+            data["deployByProject"] = byRoot;
+            var gcpBy = JsonUtil.Obj(data["gcpByProject"]) ?? new JsonObject();
+            gcpBy[Path.GetFullPath(root)] = cfg.Gcp.AsObject();
+            data["gcpByProject"] = gcpBy;
+        });
     }
 
     public static string WriteManifest(ProjectCatalog catalog, DeployConfig cfg)

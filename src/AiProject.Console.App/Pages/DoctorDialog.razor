@@ -46,6 +46,11 @@
                                     {
                                         <pre class="doctor-howto">@item.HowTo</pre>
                                     }
+                                    @if (!string.IsNullOrEmpty(item.ActionId) && !string.IsNullOrEmpty(item.ActionLabel))
+                                    {
+                                        <button type="button" class="btn-sec doctor-action-btn" disabled="@S.JobBusy"
+                                                @onclick="@(() => S.RunDoctorActionAsync(item.ActionId!))">@item.ActionLabel</button>
+                                    }
                                 </li>
                             }
                         </ul>
@@ -68,6 +73,10 @@
                         else if (block.ActionId == "install-docfx")
                         {
                             <button type="button" class="btn-primary doctor-action-btn" disabled="@S.JobBusy" @onclick="S.InstallDocfxFromDoctorAsync">安裝 DocFX</button>
+                        }
+                        else if (block.ActionId == "install-toolchains")
+                        {
+                            <button type="button" class="btn-primary doctor-action-btn" disabled="@S.JobBusy" @onclick="@(() => S.RunDoctorActionAsync("install-toolchains"))">安裝缺少的開發環境</button>
                         }
                     </section>
                 }

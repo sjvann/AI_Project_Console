@@ -1,0 +1,30 @@
+@page "/people/unmatched"
+@rendermode InteractiveServer
+@inject DirectoryQueries Directory
+@inject PeopleCommands Commands
+
+<PageTitle>待歸戶</PageTitle>
+<h1>待歸戶佇列</h1>
+<p class="hint">控制台上傳對不到人員檔時會進來。綁定 GitHub 後再請工程師重試或由人資對上。</p>
+<table class="grid">
+    <thead><tr><th>GitHub</th><th>本機時段</th><th>時間</th></tr></thead>
+    <tbody>
+        @foreach (var item in _items)
+        {
+            <tr>
+                <td>@item.GitHubLogin</td>
+                <td>@item.LocalSlotId</td>
+                <td>@item.ReceivedAt.LocalDateTime</td>
+            </tr>
+        }
+    </tbody>
+</table>
+@if (_items.Count == 0)
+{
+    <p>目前沒有待歸戶上傳。</p>
+}
+
+@code {
+    IReadOnlyList<UnmatchedUpload> _items = [];
+    protected override async Task OnInitializedAsync() => _items = await Directory.UnmatchedAsync();
+}
