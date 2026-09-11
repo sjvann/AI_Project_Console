@@ -1,15 +1,12 @@
 {
   "mcpServers": {
     "ai-project-console": {
-      "command": "dotnet",
+      "command": "C:\\Projects\\AI_Project_Console\\src\\AiProject.Console.Mcp\\bin\\Debug\\net10.0\\AiProject.Console.Mcp.exe",
       "args": [
-        "run",
-        "--project",
-        "C:\\Projects\\AI_Project_Console\\src\\AiProject.Console.Mcp\\AiProject.Console.Mcp.csproj",
-        "--",
         "--root",
         "C:\\Projects\\AI_Project_Console"
-      ]
+      ],
+      "cwd": "C:\\Projects\\AI_Project_Console\\src\\AiProject.Console.Mcp\\bin\\Debug\\net10.0"
     },
     "github": {
       "url": "https://api.githubcopilot.com/mcp/"

@@ -153,6 +153,138 @@ public class TechStackTests
     }
 
     [Fact]
+    public void PlanBuild_NodePackageJson_UsesNpmBuild()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ai-stack-node-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "package.json"), """
+            { "name": "demo", "scripts": { "build": "vite build" } }
+            """);
+            var plan = StackCommands.PlanBuild(dir, dir);
+            Assert.DoesNotContain("dotnet build", plan.Display, StringComparison.OrdinalIgnoreCase);
+            if (plan.MissingToolIds.Count == 0)
+                Assert.Contains("build", plan.Display, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void PlanBuild_JsFolderWithoutManifest_DoesNotDotnetBuild()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ai-stack-js-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "app.js"), "console.log(1)\n");
+            File.WriteAllText(Path.Combine(dir, "main.js"), "console.log(2)\n");
+            var plan = StackCommands.PlanBuild(dir, dir);
+            Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(plan.MissingToolIds);
+            Assert.Contains("無需編譯", plan.Display);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void ScanWorkspace_WwwrootJs_IsNotASeparateProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-www-" + Guid.NewGuid().ToString("N"));
+        var web = Path.Combine(root, "src", "Demo.Web");
+        var js = Path.Combine(web, "wwwroot", "js");
+        Directory.CreateDirectory(js);
+        try
+        {
+            File.WriteAllText(Path.Combine(web, "Demo.Web.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(js, "app.js"), "console.log(1)\n");
+            var scan = ProjectScanner.ScanWorkspace(root);
+            Assert.DoesNotContain(scan.Projects, p => p.RelDir.Contains("wwwroot", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(scan.Projects, p => p.Name == "Demo.Web" && p.StackId == "dotnet");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void ScanWorkspace_StaticMainJs_IsNotANodeProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-tpl-" + Guid.NewGuid().ToString("N"));
+        var pub = Path.Combine(root, "templates", "public");
+        Directory.CreateDirectory(pub);
+        try
+        {
+            File.WriteAllText(Path.Combine(pub, "main.js"), "console.log(1)\n");
+            File.WriteAllText(Path.Combine(pub, "main.css"), "body{}\n");
+            var scan = ProjectScanner.ScanWorkspace(root);
+            Assert.DoesNotContain(scan.Projects, p => p.StackId == "node");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void ScanWorkspace_PythonUiFolderWithoutEntry_IsNotAProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-ui-" + Guid.NewGuid().ToString("N"));
+        var ui = Path.Combine(root, "ui");
+        Directory.CreateDirectory(ui);
+        try
+        {
+            foreach (var name in new[] { "buttons.py", "dialog.py", "bar.py", "help.py", "settings.py", "__init__.py" })
+                File.WriteAllText(Path.Combine(ui, name), "x = 1\n");
+            var scan = ProjectScanner.ScanWorkspace(root);
+            Assert.DoesNotContain(scan.Projects, p => p.RelDir.Equals("ui", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void ScanWorkspace_PythonBesideSolution_IsNotALooseProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-sln-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "src", "Demo"));
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "app.py"), "print(1)\n");
+            File.WriteAllText(Path.Combine(root, "Demo.slnx"), "{ }\n");
+            File.WriteAllText(Path.Combine(root, "src", "Demo", "Demo.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+            var scan = ProjectScanner.ScanWorkspace(root);
+            Assert.DoesNotContain(scan.Projects, p => p.StackId == "python");
+            Assert.Contains(scan.Projects, p => p.Name == "Demo" && p.StackId == "dotnet");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void FormatMissing_NamesTheTool()
     {
         var text = ToolchainBootstrap.FormatMissing(["python"]);
