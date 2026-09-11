@@ -1,0 +1,62 @@
+Copyright (c) 2026 sjvann. All rights reserved.
+版權所有 © 2026 sjvann。保留一切權利。
+
+This is not an open-source license. Making this repository public does not
+grant any license to use, copy, modify, merge, publish, distribute,
+sublicense, or sell the software, except as expressly stated below.
+
+本授權不是開源授權。倉庫改為公開可見，不構成對軟體的使用、重製、改作、
+散布、再授權或販售許可，下列明示允許者除外。
+
+Permitted without a separate written agreement
+未經另外書面約定即可為之：
+
+- View the source and documentation in this public repository.
+  瀏覽本公開倉庫的原始碼與文件。
+- Download official Windows installers and zip packages from this
+  repository's GitHub Releases, and install/run them for evaluation
+  or for your own internal operation of AI_Project Console.
+  從本倉庫 GitHub Releases 下載官方 Windows 安裝包或 zip，並安裝／執行，
+  供評估或供你自己內部操作「AI_Project 控制台」。
+- Quote short excerpts of the documentation with attribution for
+  criticism, review, or procurement discussion.
+  為評論、審查或採購討論，在註明出處的前提下引用文件的簡短摘錄。
+
+Not permitted without a separate written license from the copyright holder
+未經版權人另外書面授權，不得：
+
+- Copy, fork, or redistribute this source (in whole or in part) as your
+  own product, template, or competing service.
+  將本原始碼（全部或一部）作為你的產品、範本或競爭服務加以重製、fork 或散布。
+- Offer the software, or a modified version, to third parties (SaaS,
+  hosted, OEM, or otherwise).
+  向第三人提供本軟體或其改作（含 SaaS、代管、OEM 等）。
+- Remove, obscure, or alter copyright, trademark, or license notices.
+  移除、遮蓋或改動版權、商標或授權標示。
+- Use the names "AI_Project", "AI_Project 控制台", or confusingly
+  similar names to sell or promote another product.
+  使用「AI_Project」「AI_Project 控制台」或足以混淆的名稱銷售或推廣其他產品。
+
+Company workspace (AiProject.Company.*) and marketplace materials in this
+repository are planning / demonstration code. They are not a product
+offering and are not licensed for production use.
+
+公司工作區（AiProject.Company.*）與仲介相關材料為規劃／示範，不是已出貨產品，
+亦未授權用於正式營運。
+
+Third-party components keep their own licenses. See NOTICE.
+
+第三方元件仍依其各自授權。見 NOTICE。
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY.
+
+本軟體按「現況」提供，不含任何明示或默示擔保，包括適售性、特定目的適用性
+與不侵權。版權人在任何情況下不對任何請求、損害或其他責任負責。
+
+For a commercial license, contact the copyright holder via GitHub:
+https://github.com/sjvann/AI_Project_Console
+
+商業授權請經 GitHub 與版權人聯繫。

@@ -1,0 +1,53 @@
+AI_Project 控制台
+Copyright (c) 2026 sjvann. All rights reserved.
+
+This product includes third-party software. Those components remain
+under their own licenses. Listing them here does not change this
+repository's license (see LICENSE).
+
+本產品含第三方軟體。下列元件仍依其各自授權；列名不改變本倉庫授權（見 LICENSE）。
+
+.NET runtime and SDK, ASP.NET Core, Blazor
+Copyright (c) Microsoft Corporation. MIT License.
+https://github.com/dotnet/runtime
+
+Photino.Blazor / Photino.NET
+Copyright (c) TryPhotino. Apache License 2.0.
+https://github.com/tryphotino/photino.Blazor
+
+Markdig
+Copyright (c) Alexandre Mutel. BSD 2-Clause License.
+https://github.com/xoofcode/markdig
+
+Entity Framework Core
+Copyright (c) Microsoft Corporation. MIT License.
+
+Npgsql.EntityFrameworkCore.PostgreSQL
+Copyright (c) The Npgsql Development Team. PostgreSQL License.
+
+SQLitePCLRaw / e_sqlite3
+Copyright (c) Eric Sink / SQLite project. Apache License 2.0 / public domain (SQLite).
+
+DocFX
+Copyright (c) Microsoft Corporation. MIT License.
+https://github.com/dotnet/docfx
+
+Inno Setup
+Copyright (c) Jordan Russell / Martijn Laan. Inno Setup License.
+https://jrsoftware.org/isinfo.php
+
+GitHub CLI (optional runtime dependency, not redistributed in the installer)
+Copyright (c) GitHub, Inc. MIT License.
+
+Documentation site webfonts (loaded from Google Fonts when viewing GitHub Pages;
+not bundled in the Windows installer):
+
+- IBM Plex Sans — SIL Open Font License 1.1, Copyright IBM Corp.
+- JetBrains Mono — SIL Open Font License 1.1, Copyright JetBrains.
+
+To see exact versions, inspect the .csproj PackageReference items and
+.config/dotnet-tools.json. Do not copy those packages out of this tree
+except under their own licenses.
+
+精確版本見各 .csproj 的 PackageReference 與 .config/dotnet-tools.json。
+不得把那些套件從本樹另行取出，除非依該套件自己的授權。

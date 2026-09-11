@@ -156,7 +156,7 @@ GitHub 帳號變更時，人資合併到同一 `personId`，舊時段不丟。�
 - GitHub：clone、提交、PR、Actions、Release
 - 需求工作台：進件、驗收條件、Issue、設計變更關卡
 - 工時：開啟專案起算、GitHub 歸戶、週月季年、CSV／Markdown 匯出、需求台對帳
-- Agent／MCP 與審計
+- Agent／MCP 與審計、專案問答（多來源）
 
 工作區**讀這些真相**，不複製一套本機堆疊 UI。仲介需求精靈不取代控制台進件；有倉之後才落到 Git（通常發生在成交並交換資料之後）。
 

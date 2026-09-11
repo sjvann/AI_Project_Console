@@ -6,6 +6,8 @@
 
 完整操作說明：[使用文件](https://sjvann.github.io/AI_Project_Console/)（倉庫內原稿：[docs/](docs/README.md)）。給買家：[產品規格](docs/product/README.md) · [銷售套件](docs/salekit/README.md)（公司營運層標為規劃，尚未出貨）。
 
+現行出貨：**0.6.13**（Windows x64）。[現行版本](docs/user/whats-new.md) · [版權與授權](docs/legal/copyright.md)（公開可見，**保留一切權利**，不是開源授權）。
+
 ## 三分鐘開始
 
 1. 從 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 下載 `*-win-x64-setup.exe`（或 zip 免安裝包）。Windows 10／11 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（通常已內建）。
@@ -46,3 +48,7 @@ dotnet run --no-build --project src/AiProject.Console.App
 Windows 安裝包與 GitHub Release：[scripts/README.md](scripts/README.md)。方案結構與測試：[開發與維護](docs/maintainer/develop.md)。
 
 倉庫根目錄的 Python／Tk 實作僅供對照，不是正式產品路徑。
+
+## 授權
+
+Copyright © 2026 sjvann。**保留一切權利。** 公開本倉庫是為了文件與評估，不授權他人把原始碼當產品再發布。安裝包使用範圍與禁止事項見 [LICENSE](LICENSE)；第三方元件見 [NOTICE](NOTICE)。安全回報見 [SECURITY.md](SECURITY.md)。貢獻政策見 [CONTRIBUTING.md](CONTRIBUTING.md)。
