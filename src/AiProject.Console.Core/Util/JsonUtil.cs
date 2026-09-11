@@ -42,7 +42,18 @@ public static class JsonUtil
     public static void SaveObject(string path, JsonObject obj)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, obj.ToJsonString(Options) + "\n", Encoding.UTF8);
+        var text = obj.ToJsonString(Options) + "\n";
+        var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        File.WriteAllText(tmp, text, Encoding.UTF8);
+        try
+        {
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tmp); } catch { /* ignore */ }
+            throw;
+        }
     }
 
     public static string Str(JsonNode? node) =>

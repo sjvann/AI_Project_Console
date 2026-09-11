@@ -78,6 +78,7 @@ public sealed partial class ConsoleSession : IDisposable
     public ProjectRuntime? Runtime { get; private set; }
     public string? WorkspaceAppIconUrl => AppIconDataUrl(Catalog is null ? null : AppIconLocator.WorkspaceIcon(Catalog));
     public IReadOnlyList<string> RecentProjects => ConsoleSettingsStore.RecentProjects();
+    public IReadOnlyList<string> HistoryProjects => ConsoleSettingsStore.HistoryProjects(Catalog?.Root);
     public bool OpenWithCursor { get; set; }
     public bool RestoreLastProject { get; set; }
     public bool TestBeforePush { get; set; }

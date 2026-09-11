@@ -168,11 +168,12 @@ public static class GithubConfigResolver
 
     public static void SaveLocal(string root, GithubConfig cfg)
     {
-        var data = ConsoleSettingsStore.Load();
-        var byRoot = JsonUtil.Obj(data["githubByProject"]) ?? new JsonObject();
-        byRoot[Path.GetFullPath(root)] = cfg.AsObject();
-        data["githubByProject"] = byRoot;
-        ConsoleSettingsStore.Save(data);
+        ConsoleSettingsStore.Mutate(data =>
+        {
+            var byRoot = JsonUtil.Obj(data["githubByProject"]) ?? new JsonObject();
+            byRoot[Path.GetFullPath(root)] = cfg.AsObject();
+            data["githubByProject"] = byRoot;
+        });
     }
 
     public static string WriteManifest(ProjectCatalog catalog, GithubConfig cfg)

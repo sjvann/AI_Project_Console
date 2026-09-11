@@ -77,7 +77,7 @@
             <span class="hint grow">@(S.Catalog?.Root ?? "啟動後請選擇專案目錄、從歷史載入，或從 GitHub 開啟。")</span>
             <select class="history" @key="HistorySelectValue" value="@HistorySelectValue" @onchange="OnRecent">
                 <option value="">歷史專案</option>
-                @foreach (var p in S.RecentProjects)
+                @foreach (var p in S.HistoryProjects)
                 {
                     <option value="@p">@System.IO.Path.GetFileName(p) — @p</option>
                 }
@@ -1112,7 +1112,7 @@
 
     string HistorySelectValue =>
         S.Catalog?.Root is { } root
-            ? S.RecentProjects.FirstOrDefault(p => string.Equals(p, root, StringComparison.OrdinalIgnoreCase)) ?? ""
+            ? S.HistoryProjects.FirstOrDefault(p => string.Equals(p, System.IO.Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase)) ?? System.IO.Path.GetFullPath(root)
             : "";
 
     static string ProjectMeta(BuildState p, string ago)
