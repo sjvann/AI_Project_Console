@@ -1,3 +1,4 @@
+using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Scan;
@@ -186,11 +187,127 @@ public class TechStackTests
             Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
             Assert.Empty(plan.MissingToolIds);
             Assert.Contains("無需編譯", plan.Display);
+            Assert.Equal("", plan.FileName);
         }
         finally
         {
             Directory.Delete(dir, true);
         }
+    }
+
+    [Fact]
+    public void PlanBuild_WwwrootJs_BuildsParentCsproj()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-www-build-" + Guid.NewGuid().ToString("N"));
+        var web = Path.Combine(root, "src", "Demo.Web");
+        var js = Path.Combine(web, "wwwroot", "js");
+        Directory.CreateDirectory(js);
+        try
+        {
+            var csproj = Path.Combine(web, "Demo.Web.csproj");
+            File.WriteAllText(csproj, """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(js, "app.js"), "console.log(1)\n");
+            var plan = StackCommands.PlanBuild(root, js);
+            Assert.Contains("dotnet build", plan.Display, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(plan.Arguments, a =>
+                string.Equals(Path.GetFullPath(a), Path.GetFullPath(csproj), StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(Path.GetFullPath(web), Path.GetFullPath(plan.WorkingDirectory));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void PlanBuild_TemplatesPublic_DoesNotDotnetBuild()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-tpl-build-" + Guid.NewGuid().ToString("N"));
+        var pub = Path.Combine(root, "templates", "public");
+        Directory.CreateDirectory(pub);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "Demo.slnx"), "{ }\n");
+            File.WriteAllText(Path.Combine(pub, "main.js"), "console.log(1)\n");
+            File.WriteAllText(Path.Combine(pub, "main.css"), "body{}\n");
+            var plan = StackCommands.PlanBuild(root, pub);
+            Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("無需編譯", plan.Display);
+            Assert.Equal("", plan.FileName);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void PlanBuild_UiFolderWithoutEntry_DoesNotDotnetBuild()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-ui-build-" + Guid.NewGuid().ToString("N"));
+        var ui = Path.Combine(root, "ui");
+        Directory.CreateDirectory(ui);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "Demo.slnx"), "{ }\n");
+            foreach (var name in new[] { "buttons.py", "dialog.py", "bar.py", "help.py", "settings.py", "__init__.py" })
+                File.WriteAllText(Path.Combine(ui, name), "x = 1\n");
+            var plan = StackCommands.PlanBuild(root, ui);
+            Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("無需編譯", plan.Display);
+            Assert.Equal("", plan.FileName);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("src/AiProject.Console.App/wwwroot/js")]
+    [InlineData("templates/public")]
+    [InlineData("ui")]
+    public async Task Build_ThisRepoStaticFolders_ExitsZero(string rel)
+    {
+        var root = FindRepoRoot();
+        var target = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(Directory.Exists(target), target);
+        var (code, log) = await BuildRunner.BuildAsync(root, target, null);
+        Assert.True(code == 0, log);
+    }
+
+    [Fact]
+    public void ScanWorkspace_AiProjectConsoleRepo_OmitsStaticAndUiFolders()
+    {
+        var root = FindRepoRoot();
+        var scan = ProjectScanner.ScanWorkspace(root);
+        Assert.DoesNotContain(scan.Projects, p =>
+            p.RelDir.Contains("wwwroot", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scan.Projects, p =>
+            p.RelDir.Replace('\\', '/').Equals("ui", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scan.Projects, p =>
+            p.RelDir.Replace('\\', '/').Contains("templates/public", StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string FindRepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        for (var i = 0; i < 10; i++)
+        {
+            if (File.Exists(Path.Combine(dir, "AiProject.Console.slnx")))
+                return dir;
+            var parent = Path.GetDirectoryName(dir);
+            if (string.IsNullOrEmpty(parent))
+                break;
+            dir = parent;
+        }
+        throw new DirectoryNotFoundException("找不到含 AiProject.Console.slnx 的倉根目錄");
     }
 
     [Fact]
