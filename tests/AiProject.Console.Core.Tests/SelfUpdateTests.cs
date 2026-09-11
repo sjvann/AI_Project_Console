@@ -246,7 +246,6 @@ public class SelfUpdateTests
         Directory.CreateDirectory(dir);
         var src = Path.Combine(dir, "AI_Project_Console-0.6.10-win-x64-setup.exe");
         File.WriteAllText(src, "setup");
-<<<<<<< HEAD
         string? staged = null;
         try
         {
@@ -255,59 +254,33 @@ public class SelfUpdateTests
             Assert.NotEqual(src, staged);
             Assert.Equal("setup", File.ReadAllText(staged));
             Assert.StartsWith("run-", Path.GetFileName(Path.GetDirectoryName(staged)!), StringComparison.OrdinalIgnoreCase);
-=======
-        try
-        {
-            var staged = SelfUpdate.StageUpdateFile(src);
-            Assert.True(File.Exists(staged));
-            Assert.NotEqual(src, staged);
-            Assert.Equal("setup", File.ReadAllText(staged));
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
         finally
         {
             Directory.Delete(dir, recursive: true);
-<<<<<<< HEAD
             TryDeleteStaged(staged);
-=======
-            TryDelete(Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", Path.GetFileName(src)));
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
     }
 
     [Fact]
-<<<<<<< HEAD
     public void StageUpdateFile_CopiesWhenAlreadyInStagingFolder()
-=======
-    public void StageUpdateFile_SkipsCopyWhenAlreadyInStagingFolder()
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
     {
         var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
         Directory.CreateDirectory(dir);
         var src = Path.Combine(dir, "AI_Project_Console-stage-self-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe");
         File.WriteAllText(src, "setup");
-<<<<<<< HEAD
         string? staged = null;
         try
         {
             staged = SelfUpdate.StageUpdateFile(src);
             Assert.NotEqual(Path.GetFullPath(src), Path.GetFullPath(staged));
             Assert.True(File.Exists(src));
-=======
-        try
-        {
-            var staged = SelfUpdate.StageUpdateFile(src);
-            Assert.Equal(Path.GetFullPath(src), staged);
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             Assert.Equal("setup", File.ReadAllText(staged));
         }
         finally
         {
             TryDelete(src);
-<<<<<<< HEAD
             TryDeleteStaged(staged);
-=======
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
     }
 
@@ -339,7 +312,6 @@ public class SelfUpdateTests
             Directory.Delete(srcDir, recursive: true);
             TryDelete(dest);
             if (staged is not null)
-<<<<<<< HEAD
                 TryDeleteStaged(staged);
         }
     }
@@ -408,9 +380,6 @@ public class SelfUpdateTests
         catch (Exception)
         {
             // ignore leftover temp files
-=======
-                TryDelete(staged);
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
     }
 
