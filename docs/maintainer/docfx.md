@@ -45,3 +45,5 @@ API 來自 `AiProject.Console.Core` 與 `AiProject.Console.Mcp`（不含桌面 U
 Pull request 只建置、不發佈，用來確認文件沒破。
 
 銷售套件的 HTML／PDF 不經 Markdown 引擎，由 `docfx.json` 的 `resource` 複製到 `_site/docs/salekit/`。改 `executive-pitch.html` 後請重出 PDF，見 [銷售套件](../salekit/README.md)。
+
+授權全文、NOTICE、SECURITY、CONTRIBUTING 會複製到 `_site/legal-source/`。頁尾與 [版權與授權](../legal/copyright.md) 連回去。站上的「編輯此頁」已關掉，避免被誤解為開源專案。

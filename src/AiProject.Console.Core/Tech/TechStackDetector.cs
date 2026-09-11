@@ -11,6 +11,12 @@ public static class TechStackDetector
     static readonly string[] NodeEntries =
         ["index.js", "index.ts", "index.mjs", "server.js", "app.js", "main.ts", "main.js"];
 
+    /// <summary>
+    /// Node 應用程式進入點。不含 wwwroot 常見的 <c>app.js</c>／靜態 <c>main.js</c>。
+    /// </summary>
+    static readonly string[] NodeAppEntries =
+        ["index.js", "index.ts", "index.mjs", "server.js"];
+
     public static IReadOnlyList<string> StackIdsFromProjects(IEnumerable<ProjectInfo> projects) =>
         projects
             .Select(p => p.StackId)
@@ -63,6 +69,12 @@ public static class TechStackDetector
                 var manifest = TechStackCatalog.FindPreferredManifest(path);
                 if (manifest is not null)
                     return TechStackCatalog.MatchFile(manifest)?.Id ?? "";
+                if (TechStackCatalog.FindSolutionFile(path) is not null)
+                    return "dotnet";
+                if (DirectoryLooksLikePythonProject(path))
+                    return "python";
+                if (DirectoryLooksLikeNodeProject(path))
+                    return "node";
             }
         }
         catch (Exception)
@@ -128,10 +140,8 @@ public static class TechStackDetector
     {
         try
         {
-            var files = Directory.GetFiles(dir, "*.py", SearchOption.TopDirectoryOnly);
-            if (files.Any(f => IsPythonEntry(Path.GetFileName(f))))
-                return true;
-            return files.Length >= 5;
+            return Directory.GetFiles(dir, "*.py", SearchOption.TopDirectoryOnly)
+                .Any(f => IsPythonEntry(Path.GetFileName(f)));
         }
         catch (Exception)
         {
@@ -146,7 +156,7 @@ public static class TechStackDetector
         try
         {
             return Directory.GetFiles(dir)
-                .Any(f => IsNodeEntry(Path.GetFileName(f)));
+                .Any(f => NodeAppEntries.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase));
         }
         catch (Exception)
         {

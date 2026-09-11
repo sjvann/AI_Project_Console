@@ -1,5 +1,11 @@
 - name: 產品規格
   href: README.md
+- name: 產品概觀
+  href: overview.md
+- name: 詞彙
+  href: glossary.md
+- name: 進件
+  href: intake.md
 - name: 願景與買家
   href: vision.md
 - name: 仲介平台

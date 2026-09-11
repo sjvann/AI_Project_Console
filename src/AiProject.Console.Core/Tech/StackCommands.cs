@@ -13,7 +13,7 @@ public static class StackCommands
         var (dir, file, stackId) = Resolve(workspaceRoot, target);
         return stackId switch
         {
-            "dotnet" => Need("dotnet", dir, ["build", file ?? dir, "-v", "minimal", "--nologo"], "dotnet build"),
+            "dotnet" => PlanDotnetBuild(dir, file),
             "node" => PlanNode(dir, "build"),
             "python" => PlanPythonCompile(dir),
             "go" => Need("go", dir, ["build", "./..."], "go build"),
@@ -23,7 +23,7 @@ public static class StackCommands
             "php" => PlanPhpRestore(dir),
             "ruby" => PlanRubyRestore(dir),
             "cpp-cmake" => PlanCMake(dir),
-            "cpp-msbuild" => Need("dotnet", dir, ["build", file ?? dir, "-v", "minimal"], "dotnet build"),
+            "cpp-msbuild" => PlanDotnetBuild(dir, file),
             "dart" => PlanDartBuild(dir, file),
             _ => PlanUnknown(dir, file),
         };
@@ -34,8 +34,7 @@ public static class StackCommands
         var (dir, file, stackId) = Resolve(workspaceRoot, target);
         return stackId switch
         {
-            "dotnet" => Need("dotnet", dir == workspaceRoot ? workspaceRoot : dir,
-                ["test", file ?? target, "-v", "minimal", "--nologo"], "dotnet test"),
+            "dotnet" => PlanDotnetTest(dir == workspaceRoot ? workspaceRoot : dir, file ?? target),
             "node" => PlanNode(dir, "test"),
             "python" => PlanPythonTest(dir),
             "go" => Need("go", dir, ["test", "./..."], "go test"),
@@ -54,7 +53,7 @@ public static class StackCommands
         var (dir, file, stackId) = Resolve(workspaceRoot, target);
         return stackId switch
         {
-            "dotnet" => Need("dotnet", dir, ["restore", file ?? dir], "dotnet restore"),
+            "dotnet" => PlanDotnetRestore(dir, file),
             "node" => PlanNodeInstall(dir),
             "python" => PlanPythonRestore(dir),
             "go" => Need("go", dir, ["mod", "download"], "go mod download"),
@@ -64,7 +63,7 @@ public static class StackCommands
             "php" => PlanPhpRestore(dir),
             "ruby" => PlanRubyRestore(dir),
             "dart" => PlanDartRestore(dir),
-            _ => Need("dotnet", dir, ["restore", file ?? dir], "dotnet restore"),
+            _ => PlanUnknown(dir, file),
         };
     }
 
@@ -122,6 +121,13 @@ public static class StackCommands
             return (1, msg);
         }
 
+        if (string.IsNullOrEmpty(plan.FileName))
+        {
+            var skip = string.IsNullOrWhiteSpace(plan.Display) ? "無需編譯" : plan.Display;
+            progress?.Report(skip);
+            return (0, skip);
+        }
+
         var lines = new List<string>();
         void Emit(string line)
         {
@@ -173,31 +179,138 @@ public static class StackCommands
 
     static (string Dir, string? File, string StackId) Resolve(string workspaceRoot, string target)
     {
+        var root = Path.GetFullPath(workspaceRoot);
         var full = Path.IsPathRooted(target)
             ? Path.GetFullPath(target)
-            : Path.GetFullPath(Path.Combine(workspaceRoot, target.Replace('/', Path.DirectorySeparatorChar)));
+            : Path.GetFullPath(Path.Combine(root, target.Replace('/', Path.DirectorySeparatorChar)));
         if (File.Exists(full))
         {
             var dir = Path.GetDirectoryName(full)!;
-            var id = TechStackCatalog.IsDotnetProject(full)
-                ? "dotnet"
-                : TechStackCatalog.MatchFile(full)?.Id
-                  ?? TechStackDetector.StackIdForPath(full);
-            if (string.IsNullOrEmpty(id))
-                id = "dotnet";
-            return (dir, full, id);
+            if (TechStackCatalog.IsDotnetProject(full) || TechStackCatalog.IsSolutionFile(full))
+                return (dir, full, "dotnet");
+            var matched = TechStackCatalog.MatchFile(full);
+            if (matched is not null)
+                return (dir, full, matched.Id);
+            return ResolveFromDirectory(root, dir);
         }
         if (Directory.Exists(full))
+            return ResolveFromDirectory(root, full);
+        return (root, full, "");
+    }
+
+    /// <summary>
+    /// 目錄沒有專案檔時：含 .NET 原始碼才往上找 .csproj；wwwroot／靜態 JS／ui 略過，不要去編正在跑的宿主。
+    /// 不把上層方案檔當成這個資料夾自己的專案。
+    /// </summary>
+    static (string Dir, string? File, string StackId) ResolveFromDirectory(string workspaceRoot, string directory)
+    {
+        var origin = Path.GetFullPath(directory);
+        var current = origin;
+        var walked = false;
+        while (true)
         {
-            var manifest = TechStackCatalog.FindPreferredManifest(full);
-            var id = manifest is null ? TechStackDetector.StackIdForPath(full) : TechStackCatalog.MatchFile(manifest)?.Id ?? "";
-            if (string.IsNullOrEmpty(id) && Directory.GetFiles(full, "*.csproj").Length > 0)
-                id = "dotnet";
-            if (string.IsNullOrEmpty(id))
-                id = "dotnet";
-            return (full, manifest, id);
+            var local = ResolveLocal(current, allowSolution: !walked);
+            if (IsResolvedBuildRoot(local, walked))
+                return local;
+            if (!ContainsDotnetSources(origin))
+                return (origin, null, "");
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrEmpty(parent) || !IsSameOrUnder(workspaceRoot, parent))
+                return (origin, null, "");
+            current = parent;
+            walked = true;
         }
-        return (workspaceRoot, full, "dotnet");
+    }
+
+    static bool IsResolvedBuildRoot((string Dir, string? File, string StackId) local, bool walked)
+    {
+        if (local.File is not null)
+            return true;
+        if (walked || string.IsNullOrEmpty(local.StackId) || local.StackId == "dotnet")
+            return false;
+        if (local.StackId == "node")
+            return File.Exists(Path.Combine(local.Dir, "package.json"));
+        if (local.StackId == "python")
+            return TechStackDetector.DirectoryLooksLikePythonProject(local.Dir);
+        return true;
+    }
+
+    static bool ContainsDotnetSources(string directory)
+    {
+        if (!Directory.Exists(directory))
+            return false;
+        try
+        {
+            return Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                .Any(p =>
+                {
+                    var ext = Path.GetExtension(p);
+                    return ext.Equals(".cs", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".razor", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".cshtml", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".fs", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".vb", StringComparison.OrdinalIgnoreCase);
+                });
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    static (string Dir, string? File, string StackId) ResolveLocal(string directory, bool allowSolution)
+    {
+        var manifest = TechStackCatalog.FindPreferredManifest(directory);
+        if (manifest is not null)
+        {
+            var id = TechStackCatalog.IsDotnetProject(manifest) || TechStackCatalog.IsSolutionFile(manifest)
+                ? "dotnet"
+                : TechStackCatalog.MatchFile(manifest)?.Id ?? "";
+            return (directory, manifest, id);
+        }
+
+        if (allowSolution && TechStackCatalog.FindSolutionFile(directory) is { } sln)
+            return (directory, sln, "dotnet");
+
+        var inferred = TechStackDetector.StackIdForPath(directory);
+        if (!allowSolution && inferred == "dotnet" && IsSolutionOnlyDirectory(directory))
+            inferred = "";
+        if (string.IsNullOrEmpty(inferred) && FindDotnetProjectFile(directory) is not null)
+            inferred = "dotnet";
+        return (directory, null, inferred ?? "");
+    }
+
+    static bool IsSolutionOnlyDirectory(string directory)
+    {
+        if (TechStackCatalog.FindSolutionFile(directory) is null)
+            return false;
+        return FindDotnetProjectFile(directory) is null;
+    }
+
+    static string? FindDotnetProjectFile(string directory)
+    {
+        if (!Directory.Exists(directory))
+            return null;
+        try
+        {
+            return Directory.GetFiles(directory)
+                .Where(TechStackCatalog.IsDotnetProject)
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    static bool IsSameOrUnder(string root, string path)
+    {
+        var a = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var b = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return b.StartsWith(a, StringComparison.OrdinalIgnoreCase);
     }
 
     static ProcessPlan Need(string toolId, string dir, IReadOnlyList<string> args, string display)
@@ -208,16 +321,51 @@ public static class StackCommands
         return new(exe, args, dir, [], display);
     }
 
+    static ProcessPlan PlanDotnetBuild(string dir, string? file)
+    {
+        var project = DotnetProjectOrSolution(dir, file);
+        if (project is null)
+            return PlanUnknown(dir, file);
+        var workDir = Path.GetDirectoryName(project) ?? dir;
+        return Need("dotnet", workDir, ["build", project, "-v", "minimal", "--nologo"], "dotnet build");
+    }
+
+    static ProcessPlan PlanDotnetTest(string dir, string? file)
+    {
+        var project = DotnetProjectOrSolution(dir, file);
+        if (project is null)
+            return PlanUnknown(dir, file);
+        var workDir = Path.GetDirectoryName(project) ?? dir;
+        return Need("dotnet", workDir, ["test", project, "-v", "minimal", "--nologo"], "dotnet test");
+    }
+
+    static ProcessPlan PlanDotnetRestore(string dir, string? file)
+    {
+        var project = DotnetProjectOrSolution(dir, file);
+        if (project is null)
+            return PlanUnknown(dir, file);
+        var workDir = Path.GetDirectoryName(project) ?? dir;
+        return Need("dotnet", workDir, ["restore", project], "dotnet restore");
+    }
+
+    static string? DotnetProjectOrSolution(string dir, string? file)
+    {
+        if (file is not null
+            && (TechStackCatalog.IsDotnetProject(file) || TechStackCatalog.IsSolutionFile(file)))
+            return file;
+        var csproj = FindDotnetProjectFile(dir);
+        if (csproj is not null)
+            return csproj;
+        return Directory.Exists(dir) ? TechStackCatalog.FindSolutionFile(dir) : null;
+    }
+
     static ProcessPlan PlanUnknown(string dir, string? file)
     {
-        if (file is not null && TechStackCatalog.IsDotnetProject(file))
-            return Need("dotnet", dir, ["build", file, "-v", "minimal", "--nologo"], "dotnet build");
-        var csproj = Directory.Exists(dir)
-            ? Directory.GetFiles(dir, "*.csproj").OrderBy(p => p).FirstOrDefault()
-            : null;
-        if (csproj is not null)
-            return Need("dotnet", dir, ["build", csproj, "-v", "minimal", "--nologo"], "dotnet build");
-        return new("", [], dir, ["dotnet"], "無法判斷編譯環境");
+        var project = DotnetProjectOrSolution(dir, file);
+        if (project is not null)
+            return Need("dotnet", Path.GetDirectoryName(project) ?? dir,
+                ["build", project, "-v", "minimal", "--nologo"], "dotnet build");
+        return new("", [], dir, [], "無需編譯（沒有專案或方案檔）");
     }
 
     static ProcessPlan PlanDotnetRun(string workspaceRoot, string projectPath)
@@ -238,6 +386,8 @@ public static class StackCommands
         var scripts = TechStackDetector.NpmScripts(dir);
         if (scriptKind == "build")
         {
+            if (!File.Exists(Path.Combine(dir, "package.json")))
+                return new("", [], dir, [], "無需編譯（沒有 package.json）");
             if (scripts.Any(s => s.Equals("build", StringComparison.OrdinalIgnoreCase)))
                 return NeedNode(pm, dir, ["run", "build"], pm + " run build");
             return PlanNodeInstall(dir);

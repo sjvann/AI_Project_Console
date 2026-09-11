@@ -7,8 +7,19 @@ namespace AiProject.Console.Core.Runtime;
 
 public static class ConsoleSettingsStore
 {
+    /// <summary>測試用：以 AsyncLocal 改寫 settings.json 路徑，避免平行測試互踩本機設定。</summary>
+    static readonly AsyncLocal<string?> PathOverrideLocal = new();
+
+    internal static string? PathOverride
+    {
+        get => PathOverrideLocal.Value;
+        set => PathOverrideLocal.Value = value;
+    }
+
     public static string SettingsPath()
     {
+        if (!string.IsNullOrEmpty(PathOverride))
+            return PathOverride;
         if (OperatingSystem.IsWindows())
         {
             var baseDir = Environment.GetEnvironmentVariable("LOCALAPPDATA")
@@ -26,26 +37,49 @@ public static class ConsoleSettingsStore
 
     public static void Save(JsonObject data) => JsonUtil.SaveObject(SettingsPath(), data);
 
-    public static void RememberProject(string root)
+    /// <summary>跨行程鎖定後讀改寫，避免兩個控制台互蓋歷史專案。</summary>
+    public static void Mutate(Action<JsonObject> edit)
     {
-        var data = Load();
-        var rootS = Path.GetFullPath(root);
-        var recent = new JsonArray();
-        recent.Add(rootS);
-        if (data["recentProjects"] is JsonArray arr)
+        using var mutex = new Mutex(false, @"Local\sjvann.AIProjectConsole.settings");
+        var taken = false;
+        try
         {
-            foreach (var n in arr)
+            try { taken = mutex.WaitOne(); }
+            catch (AbandonedMutexException) { taken = true; }
+            var data = Load();
+            edit(data);
+            Save(data);
+        }
+        finally
+        {
+            if (taken)
             {
-                var s = JsonUtil.Str(n);
-                if (!string.IsNullOrEmpty(s) && !string.Equals(s, rootS, StringComparison.OrdinalIgnoreCase))
-                    recent.Add(s);
+                try { mutex.ReleaseMutex(); }
+                catch (ApplicationException) { }
             }
         }
-        while (recent.Count > 12)
-            recent.RemoveAt(recent.Count - 1);
-        data["recentProjects"] = recent;
-        data["lastProject"] = rootS;
-        Save(data);
+    }
+
+    public static void RememberProject(string root)
+    {
+        Mutate(data =>
+        {
+            var rootS = Path.GetFullPath(root);
+            var recent = new JsonArray { rootS };
+            if (data["recentProjects"] is JsonArray arr)
+            {
+                foreach (var n in arr)
+                {
+                    var s = JsonUtil.Str(n);
+                    if (!string.IsNullOrEmpty(s) && !string.Equals(s, rootS, StringComparison.OrdinalIgnoreCase))
+                        recent.Add(s);
+                }
+            }
+            while (recent.Count > 12)
+                recent.RemoveAt(recent.Count - 1);
+            data["recentProjects"] = recent;
+            data["lastProject"] = rootS;
+        });
     }
 
     public static IReadOnlyList<string> RecentProjects(int limit = 12)
@@ -70,6 +104,34 @@ public static class ConsoleSettingsStore
         return outList;
     }
 
+    /// <summary>本視窗目前專案永遠列在歷史清單最前面，即使磁碟上的 recent 還沒寫入或被另一視窗蓋掉。</summary>
+    public static IReadOnlyList<string> HistoryProjects(string? currentRoot, int limit = 12)
+    {
+        var list = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return;
+            try
+            {
+                if (!Directory.Exists(raw))
+                    return;
+                var key = Path.GetFullPath(raw);
+                if (seen.Add(key))
+                    list.Add(key);
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        Add(currentRoot);
+        foreach (var p in RecentProjects(limit))
+            Add(p);
+        return list;
+    }
+
     public static string? LastProject()
     {
         var raw = JsonUtil.Str(Load()["lastProject"]);
@@ -80,9 +142,26 @@ public static class ConsoleSettingsStore
 
     public static void ClearLastProject()
     {
-        var data = Load();
-        data.Remove("lastProject");
-        Save(data);
+        Mutate(data => data.Remove("lastProject"));
+    }
+
+    /// <summary>
+    /// 只清掉「目前這個視窗」關掉的專案，避免第二個視窗關閉時把第一個視窗的還原路徑抹掉。
+    /// </summary>
+    public static void ClearLastProjectIf(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            return;
+        var want = Path.GetFullPath(root);
+        Mutate(data =>
+        {
+            var last = JsonUtil.Str(data["lastProject"]);
+            if (string.IsNullOrEmpty(last))
+                return;
+            if (!string.Equals(Path.GetFullPath(last), want, StringComparison.OrdinalIgnoreCase))
+                return;
+            data.Remove("lastProject");
+        });
     }
 
     public static bool GetRestoreLastProject()
@@ -95,9 +174,7 @@ public static class ConsoleSettingsStore
 
     public static void SetRestoreLastProject(bool enabled)
     {
-        var data = Load();
-        data["restoreLastProject"] = enabled;
-        Save(data);
+        Mutate(data => data["restoreLastProject"] = enabled);
     }
 
     public static bool GetOpenWithCursor() => GetOpenIdeOnLoad();
@@ -116,10 +193,11 @@ public static class ConsoleSettingsStore
 
     public static void SetOpenIdeOnLoad(bool enabled)
     {
-        var data = Load();
-        data["openIdeOnLoad"] = enabled;
-        data["openWithCursor"] = enabled;
-        Save(data);
+        Mutate(data =>
+        {
+            data["openIdeOnLoad"] = enabled;
+            data["openWithCursor"] = enabled;
+        });
     }
 
     public static bool GetTestBeforePush() =>
@@ -127,9 +205,7 @@ public static class ConsoleSettingsStore
 
     public static void SetTestBeforePush(bool enabled)
     {
-        var data = Load();
-        data["testBeforePush"] = enabled;
-        Save(data);
+        Mutate(data => data["testBeforePush"] = enabled);
     }
 
     public static string GetAgentProvider()
@@ -140,49 +216,20 @@ public static class ConsoleSettingsStore
 
     public static void SetAgentProvider(string id)
     {
-        var data = Load();
-        data["agentProvider"] = string.IsNullOrWhiteSpace(id) ? "cursor" : id.Trim();
-        Save(data);
+        Mutate(data => data["agentProvider"] = string.IsNullOrWhiteSpace(id) ? "cursor" : id.Trim());
     }
 
     public static string GetAgentCliPath() => JsonUtil.Str(Load()["agentCliPath"]);
 
-    public static void SetAgentCliPath(string? path)
-    {
-        var data = Load();
-        var t = (path ?? "").Trim();
-        if (string.IsNullOrEmpty(t))
-            data.Remove("agentCliPath");
-        else
-            data["agentCliPath"] = t;
-        Save(data);
-    }
+    public static void SetAgentCliPath(string? path) => SetOptionalString("agentCliPath", path);
 
     public static string GetCustomAgentCommand() => JsonUtil.Str(Load()["customAgentCommand"]);
 
-    public static void SetCustomAgentCommand(string? command)
-    {
-        var data = Load();
-        var t = (command ?? "").Trim();
-        if (string.IsNullOrEmpty(t))
-            data.Remove("customAgentCommand");
-        else
-            data["customAgentCommand"] = t;
-        Save(data);
-    }
+    public static void SetCustomAgentCommand(string? command) => SetOptionalString("customAgentCommand", command);
 
     public static string GetCustomAgentArgs() => JsonUtil.Str(Load()["customAgentArgs"]);
 
-    public static void SetCustomAgentArgs(string? args)
-    {
-        var data = Load();
-        var t = (args ?? "").Trim();
-        if (string.IsNullOrEmpty(t))
-            data.Remove("customAgentArgs");
-        else
-            data["customAgentArgs"] = t;
-        Save(data);
-    }
+    public static void SetCustomAgentArgs(string? args) => SetOptionalString("customAgentArgs", args);
 
     public static string GetTheme()
     {
@@ -192,9 +239,7 @@ public static class ConsoleSettingsStore
 
     public static void SetTheme(string theme)
     {
-        var data = Load();
-        data["theme"] = theme is "dark" ? "dark" : "light";
-        Save(data);
+        Mutate(data => data["theme"] = theme is "dark" ? "dark" : "light");
     }
 
     public static bool GetMcpReadOnly() =>
@@ -202,9 +247,7 @@ public static class ConsoleSettingsStore
 
     public static void SetMcpReadOnly(bool enabled)
     {
-        var data = Load();
-        data["mcpReadOnly"] = enabled;
-        Save(data);
+        Mutate(data => data["mcpReadOnly"] = enabled);
     }
 
     public static string GetMcpAllow() => JsonUtil.Str(Load()["mcpAllow"]);
@@ -226,9 +269,7 @@ public static class ConsoleSettingsStore
 
     public static void SetMcpConfirm(string? value)
     {
-        var data = Load();
-        data["mcpConfirm"] = (value ?? "").Trim();
-        Save(data);
+        Mutate(data => data["mcpConfirm"] = (value ?? "").Trim());
     }
 
     public static string GetAskBaseUrl()
@@ -251,15 +292,30 @@ public static class ConsoleSettingsStore
 
     public static void SetAskModel(string? value) => SetOptionalString("askModel", value);
 
+    public static IReadOnlyList<ProjectAskSource> GetAskSources() =>
+        ProjectAskProviders.Parse(Load()["askSources"]);
+
+    public static void SetAskSources(IReadOnlyList<ProjectAskSource> sources)
+    {
+        Mutate(data =>
+        {
+            if (sources.Count == 0)
+                data.Remove("askSources");
+            else
+                data["askSources"] = ProjectAskProviders.ToJson(sources);
+        });
+    }
+
     static void SetOptionalString(string key, string? value)
     {
-        var data = Load();
-        var t = (value ?? "").Trim();
-        if (string.IsNullOrEmpty(t))
-            data.Remove(key);
-        else
-            data[key] = t;
-        Save(data);
+        Mutate(data =>
+        {
+            var t = (value ?? "").Trim();
+            if (string.IsNullOrEmpty(t))
+                data.Remove(key);
+            else
+                data[key] = t;
+        });
     }
 
     public static string? LastCloneParent()
@@ -274,9 +330,7 @@ public static class ConsoleSettingsStore
     {
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
             return;
-        var data = Load();
-        data["lastCloneParent"] = Path.GetFullPath(path);
-        Save(data);
+        Mutate(data => data["lastCloneParent"] = Path.GetFullPath(path));
     }
 
     public static bool ShouldAutoCheckUpdate(TimeSpan minInterval)
@@ -289,9 +343,7 @@ public static class ConsoleSettingsStore
 
     public static void MarkUpdateChecked()
     {
-        var data = Load();
-        data["updateLastCheckUtc"] = DateTimeOffset.UtcNow.ToString("o");
-        Save(data);
+        Mutate(data => data["updateLastCheckUtc"] = DateTimeOffset.UtcNow.ToString("o"));
     }
 
     public static string SkippedUpdateTag() => JsonUtil.Str(Load()["skippedUpdateTag"]);
@@ -304,11 +356,12 @@ public static class ConsoleSettingsStore
 
     public static void SetGitHost(string? host)
     {
-        var data = Load();
-        var value = GitHost.Normalize(host);
-        data["gitHost"] = value;
-        RememberGitHost(value, data);
-        Save(data);
+        Mutate(data =>
+        {
+            var value = GitHost.Normalize(host);
+            data["gitHost"] = value;
+            RememberGitHost(value, data);
+        });
     }
 
     public static string GetGitKind()
@@ -319,9 +372,7 @@ public static class ConsoleSettingsStore
 
     public static void SetGitKind(string? kind)
     {
-        var data = Load();
-        data["gitKind"] = GitHost.NormalizeKind(kind);
-        Save(data);
+        Mutate(data => data["gitKind"] = GitHost.NormalizeKind(kind));
     }
 
     public static IReadOnlyList<string> RecentGitHosts()
@@ -347,8 +398,11 @@ public static class ConsoleSettingsStore
 
     public static void RememberGitHost(string host, JsonObject? data = null)
     {
-        var owned = data is null;
-        data ??= Load();
+        if (data is null)
+        {
+            Mutate(owned => RememberGitHost(host, owned));
+            return;
+        }
         var n = GitHost.Normalize(host);
         var recent = new JsonArray { n };
         if (data["recentGitHosts"] is JsonArray arr)
@@ -363,8 +417,6 @@ public static class ConsoleSettingsStore
         while (recent.Count > 8)
             recent.RemoveAt(recent.Count - 1);
         data["recentGitHosts"] = recent;
-        if (owned)
-            Save(data);
     }
 
     public static string GetWorkbench()
@@ -375,9 +427,7 @@ public static class ConsoleSettingsStore
 
     public static void SetWorkbench(string? mode)
     {
-        var data = Load();
-        data["workbench"] = mode == "req" ? "req" : "dev";
-        Save(data);
+        Mutate(data => data["workbench"] = mode == "req" ? "req" : "dev");
     }
 
     public static string GetCompanyBaseUrl() => JsonUtil.Str(Load()["companyBaseUrl"]);
@@ -400,26 +450,28 @@ public static class ConsoleSettingsStore
 
     public static void SetCompanyProjectId(string projectKey, Guid projectId)
     {
-        var data = Load();
-        var obj = data["companyProjectMap"] as JsonObject ?? [];
-        var key = (projectKey ?? "").Trim();
-        if (string.IsNullOrEmpty(key) || projectId == Guid.Empty)
-            obj.Remove(key);
-        else
-            obj[key] = projectId.ToString();
-        data["companyProjectMap"] = obj;
-        Save(data);
+        Mutate(data =>
+        {
+            var obj = data["companyProjectMap"] as JsonObject ?? [];
+            var key = (projectKey ?? "").Trim();
+            if (string.IsNullOrEmpty(key) || projectId == Guid.Empty)
+                obj.Remove(key);
+            else
+                obj[key] = projectId.ToString();
+            data["companyProjectMap"] = obj;
+        });
     }
 
     public static void SetSkippedUpdateTag(string? tag)
     {
-        var data = Load();
-        var t = (tag ?? "").Trim();
-        if (string.IsNullOrEmpty(t))
-            data.Remove("skippedUpdateTag");
-        else
-            data["skippedUpdateTag"] = t;
-        Save(data);
+        Mutate(data =>
+        {
+            var t = (tag ?? "").Trim();
+            if (string.IsNullOrEmpty(t))
+                data.Remove("skippedUpdateTag");
+            else
+                data["skippedUpdateTag"] = t;
+        });
     }
 }
 

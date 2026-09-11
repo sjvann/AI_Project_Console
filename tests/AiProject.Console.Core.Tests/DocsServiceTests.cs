@@ -57,6 +57,26 @@ public class DocsServiceTests
     }
 
     [Fact]
+    public void Scan_RootDocfxSatisfiesScaffoldDocfx()
+    {
+        var root = NewTemp();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "docs"));
+            File.WriteAllText(Path.Combine(root, "docs", "README.md"), "# x\n");
+            File.WriteAllText(Path.Combine(root, "docs", "toc.yml"), "- name: x\n");
+            File.WriteAllText(Path.Combine(root, "docfx.json"), "{}\n");
+            var status = DocsService.Scan(root);
+            Assert.DoesNotContain("docfx.json", status.MissingScaffold);
+            Assert.True(status.HasDocfx);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public void Scaffold_CreatesThenDoesNotOverwrite()
     {
         var root = NewTemp();

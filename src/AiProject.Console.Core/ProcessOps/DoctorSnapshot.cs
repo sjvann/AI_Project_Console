@@ -121,11 +121,15 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
     {
         var hasGit = CliUtil.CommandExists("git");
         var hasGh = CliUtil.CommandExists("gh");
+<<<<<<< HEAD
+        var hasPython = ProcessSupervisor.HasPythonLauncher();
+=======
         var hasWinget = ToolchainBootstrap.HasWinget();
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         var installKind = SelfUpdate.DetectInstallKind();
         var agent = AgentBackendRegistry.Inspect();
         var agentCli = CommitMessageSuggester.InspectCli();
-        var mcpExe = McpLaunch.FindMcpExecutable();
+        var mcpHost = McpLaunch.FindProductHost() ?? McpLaunch.FindMcpExecutable();
         var mcpProj = McpLaunch.FindMcpProject();
         var mcpPolicy = catalog is null ? null : McpPolicy.Load(catalog.Root);
         var docfx = DocsService.InspectDocfx(catalog?.Root);
@@ -137,7 +141,13 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         var tools = new List<DoctorItem>
         {
             new("控制台", $"{AppInfo.Version} · {InstallKindLabel(installKind)}", DoctorLevel.Info),
+<<<<<<< HEAD
+            new(".NET", Environment.Version.ToString(), DoctorLevel.Info),
+            Tool("dotnet", hasDotnet),
+            Tool("python", hasPython),
+=======
             new(".NET 執行環境", Environment.Version.ToString(), DoctorLevel.Info),
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             Tool("git", hasGit),
             new("gh", hasGh ? "已安裝" : "未安裝（GitHub CLI，選用）",
                 hasGh ? DoctorLevel.Ok : DoctorLevel.Info,
@@ -162,7 +172,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
 
         var mcpItems = new List<DoctorItem>
         {
-            McpServerItem(mcpExe, mcpProj),
+            McpServerItem(mcpHost, mcpProj),
         };
         if (mcpPolicy is not null)
         {
@@ -360,14 +370,14 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
     private static DoctorItem McpServerItem(string? exe, string? proj)
     {
         if (exe is not null)
-            return new("MCP 伺服器", "可用", DoctorLevel.Ok, exe, "正常");
+            return new("MCP 伺服器", "本控制台", DoctorLevel.Ok, exe, "正常");
         if (proj is not null)
             return new("MCP 伺服器", "開發中可用（從原始碼啟動）", DoctorLevel.Ok, proj, "正常");
         return new(
             "MCP 伺服器",
-            "可用 dotnet run",
+            "請從本控制台寫入 mcp.json",
             DoctorLevel.Info,
-            "dotnet run --project src/AiProject.Console.Mcp",
+            "指向 AI_Project 控制台（--mcp），不是受管理專案的 src",
             "可用");
     }
 
@@ -414,6 +424,11 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             "",
             $".NET: {Environment.Version}",
             $"控制台: {AppInfo.Version}（{SelfUpdate.DetectInstallKind()}）",
+<<<<<<< HEAD
+            $"dotnet: {(CliUtil.CommandExists("dotnet") ? "OK" : "缺少")}",
+            $"python: {(ProcessSupervisor.HasPythonLauncher() ? "OK" : "缺少（preStart .py 需要）")}",
+=======
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             $"git: {(CliUtil.CommandExists("git") ? "OK" : "缺少")}",
             $"gh: {(CliUtil.CommandExists("gh") ? "OK" : "缺少（GitHub CLI，選用）")}",
             "",

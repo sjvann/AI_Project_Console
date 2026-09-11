@@ -6,13 +6,13 @@ title: 路線圖
 
 把「能賣什麼」與「下一季做什麼」分開。日期是意圖，不是合約承諾。
 
-## 已交付（控制台 0.6.x，現況）
+## 已交付（控制台 0.6.13，現況）
 
 - Windows x64 安裝包：掃描、需重編、啟停、Log、前端 URL
-- GitHub：clone、提交、同步、PR、Actions、Release
+- GitHub：clone、提交、同步、PR、Actions、Release、檢查更新
 - 需求工作台與進件關卡
 - 工時儀表、CSV／Markdown 匯出、需求台對帳
-- Agent 求救、MCP、審計、專案問答
+- Agent 求救、MCP、審計、專案問答（多來源 OpenAI 相容端點）
 - 被管專案的 DocFX／GitHub Pages 輔助
 
 演示與採購**只保證這一段**。見 [90 分鐘導入](../team/trial-90min.md)。

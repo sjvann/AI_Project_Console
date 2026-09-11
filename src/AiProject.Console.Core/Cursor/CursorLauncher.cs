@@ -41,49 +41,21 @@ public static class CursorLauncher
 
     public static int NewAgentLaunchDelayMs() => IsCursorRunning() ? 400 : 2200;
 
-    public static string? OpenInCursor(string path, bool reuseWindow = true, IEnumerable<string>? extraPaths = null)
+    public static string? OpenInCursor(string path, bool reuseWindow = false, IEnumerable<string>? extraPaths = null)
     {
         var cli = ResolveCli();
         if (cli is null)
             return "找不到 Cursor CLI（請確認已安裝並把 cursor 加到 PATH）";
-        var target = Path.GetFullPath(path);
-        if (!File.Exists(target) && !Directory.Exists(target))
-            return $"路徑不存在：{target}";
-        var psi = new ProcessStartInfo(cli)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        if (reuseWindow)
-            psi.ArgumentList.Add("--reuse-window");
-        psi.ArgumentList.Add(Directory.Exists(target) ? target : Path.GetDirectoryName(target)!);
-        if (extraPaths is not null)
-        {
-            foreach (var extra in extraPaths)
-            {
-                if (File.Exists(extra))
-                    psi.ArgumentList.Add(Path.GetFullPath(extra));
-            }
-        }
-        try
-        {
-            Process.Start(psi);
-        }
-        catch (Exception ex)
-        {
-            return $"無法啟動 Cursor：{ex.Message}";
-        }
-        return null;
+        return IdeWorkspaceLaunch.OpenFolder(cli, path, reuseWindow, extraPaths, "Cursor");
     }
 
-    public static string? CloseCursor() => LocalAppCloser.Close(
+    public static string? CloseCursor(string? workspaceRoot = null) => LocalAppCloser.Close(
         "Cursor",
         ["Cursor", "cursor"],
-        windowsImages: ["Cursor.exe"],
+        windowsImages: workspaceRoot is null ? ["Cursor.exe"] : null,
         macAppNames: ["Cursor"],
-        unixPattern: "cursor");
+        unixPattern: workspaceRoot is null ? "cursor" : null,
+        workspaceRoot: workspaceRoot);
 
     public static IReadOnlyList<string> ExtractBuildErrors(string logText)
     {
@@ -306,7 +278,7 @@ public static class CursorLauncher
         return null;
     }
 
-    public static string? OpenProjectForNewAgent(string root) => OpenInCursor(root, reuseWindow: true);
+    public static string? OpenProjectForNewAgent(string root) => OpenInCursor(root);
 
     public static string? SaveClipboardImageWindows(string dest)
     {

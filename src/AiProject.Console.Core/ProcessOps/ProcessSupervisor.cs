@@ -410,11 +410,23 @@ public static class ProcessSupervisor
     internal static string ResolvePythonLauncher() =>
         ResolvePythonLauncherPath() ?? (OperatingSystem.IsWindows() ? "py" : "python3");
 
-    internal static bool RequiresDotnet(ProjectCatalog catalog, ServiceEntry svc)
+    public static bool RequiresDotnet(ProjectCatalog catalog, ServiceEntry svc)
     {
         var path = ProjectPathFor(catalog, ServiceCatalogBuilder.HostService(catalog, svc));
         var id = TechStackDetector.StackIdForPath(path);
         return id == "dotnet";
+    }
+
+    /// <summary>
+    /// 宿主專案是 .py，或 preStart 是 .py，啟動前都必須找得到 Python。
+    /// C# Host 搭配 Scripts/ensure-profile.py 也算。
+    /// </summary>
+    public static bool RequiresPython(ProjectCatalog catalog, ServiceEntry svc)
+    {
+        var host = ServiceCatalogBuilder.HostService(catalog, svc);
+        if (IsPythonScript(ProjectPathFor(catalog, host)))
+            return true;
+        return IsPythonScript(host.PreStart ?? "");
     }
 
     internal static ProcessStartInfo CreateStartInfo(ProjectCatalog catalog, ServiceEntry host, string proj)
@@ -734,9 +746,13 @@ public static class ProcessSupervisor
             return $"找不到 preStart（必須位於專案目錄內）：{host.PreStart}";
 
         writer.WriteLine($"=== preStart {host.PreStart} ===");
-        var fileName = OperatingSystem.IsWindows() ? "powershell" : "pwsh";
-        var args = new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script };
-        var (code, output) = CliUtil.RunAsync(fileName, args, catalog.Root, timeoutMs: 300_000)
+        if (!TryResolvePreStartCommand(script, out var fileName, out var args, out var resolveError))
+            return resolveError;
+
+        IReadOnlyDictionary<string, string>? extraEnv = IsPythonScript(script)
+            ? new Dictionary<string, string> { ["PYTHONUNBUFFERED"] = "1" }
+            : null;
+        var (code, output) = CliUtil.RunAsync(fileName, args, catalog.Root, timeoutMs: 300_000, extraEnv: extraEnv)
             .GetAwaiter()
             .GetResult();
         if (!string.IsNullOrWhiteSpace(output))
@@ -748,6 +764,56 @@ public static class ProcessSupervisor
             return $"{host.Label} 前置檢查失敗（exit {code}）。見 Log。";
         writer.WriteLine("=== preStart ok ===");
         return null;
+    }
+
+    internal static bool TryResolvePreStartCommand(
+        string script,
+        out string fileName,
+        out string[] args,
+        out string? error)
+    {
+        fileName = "";
+        args = [];
+        error = null;
+        var ext = Path.GetExtension(script);
+
+        if (ext.Equals(".py", StringComparison.OrdinalIgnoreCase))
+        {
+            var launcher = ResolvePythonLauncherPath();
+            if (launcher is null)
+            {
+                error = "找不到 Python（py / python / python3）。";
+                return false;
+            }
+
+            fileName = launcher;
+            args = IsPyLauncher(launcher) ? ["-3", script] : [script];
+            return true;
+        }
+
+        if (ext.Equals(".sh", StringComparison.OrdinalIgnoreCase))
+        {
+            var bash = CliUtil.FindOnPath("bash");
+            if (bash is null)
+            {
+                error = "找不到 bash，無法執行 .sh preStart。";
+                return false;
+            }
+
+            fileName = bash;
+            args = [script];
+            return true;
+        }
+
+        if (ext.Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+        {
+            fileName = OperatingSystem.IsWindows() ? "powershell" : "pwsh";
+            args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script];
+            return true;
+        }
+
+        error = $"不支援的 preStart 副檔名（請用 .py／.ps1／.sh）：{Path.GetFileName(script)}";
+        return false;
     }
 
     private static ServiceLogWriter OpenLog(string logFile)

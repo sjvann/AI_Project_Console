@@ -267,6 +267,33 @@ public static class TechStackCatalog
             || ext.Equals(".vbproj", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool IsSolutionFile(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Equals(".sln", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".slnx", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string? FindSolutionFile(string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            return null;
+        try
+        {
+            var slnx = Directory.GetFiles(directory, "*.slnx");
+            if (slnx.Length > 0)
+                return slnx.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).First();
+            var sln = Directory.GetFiles(directory, "*.sln");
+            return sln.Length > 0
+                ? sln.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).First()
+                : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public static string? FindPreferredManifest(string directory)
     {
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))

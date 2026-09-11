@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace AiProject.Console.Core.Agents;
 
@@ -58,10 +59,17 @@ public static class LocalAppCloser
         IReadOnlyList<string>? windowsImages = null,
         IReadOnlyList<string>? macAppNames = null,
         string? unixPattern = null,
-        string? windowTitlePrefix = null)
+        string? windowTitlePrefix = null,
+        string? workspaceRoot = null)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(workspaceRoot))
+            {
+                CloseWorkspaceWindows(processNames, macAppNames, workspaceRoot);
+                return null;
+            }
+
             if (OperatingSystem.IsWindows())
             {
                 CloseWindowsGracefully(processNames, windowsImages, windowTitlePrefix);
@@ -238,5 +246,190 @@ public static class LocalAppCloser
         if (n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             n = n[..^4];
         return n;
+    }
+
+    static void CloseWorkspaceWindows(
+        IReadOnlyList<string> processNames,
+        IReadOnlyList<string>? macAppNames,
+        string workspaceRoot)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            CloseMatchingWindowsWindows(processNames, workspaceRoot);
+            return;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            var apps = macAppNames is { Count: > 0 }
+                ? macAppNames
+                : processNames;
+            foreach (var app in apps)
+            {
+                if (!string.IsNullOrWhiteSpace(app))
+                    CloseMatchingWindowsMac(app.Trim(), workspaceRoot);
+            }
+            return;
+        }
+
+        CloseMatchingWindowsLinux(workspaceRoot);
+    }
+
+    static void CloseMatchingWindowsWindows(IReadOnlyList<string> processNames, string workspaceRoot)
+    {
+        var allowed = new HashSet<string>(
+            processNames.Select(NormalizeProcessName).Where(n => n.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var hwnd in Native.TopLevelWindows())
+        {
+            if (!Native.IsWindowVisible(hwnd))
+                continue;
+            var title = Native.GetTitle(hwnd);
+            if (string.IsNullOrEmpty(title) || !WorkspaceWindow.TitleMatches(title, workspaceRoot))
+                continue;
+            if (allowed.Count > 0)
+            {
+                Native.GetWindowThreadProcessId(hwnd, out var pid);
+                if (pid == 0)
+                    continue;
+                try
+                {
+                    using var proc = Process.GetProcessById(unchecked((int)pid));
+                    if (!allowed.Contains(proc.ProcessName))
+                        continue;
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+            Native.PostMessage(hwnd, Native.WmClose, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+
+    static void CloseMatchingWindowsMac(string app, string workspaceRoot)
+    {
+        var name = WorkspaceWindow.FolderName(workspaceRoot);
+        if (string.IsNullOrEmpty(name))
+            return;
+        var needle = name.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var appName = app.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var script =
+            "tell application \"System Events\"\n" +
+            "  if not (exists process \"" + appName + "\") then return\n" +
+            "  tell process \"" + appName + "\"\n" +
+            "    repeat with w in (get windows)\n" +
+            "      set wName to name of w as text\n" +
+            "      if (wName contains \" - " + needle + " - \") or (wName starts with \"" + needle + " - \") then\n" +
+            "        try\n" +
+            "          click (first button of w whose subrole is \"AXCloseButton\")\n" +
+            "        end try\n" +
+            "      end if\n" +
+            "    end repeat\n" +
+            "  end tell\n" +
+            "end tell\n";
+        RunAppleScript(script);
+    }
+
+    static void RunAppleScript(string script)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("osascript")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var p = Process.Start(psi);
+            if (p is null)
+                return;
+            p.StandardInput.Write(script);
+            p.StandardInput.Close();
+            p.WaitForExit(15_000);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    static void CloseMatchingWindowsLinux(string workspaceRoot)
+    {
+        try
+        {
+            using var list = Process.Start(new ProcessStartInfo("wmctrl", "-l")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (list is null)
+                return;
+            var output = list.StandardOutput.ReadToEnd();
+            list.WaitForExit(8_000);
+            foreach (var line in output.Split('\n'))
+            {
+                var parts = line.Trim().Split((char[]?)null, 4, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 4)
+                    continue;
+                if (!WorkspaceWindow.TitleMatches(parts[3], workspaceRoot))
+                    continue;
+                RunSilent("wmctrl", "-ic " + parts[0], 5_000);
+            }
+        }
+        catch
+        {
+            // 沒有 wmctrl 就不關整份 IDE
+        }
+    }
+
+    static class Native
+    {
+        internal const uint WmClose = 0x0010;
+
+        internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        internal static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        internal static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        internal static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        internal static List<IntPtr> TopLevelWindows()
+        {
+            var list = new List<IntPtr>();
+            EnumWindows((hWnd, _) =>
+            {
+                list.Add(hWnd);
+                return true;
+            }, IntPtr.Zero);
+            return list;
+        }
+
+        internal static string GetTitle(IntPtr hWnd)
+        {
+            var len = GetWindowTextLength(hWnd);
+            if (len <= 0)
+                return "";
+            var sb = new System.Text.StringBuilder(len + 1);
+            _ = GetWindowText(hWnd, sb, sb.Capacity);
+            return sb.ToString();
+        }
     }
 }

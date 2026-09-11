@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
@@ -147,24 +148,41 @@ public static class SelfUpdate
         IProgress<string>? progress = null,
         CancellationToken ct = default)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
-        Directory.CreateDirectory(dir);
-        var dest = Path.Combine(dir, Path.GetFileName(asset.Name));
-        if (File.Exists(dest))
-            File.Delete(dest);
+<<<<<<< HEAD
+        var dest = ReserveUpdatePath(asset.Name);
+=======
+        var dir = StagingDirectory();
+        var dest = AllocateStagingPath(Path.GetFileName(asset.Name));
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
 
         if (CliUtil.CommandExists("gh"))
         {
             progress?.Report("下載更新（gh）…");
+            var args = new List<string>
+            {
+                "release", "download", update.Tag,
+                "--repo", AppInfo.GitHubSlug,
+                "--pattern", asset.Name,
+<<<<<<< HEAD
+                "--output", dest,
+            };
+=======
+                "--clobber",
+            };
+            if (PathsEqual(dest, Path.Combine(dir, Path.GetFileName(asset.Name))))
+            {
+                args.Add("--dir");
+                args.Add(dir);
+            }
+            else
+            {
+                args.Add("--output");
+                args.Add(dest);
+            }
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(
                 "gh",
-                [
-                    "release", "download", update.Tag,
-                    "--repo", AppInfo.GitHubSlug,
-                    "--pattern", asset.Name,
-                    "--dir", dir,
-                    "--clobber",
-                ],
+                args,
                 timeoutMs: 600_000,
                 ct: ct).ConfigureAwait(false);
             if (code != 0 || !File.Exists(dest))
@@ -184,20 +202,23 @@ public static class SelfUpdate
             throw new InvalidOperationException("無法下載安裝包。倉庫若為私人，請先安裝並登入 GitHub CLI（gh auth login）。");
         resp.EnsureSuccessStatusCode();
         var total = resp.Content.Headers.ContentLength ?? (asset.Size > 0 ? asset.Size : 0);
-        await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, 81_920, useAsync: true);
-        var buffer = new byte[81_920];
-        long copied = 0;
-        int read;
-        while ((read = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        await using (var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+        await using (var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.Read, 81_920, useAsync: true))
         {
-            await dst.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-            copied += read;
-            if (progress is null)
-                continue;
-            progress.Report(total > 0
-                ? $"下載更新 {copied / 1_048_576.0:0.0} / {total / 1_048_576.0:0.0} MB"
-                : $"下載更新 {copied / 1_048_576.0:0.0} MB");
+            var buffer = new byte[81_920];
+            long copied = 0;
+            int read;
+            while ((read = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            {
+                await dst.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                copied += read;
+                if (progress is null)
+                    continue;
+                progress.Report(total > 0
+                    ? $"下載更新 {copied / 1_048_576.0:0.0} / {total / 1_048_576.0:0.0} MB"
+                    : $"下載更新 {copied / 1_048_576.0:0.0} MB");
+            }
+            await dst.FlushAsync(ct).ConfigureAwait(false);
         }
         return dest;
     }
@@ -237,23 +258,74 @@ public static class SelfUpdate
     {
         if (!OperatingSystem.IsWindows())
             throw new InvalidOperationException("目前只支援在 Windows 啟動安裝程式。");
-        var staged = StageUpdateFile(setupPath);
-        var pinDir = DetectInstallKind() != InstallKind.Development;
-        var args = BuildInstallerArguments(installDir, silent, pinDir);
-        var pid = DetachedProcess.Start(staged, args, showWindow: !silent, workingDirectory: Path.GetDirectoryName(staged));
-        Thread.Sleep(400);
-        return pid;
+        try
+        {
+            var staged = StageUpdateFile(setupPath);
+            var pinDir = DetectInstallKind() != InstallKind.Development;
+            var args = BuildInstallerArguments(installDir, silent, pinDir);
+            var pid = DetachedProcess.Start(staged, args, showWindow: !silent, workingDirectory: Path.GetDirectoryName(staged));
+            Thread.Sleep(400);
+            return pid;
+        }
+<<<<<<< HEAD
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+=======
+        catch (IOException ex)
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+        {
+            throw new InvalidOperationException(
+                "無法啟動安裝程式：暫存安裝檔被其他程式占用（常見於防毒軟體掃描）。請關閉控制台後，改從 GitHub Releases 手動執行 setup.exe。\n" + ex.Message,
+                ex);
+        }
     }
 
+<<<<<<< HEAD
+    public static string ReserveUpdatePath(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("安裝檔名是空的。");
+        var dest = Path.Combine(StagingDirectory(), name);
+        if (!File.Exists(dest))
+            return dest;
+        if (TryRetireFile(dest))
+            return dest;
+        return Path.Combine(StagingDirectory(), Guid.NewGuid().ToString("N")[..8] + "-" + name);
+    }
+
+=======
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
     public static string StageUpdateFile(string path)
     {
         var src = Path.GetFullPath(path);
         if (!File.Exists(src))
             throw new InvalidOperationException("找不到檔案：" + src);
-        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
-        Directory.CreateDirectory(dir);
-        var dest = Path.Combine(dir, Path.GetFileName(src));
-        File.Copy(src, dest, overwrite: true);
+<<<<<<< HEAD
+
+        // Never copy onto the download itself. Same-path File.Copy on Windows throws
+        // "The process cannot access the file because it is being used by another process."
+        var dest = AllocateRunPath(Path.GetFileName(src));
+        CopyWithRetry(src, dest);
+=======
+        var dest = Path.Combine(StagingDirectory(), Path.GetFileName(src));
+        // Download already writes into this folder. Copying a file onto itself on Windows
+        // throws IOException: "The process cannot access the file because it is being used by another process."
+        if (PathsEqual(src, dest))
+        {
+            TryUnblock(src);
+            return src;
+        }
+
+        try
+        {
+            File.Copy(src, dest, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            dest = AllocateStagingPath(Path.GetFileName(src), forceUnique: true);
+            File.Copy(src, dest, overwrite: true);
+        }
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         TryUnblock(dest);
         return dest;
     }
@@ -365,8 +437,7 @@ public static class SelfUpdate
 
     private static string WriteSwapScript(string extractDir, string targetDir, int pid, string exePath)
     {
-        var script = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", "apply.ps1");
-        Directory.CreateDirectory(Path.GetDirectoryName(script)!);
+        var script = Path.Combine(StagingDirectory(), "apply.ps1");
         var src = PsQuote(extractDir);
         var dst = PsQuote(targetDir);
         var exe = PsQuote(exePath);
@@ -380,6 +451,99 @@ public static class SelfUpdate
     }
 
     private static string PsQuote(string path) => "'" + path.Replace("'", "''") + "'";
+
+    private static string StagingDirectory()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+<<<<<<< HEAD
+    private static string AllocateRunPath(string fileName)
+    {
+        var dir = Path.Combine(StagingDirectory(), "run-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, fileName);
+    }
+
+    private static void CopyWithRetry(string src, string dest)
+    {
+        if (PathsEqual(src, dest))
+            dest = AllocateRunPath(Path.GetFileName(src));
+
+        Exception? last = null;
+=======
+    private static string AllocateStagingPath(string fileName, bool forceUnique = false)
+    {
+        var dir = StagingDirectory();
+        var dest = Path.Combine(dir, fileName);
+        if (!forceUnique && (!File.Exists(dest) || TryDeleteFile(dest)))
+            return dest;
+        return Path.Combine(dir, Guid.NewGuid().ToString("N")[..8] + "-" + fileName);
+    }
+
+    private static bool TryDeleteFile(string path)
+    {
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+        for (var i = 0; i < 8; i++)
+        {
+            try
+            {
+<<<<<<< HEAD
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(src, dest, overwrite: false);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                last = ex;
+                dest = AllocateRunPath(Path.GetFileName(src));
+                Thread.Sleep(150);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "無法複製安裝檔（檔案被占用）。請關閉控制台後，改從 GitHub Releases 手動執行 setup.exe。",
+            last);
+    }
+
+    private static bool TryRetireFile(string path)
+    {
+        var dir = Path.GetDirectoryName(path);
+        var name = Path.GetFileNameWithoutExtension(path);
+        var ext = Path.GetExtension(path);
+        if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(name))
+            return false;
+
+        for (var i = 0; i < 8; i++)
+        {
+            var retired = Path.Combine(dir, name + ".old-" + Guid.NewGuid().ToString("N")[..8] + ext);
+            try
+            {
+                if (!File.Exists(path))
+                    return true;
+                File.Move(path, retired);
+=======
+                if (!File.Exists(path))
+                    return true;
+                File.Delete(path);
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(150);
+            }
+        }
+        return !File.Exists(path);
+    }
+
+    private static bool PathsEqual(string a, string b) =>
+        string.Equals(
+            Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
 
     private static AvailableUpdate? PickNewest(
         JsonElement releases,

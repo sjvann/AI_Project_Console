@@ -66,6 +66,10 @@
         "files": [ "salekit/**/*.{html,pdf}" ],
         "src": "docs",
         "dest": "docs"
+      },
+      {
+        "files": [ "LICENSE", "NOTICE", "SECURITY.md", "CONTRIBUTING.md" ],
+        "dest": "legal-source"
       }
     ],
     "output": "_site",
@@ -73,10 +77,11 @@
     "globalMetadata": {
       "_appName": "AI_Project 控制台",
       "_appTitle": "AI_Project 控制台",
-      "_appFooter": "<span>AI_Project 控制台 · <a href=\"https://sjvann.github.io/AI_Project_Console/\">使用文件</a></span>",
+      "_appFooter": "<span>© 2026 sjvann · 保留一切權利 · <a href=\"https://sjvann.github.io/AI_Project_Console/docs/legal/copyright.html\">版權</a> · <a href=\"https://sjvann.github.io/AI_Project_Console/\">使用文件</a></span>",
       "_appLogoPath": "images/logo.svg",
       "_appFaviconPath": "images/favicon.ico",
       "_enableSearch": true,
+      "_disableContribution": true,
       "_lang": "zh-Hant",
       "_gitContribute": {
         "repo": "https://github.com/sjvann/AI_Project_Console.git",

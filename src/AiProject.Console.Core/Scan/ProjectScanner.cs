@@ -13,7 +13,7 @@ public static class ProjectScanner
         "bin", "obj", ".git", "node_modules", ".ai_project", ".ai_house", "packages",
         "venv", ".venv", "__pycache__", "target", "dist", "vendor", ".gradle", ".next",
         ".nuxt", ".tox", ".mypy_cache", ".pytest_cache", "bower_components", ".dart_tool",
-        "coverage", ".hg", ".svn", "build",
+        "coverage", ".hg", ".svn", "build", "wwwroot",
     };
 
     private static readonly Regex UrlRe = new(@"https?://[^\s;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -349,7 +349,7 @@ public static class ProjectScanner
             var dir = Path.GetDirectoryName(path);
             if (string.IsNullOrEmpty(dir))
                 continue;
-            if (covered.Any(c => SameStackCovered(c.StackId, c.Dir, stack.Id, dir)))
+            if (covered.Any(c => NestedUnderProject(c.Dir, dir) || SameStackCovered(c.StackId, c.Dir, stack.Id, dir)))
                 continue;
             var key = (stack.Id, dir);
             byStackDir[key] = byStackDir.GetValueOrDefault(key) + 1;
@@ -358,6 +358,10 @@ public static class ProjectScanner
         foreach (var ((stackId, dir), count) in byStackDir)
         {
             if (!DirectoryLooksLikeLooseProject(dir, stackId, count))
+                continue;
+            if (TechStackCatalog.FindSolutionFile(dir) is not null)
+                continue;
+            if (projects.Any(p => SameProjectDirectory(workspaceRoot, p.RelDir, dir)))
                 continue;
             if (!seen.Add(dir))
                 continue;
@@ -376,12 +380,31 @@ public static class ProjectScanner
             || a.StartsWith(b, StringComparison.OrdinalIgnoreCase);
     }
 
+    static bool NestedUnderProject(string coveredDir, string dir)
+    {
+        var a = coveredDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var b = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return b.StartsWith(a, StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool SameProjectDirectory(string workspaceRoot, string relDir, string dir)
+    {
+        var existing = Path.GetFullPath(Path.Combine(workspaceRoot, relDir.Replace('/', Path.DirectorySeparatorChar)));
+        return string.Equals(
+            existing.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     static bool DirectoryLooksLikeLooseProject(string dir, string stackId, int fileCount)
     {
         if (stackId == "python")
-            return TechStackDetector.DirectoryLooksLikePythonProject(dir) || fileCount >= 5;
+            return TechStackDetector.DirectoryLooksLikePythonProject(dir);
         if (stackId == "node")
-            return TechStackDetector.DirectoryLooksLikeNodeProject(dir) || fileCount >= 8;
+            return File.Exists(Path.Combine(dir, "package.json"))
+                || (fileCount >= 8 && TechStackDetector.DirectoryLooksLikeNodeProject(dir));
         if (stackId == "go")
             return TechStackDetector.HasGoMain(dir) || fileCount >= 3;
         if (stackId == "dotnet")

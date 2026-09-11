@@ -4,23 +4,21 @@
 
 文件站頂列分成四區：**使用文件**（本頁）、[產品規格](product/README.md)、[銷售套件](salekit/README.md)、API。規格裡的公司平台標「規劃」，尚未出貨。
 
+現行出貨為控制台 **0.6.13**（Windows x64）。變更摘要：[現行版本](user/whats-new.md)。倉庫公開可見，授權為**保留一切權利**，見 [版權與授權](legal/copyright.md)。
+
 ## 我是誰、該看哪裡
 
 | 角色 | 目標 | 從這裡開始 |
 |------|------|------------|
-| **一般使用者** | 操作控制台、跑本機堆疊 | [安裝與第一次使用](user/getting-started.md) |
+| **一般使用者** | 操作控制台、跑本機堆疊 | [現行版本](user/whats-new.md) · [安裝與第一次使用](user/getting-started.md) |
 | **專案經理** | 需求／設計變更、發出任務、驗收 | [需求工作台](user/intake.md) |
 | **工作區負責人** | 讓控制台正確掃到多個倉／服務 | [工作區設定（ai-project.json）](workspace/ai-project-json.md) |
 | **團隊導入** | 帶新人走完掃描 → 編譯 → 啟動 → 求救 | [90 分鐘導入](team/trial-90min.md) |
 | **要用 Agent** | 求救後端、MCP、專案問答 | [Agent 後端](agent/backends.md) |
-<<<<<<< HEAD
 | **維護此控制台** | 從原始碼編譯、打包、發 Release、簽署 | [開發與維護](maintainer/develop.md) · [程式碼簽署與 Store](maintainer/code-signing.md) |
 | **業務／採購** | 對外部軟體公司高層說明定位與管理特色 | [銷售套件](salekit/README.md) |
-=======
-| **維護此控制台** | 從原始碼編譯、打包、發 Release | [開發與維護](maintainer/develop.md) |
-| **業務／採購** | 對外部軟體公司說明現況與規劃 | [銷售套件](salekit/README.md) |
-| **產品／實作對齊** | 軟體公司營運層要做什麼 | [產品規格](product/README.md) |
->>>>>>> 5cf4122bf6cb7ae3bcf255c5dde7bb3e1de72365
+| **產品／實作對齊** | 軟體公司營運層要做什麼 | [產品規格](product/README.md) · [產品概觀](product/overview.md) |
+| **授權／法務** | 公開倉庫、安裝包、第三方元件 | [版權與授權](legal/copyright.md) · [第三方聲明](legal/third-party.md) |
 
 線上版（GitHub Pages）：<https://sjvann.github.io/AI_Project_Console/>
 
@@ -28,14 +26,15 @@
 
 ## 一般使用者閱讀順序
 
-1. [安裝與第一次使用](user/getting-started.md) — 下載、啟動、選專案、環境體檢
-2. [畫面導覽](user/interface.md) — 每個按鈕與分頁做什麼
-3. [日常操作](user/daily-use.md) — 啟動、停止、編譯、看 Log、開前端
-4. [GitHub](user/github.md) — clone、提交、同步、發布
-5. [卡住時怎麼辦](user/help.md) — UAT 求救、編譯求救、專案問答
-6. [設定](user/settings.md) — 外觀、Agent、MCP、問答模型
-7. [常見問題](user/troubleshooting.md) — 服務起不來、需重編、更新失敗
-8. [專案文件](user/docs.md) — `docs/`、DocFX、本機預覽、GitHub Pages
+1. [現行版本](user/whats-new.md) — 目前出貨 0.6.13
+2. [安裝與第一次使用](user/getting-started.md) — 下載、啟動、選專案、環境體檢
+3. [畫面導覽](user/interface.md) — 每個按鈕與分頁做什麼
+4. [日常操作](user/daily-use.md) — 啟動、停止、編譯、看 Log、開前端
+5. [GitHub](user/github.md) — clone、提交、同步、發布
+6. [卡住時怎麼辦](user/help.md) — UAT 求救、編譯求救、專案問答
+7. [設定](user/settings.md) — 外觀、Agent、MCP、問答模型
+8. [常見問題](user/troubleshooting.md) — 服務起不來、需重編、更新失敗
+9. [專案文件](user/docs.md) — `docs/`、DocFX、本機預覽、GitHub Pages
 
 可選：
 

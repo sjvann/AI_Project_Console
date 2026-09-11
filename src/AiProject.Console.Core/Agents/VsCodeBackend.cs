@@ -24,7 +24,7 @@ public sealed class VsCodeBackend : IAgentBackend
         var detect = Detect(cliOverride);
         if (!detect.Available || detect.CliPath is null)
             return detect.Summary;
-        return OpenFolder(detect.CliPath, root);
+        return IdeWorkspaceLaunch.OpenFolder(detect.CliPath, root, displayName: "VS Code");
     }
 
     public Task<string?> LaunchAgent(string root, string prompt, string? cliOverride = null)
@@ -33,32 +33,13 @@ public sealed class VsCodeBackend : IAgentBackend
         return Task.FromResult(OpenWorkspace(root, cliOverride));
     }
 
-    public string? CloseIde() => LocalAppCloser.Close(
+    public string? CloseIde(string? workspaceRoot = null) => LocalAppCloser.Close(
         DisplayName,
         ["Code", "code"],
-        windowsImages: ["Code.exe"],
+        windowsImages: workspaceRoot is null ? ["Code.exe"] : null,
         macAppNames: ["Visual Studio Code"],
-        unixPattern: "code");
-
-    static string? OpenFolder(string cli, string root)
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo(cli)
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            psi.ArgumentList.Add("--reuse-window");
-            psi.ArgumentList.Add(Path.GetFullPath(root));
-            System.Diagnostics.Process.Start(psi);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return $"無法開啟 VS Code：{ex.Message}";
-        }
-    }
+        unixPattern: workspaceRoot is null ? "code" : null,
+        workspaceRoot: workspaceRoot);
 
     static string? Resolve(string? cliOverride)
     {

@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.6.10"
+  #define MyAppVersion "0.6.13"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\..\dist\win-x64"
@@ -16,6 +16,8 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppCopyright=Copyright (C) 2026 sjvann. All rights reserved.
+LicenseFile=..\..\LICENSE
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases

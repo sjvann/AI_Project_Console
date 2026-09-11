@@ -138,6 +138,17 @@ public static class DocsService
         return ScaffoldFiles.Any(s => string.Equals(s, rel, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// 骨架檔是否已滿足。倉根的 <c>docfx.json</c>（本控制台文件站）視同 <c>docs/docfx.json</c>。
+    /// </summary>
+    static bool IsScaffoldSatisfied(string rel, HashSet<string> present, string projectRoot)
+    {
+        if (present.Contains(rel))
+            return true;
+        return string.Equals(rel, "docfx.json", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(Path.Combine(projectRoot, "docfx.json"));
+    }
+
     public static DocsStatus Scan(string projectRoot)
     {
         var root = Path.GetFullPath(projectRoot);
@@ -163,7 +174,7 @@ public static class DocsService
         var hasDocfx = File.Exists(Path.Combine(docs, "docfx.json"))
             || File.Exists(Path.Combine(root, "docfx.json"));
         var present = new HashSet<string>(files.Select(f => f.RelPath), StringComparer.OrdinalIgnoreCase);
-        var missing = ScaffoldFiles.Where(p => !present.Contains(p)).ToList();
+        var missing = ScaffoldFiles.Where(p => !IsScaffoldSatisfied(p, present, root)).ToList();
         var stubCount = files.Count(f => f.IsStub);
         var mdCount = files.Count(f => f.RelPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase));
         DocsHealth health;

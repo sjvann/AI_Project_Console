@@ -1,3 +1,4 @@
+using AiProject.Console.Core;
 using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Stack;
 
@@ -68,6 +69,69 @@ public class StackWorkspaceTests
         var json = McpLaunch.CursorSnippet(@"E:\demo");
         Assert.Contains(McpLaunch.ServerId, json);
         Assert.Contains("--root", json);
+        Assert.Contains("\"cwd\"", json);
+        Assert.DoesNotContain("\"src/AiProject.Console.Mcp\"", json);
+    }
+
+    [Fact]
+    public void ResolveLaunch_IgnoresManagedProjectSrcAndCurrentDirectory()
+    {
+        var managed = Path.Combine(Path.GetTempPath(), "ai-mcp-managed-" + Guid.NewGuid().ToString("N"));
+        var fakeProjDir = Path.Combine(managed, "src", "AiProject.Console.Mcp");
+        Directory.CreateDirectory(fakeProjDir);
+        var fakeProj = Path.Combine(fakeProjDir, "AiProject.Console.Mcp.csproj");
+        File.WriteAllText(fakeProj, "<Project Sdk=\"Microsoft.NET.Sdk\" />\n");
+        try
+        {
+            var found = McpLaunch.FindMcpProject();
+            if (found is not null)
+                Assert.False(string.Equals(Path.GetFullPath(found), Path.GetFullPath(fakeProj), StringComparison.OrdinalIgnoreCase));
+
+            var (command, args) = McpLaunch.ResolveLaunch(managed);
+            var joined = command + "\n" + string.Join('\n', args);
+            Assert.DoesNotContain(Path.GetFullPath(fakeProj), joined);
+            Assert.Equal(Path.GetFullPath(managed), args[^1]);
+            Assert.Contains("--root", args);
+            Assert.True(
+                args.Contains(McpCli.Flag, StringComparer.OrdinalIgnoreCase)
+                || joined.Contains("AiProject.Console.Mcp", StringComparison.OrdinalIgnoreCase)
+                || joined.Contains(AppInfo.ExeName, StringComparison.OrdinalIgnoreCase)
+                || joined.Contains("AI_Project_Console.dll", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain("src/AiProject.Console.Mcp", args);
+        }
+        finally
+        {
+            Directory.Delete(managed, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TryRepairOurs_RewritesRelativeSrcToProduct()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-mcp-repair-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, ".cursor"));
+        try
+        {
+            File.WriteAllText(McpLaunch.CursorConfigPath(root), """
+                {
+                  "mcpServers": {
+                    "ai-project-console": {
+                      "command": "dotnet",
+                      "args": [ "run", "--project", "src/AiProject.Console.Mcp", "--", "--root", "C:\\managed" ]
+                    }
+                  }
+                }
+                """);
+            Assert.True(McpLaunch.TryRepairOurs(root));
+            var json = File.ReadAllText(McpLaunch.CursorConfigPath(root));
+            Assert.DoesNotContain("\"src/AiProject.Console.Mcp\"", json);
+            Assert.Contains("--root", json);
+            Assert.Contains(McpLaunch.ServerId, json);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

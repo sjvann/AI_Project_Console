@@ -27,6 +27,8 @@ public sealed partial class ConsoleSession : IDisposable
     private readonly NativeUi _native;
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenSource? _askCts;
+    private CancellationTokenSource? _askProbeCts;
+    private CancellationTokenSource? _askPullCts;
     private CancellationTokenSource? _githubLoginCts;
     private bool _pendingOpenCursor;
     private bool _unassignedCollapseUserSet;
@@ -59,6 +61,7 @@ public sealed partial class ConsoleSession : IDisposable
         AskBaseUrl = ConsoleSettingsStore.GetAskBaseUrl();
         AskApiKey = ConsoleSettingsStore.GetAskApiKey();
         AskModel = ConsoleSettingsStore.GetAskModel();
+        AskSources = ConsoleSettingsStore.GetAskSources();
         Workbench = ConsoleSettingsStore.GetWorkbench();
         GitHostName = ConsoleSettingsStore.GetGitHost();
         GitKind = ConsoleSettingsStore.GetGitKind();
@@ -78,6 +81,7 @@ public sealed partial class ConsoleSession : IDisposable
     public ProjectRuntime? Runtime { get; private set; }
     public string? WorkspaceAppIconUrl => AppIconDataUrl(Catalog is null ? null : AppIconLocator.WorkspaceIcon(Catalog));
     public IReadOnlyList<string> RecentProjects => ConsoleSettingsStore.RecentProjects();
+    public IReadOnlyList<string> HistoryProjects => ConsoleSettingsStore.HistoryProjects(Catalog?.Root);
     public bool OpenWithCursor { get; set; }
     public bool RestoreLastProject { get; set; }
     public bool TestBeforePush { get; set; }
@@ -102,9 +106,19 @@ public sealed partial class ConsoleSession : IDisposable
     public string AskBaseUrl { get; set; } = ProjectAskService.DefaultBaseUrl;
     public string AskApiKey { get; set; } = "";
     public string AskModel { get; set; } = ProjectAskService.DefaultModel;
+    public IReadOnlyList<ProjectAskSource> AskSources { get; private set; } = [];
     public string AskDraft { get; set; } = "";
     public bool AskBusy { get; private set; }
     public string AskStatus { get; private set; } = "";
+    public bool AskProbeBusy { get; private set; }
+    public string AskProbeMessage { get; private set; } = "";
+    public bool AskProbeOk { get; private set; }
+    public bool AskProbeModelFound { get; private set; }
+    public IReadOnlyList<string> AskProbeModels { get; private set; } = [];
+    public bool AskPullBusy { get; private set; }
+    public string AskPullModel { get; private set; } = "";
+    public string AskPullMessage { get; private set; } = "";
+    public bool AskPullOk { get; private set; }
     public IReadOnlyList<ProjectAskChatItem> AskMessages { get; private set; } = [];
     public string AgentDetectSummary { get; private set; } = "";
     public bool AgentAvailable { get; private set; }
@@ -529,7 +543,51 @@ public sealed partial class ConsoleSession : IDisposable
             : DutySummary.Attention(OfflineCount, StaleProjectCount, AuditIncidentCount, LastAuditIncidentTool);
     public bool DutyOk => Catalog is not null && DutySummary.IsClear(OfflineCount, StaleProjectCount, AuditIncidentCount);
     public bool AskConfigured => ProjectAskService.IsConfigured(AskBaseUrl, AskModel);
-    public bool CanAsk => HasProject && AskConfigured && !AskBusy;
+    public bool CanAsk => HasProject && AskConfigured && ProjectAskModelSupport.SupportsTools(AskModel) && !AskBusy;
+    public string AskProviderId => ProjectAskProviders.MatchId(AskBaseUrl);
+    public string AskActiveSourceId =>
+        AskSources.FirstOrDefault(s =>
+            string.Equals(
+                ProjectAskProviders.NormalizeUrl(s.BaseUrl),
+                ProjectAskProviders.NormalizeUrl(AskBaseUrl),
+                StringComparison.OrdinalIgnoreCase))?.Id ?? "";
+    public IReadOnlyList<string> AskModelChoices
+    {
+        get
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var list = new List<string>();
+            void Add(string? value)
+            {
+                var t = (value ?? "").Trim();
+                if (string.IsNullOrEmpty(t) || !seen.Add(t))
+                    return;
+                list.Add(t);
+            }
+            if (ProjectAskModelSupport.SupportsTools(AskModel))
+                Add(AskModel);
+            foreach (var m in AskProbeModels)
+                Add(m);
+            foreach (var m in ProjectAskProviders.Get(AskProviderId).SuggestedModels)
+            {
+                if (ProjectAskModelSupport.SupportsTools(m))
+                    Add(m);
+            }
+            return list;
+        }
+    }
+    public IReadOnlyList<string> AskPullModels =>
+        ProjectAskService.PullCandidates(AskBaseUrl, AskModel, AskProbeModels);
+    public bool AskCanPull => ProjectAskProviders.CanPullModels(AskBaseUrl);
+    public string AskPullTone =>
+        AskPullBusy ? "is-wait" :
+        string.IsNullOrEmpty(AskPullMessage) ? "" :
+        AskPullOk ? "is-ok" : "is-fail";
+    public string AskProbeTone =>
+        string.IsNullOrEmpty(AskProbeMessage) || AskProbeBusy ? "" :
+        !AskProbeOk ? "is-fail" :
+        AskProbeModelFound ? "is-ok" :
+        "is-wait";
     public IReadOnlyList<ProjectAskSuggestionView> AskSuggestions =>
         ProjectAskPrompts.Rank(OfflineCount, StaleProjectCount, AuditIncidentCount);
 
@@ -562,6 +620,8 @@ public sealed partial class ConsoleSession : IDisposable
         AskBaseUrl = ConsoleSettingsStore.GetAskBaseUrl();
         AskApiKey = ConsoleSettingsStore.GetAskApiKey();
         AskModel = ConsoleSettingsStore.GetAskModel();
+        AskSources = ConsoleSettingsStore.GetAskSources();
+        ClearAskProbe();
         Theme = ConsoleSettingsStore.GetTheme();
         RestoreLastProject = ConsoleSettingsStore.GetRestoreLastProject();
         TestBeforePush = ConsoleSettingsStore.GetTestBeforePush();
@@ -775,6 +835,7 @@ public sealed partial class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetAskBaseUrl(AskBaseUrl);
         ConsoleSettingsStore.SetAskApiKey(AskApiKey);
         ConsoleSettingsStore.SetAskModel(AskModel);
+        ConsoleSettingsStore.SetAskSources(AskSources);
         ConsoleSettingsStore.SetTheme(Theme);
         ConsoleSettingsStore.SetRestoreLastProject(RestoreLastProject);
         ConsoleSettingsStore.SetTestBeforePush(TestBeforePush);
@@ -1230,21 +1291,26 @@ public sealed partial class ConsoleSession : IDisposable
 
         if (closeIde)
         {
-            var err = CurrentAgent.CloseIde();
+            var err = CurrentAgent.CloseIde(Catalog?.Root);
             if (err is not null)
                 _native.Warn($"關閉 {AgentDisplayName}", err);
         }
 
+        var closedRoot = Catalog?.Root;
         ResetToStartup();
         try
         {
-            ConsoleSettingsStore.ClearLastProject();
+            ConsoleSettingsStore.ClearLastProjectIf(closedRoot);
         }
         catch
         {
             // 歷史仍保留，還原標記失敗不阻擋關閉
         }
-        JobText = closeIde ? $"已關閉專案，並關閉 {AgentDisplayName}" : "已關閉專案";
+        JobText = closeIde
+            ? (CurrentAgent.Kind == AgentBackendKind.Ide
+                ? $"已關閉專案，並關閉這個專案的 {AgentDisplayName} 視窗"
+                : $"已關閉專案，並關閉 {AgentDisplayName}")
+            : "已關閉專案";
         Notify();
     }
 
@@ -1288,6 +1354,15 @@ public sealed partial class ConsoleSession : IDisposable
             ClearIssueLists();
             ReloadLog();
             LoadAudit(reloadPolicy: true);
+            try
+            {
+                McpLaunch.TryRepairOurs(catalog.Root);
+            }
+            catch
+            {
+                // 舊 mcp.json 修補失敗不擋載入
+            }
+            RefreshMcpPrefsUi();
             JobText = rememberErr is null ? "已載入專案" : $"已載入專案（歷史未寫入：{rememberErr}）";
             _workHours.SwitchProject(catalog.Root, catalog.Name);
             RefreshDocs();
@@ -1710,10 +1785,11 @@ public sealed partial class ConsoleSession : IDisposable
 
     private void DropProjectAfterLoginCancel()
     {
+        var closedRoot = Catalog?.Root;
         ResetToStartup();
         try
         {
-            ConsoleSettingsStore.ClearLastProject();
+            ConsoleSettingsStore.ClearLastProjectIf(closedRoot);
         }
         catch
         {
@@ -2014,6 +2090,220 @@ public sealed partial class ConsoleSession : IDisposable
     {
         AskDraft = value ?? "";
         Notify();
+    }
+
+    public void SetAskBaseUrl(string value)
+    {
+        AskBaseUrl = value ?? "";
+        ClearAskProbe();
+        Notify();
+    }
+
+    public void SetAskApiKey(string value)
+    {
+        AskApiKey = value ?? "";
+        ClearAskProbe();
+        Notify();
+    }
+
+    public void SetAskModel(string value)
+    {
+        AskModel = value ?? "";
+        if (AskProbeModels.Count > 0)
+            AskProbeModelFound = ProjectAskService.ModelInList(AskModel, AskProbeModels);
+        Notify();
+    }
+
+    public void ApplyAskProvider(string? id)
+    {
+        var provider = ProjectAskProviders.Get(id);
+        if (provider.Id != ProjectAskProviders.CustomId)
+        {
+            AskBaseUrl = provider.BaseUrl;
+            if (!string.IsNullOrEmpty(provider.DefaultModel))
+                AskModel = provider.DefaultModel;
+            if (!provider.NeedsApiKey)
+                AskApiKey = "";
+        }
+        ClearAskProbe();
+        Notify();
+    }
+
+    public void ApplyAskSource(string? id)
+    {
+        var source = AskSources.FirstOrDefault(s => s.Id.Equals((id ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        if (source is null)
+            return;
+        AskBaseUrl = source.BaseUrl;
+        AskModel = source.Model;
+        AskApiKey = source.ApiKey ?? "";
+        ClearAskProbe();
+        Notify();
+    }
+
+    public void RememberAskSource()
+    {
+        if (string.IsNullOrWhiteSpace(AskBaseUrl))
+            return;
+        AskSources = ProjectAskProviders.Upsert(AskSources, AskBaseUrl, AskModel, AskApiKey);
+        Notify();
+    }
+
+    public void RemoveAskSource(string? id)
+    {
+        AskSources = ProjectAskProviders.Remove(AskSources, id);
+        Notify();
+    }
+
+    public async Task ProbeAskAsync()
+    {
+        if (AskProbeBusy || AskPullBusy)
+            return;
+        if (string.IsNullOrWhiteSpace(AskBaseUrl))
+        {
+            AskProbeOk = false;
+            AskProbeModelFound = false;
+            AskProbeModels = [];
+            AskProbeMessage = "請先填 Base URL。";
+            Notify();
+            return;
+        }
+
+        _askProbeCts?.Cancel();
+        _askProbeCts?.Dispose();
+        _askProbeCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        var ct = _askProbeCts.Token;
+        AskProbeBusy = true;
+        AskProbeMessage = "測試中…";
+        AskProbeOk = false;
+        AskProbeModelFound = false;
+        Notify();
+        try
+        {
+            var result = await ProjectAskService.ProbeAsync(
+                new ProjectAskOptions(AskBaseUrl.Trim(), AskModel.Trim(), AskApiKey),
+                ct: ct).ConfigureAwait(false);
+            AskProbeOk = result.Ok;
+            AskProbeModelFound = result.ModelFound;
+            AskProbeMessage = result.Message;
+            AskProbeModels = result.Models;
+            if (result.Ok && result.Models.Count > 0 && string.IsNullOrWhiteSpace(AskModel))
+            {
+                AskModel = result.Models[0];
+                AskProbeModelFound = true;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AskProbeMessage = "";
+        }
+        catch (Exception ex)
+        {
+            AskProbeOk = false;
+            AskProbeModelFound = false;
+            AskProbeModels = [];
+            AskProbeMessage = ex.Message;
+        }
+        finally
+        {
+            AskProbeBusy = false;
+            Notify();
+        }
+    }
+
+    void ClearAskProbe()
+    {
+        _askProbeCts?.Cancel();
+        _askPullCts?.Cancel();
+        AskProbeBusy = false;
+        AskProbeOk = false;
+        AskProbeModelFound = false;
+        AskProbeMessage = "";
+        AskProbeModels = [];
+    }
+
+    public void CancelAskPull()
+    {
+        _askPullCts?.Cancel();
+    }
+
+    public async Task PullAskModelAsync(string? model)
+    {
+        var name = (model ?? "").Trim();
+        if (AskPullBusy || AskProbeBusy)
+            return;
+        if (string.IsNullOrWhiteSpace(AskBaseUrl))
+        {
+            AskPullOk = false;
+            AskPullMessage = "請先填 Base URL。";
+            Notify();
+            return;
+        }
+        if (string.IsNullOrEmpty(name))
+        {
+            AskPullOk = false;
+            AskPullMessage = "請先填要 pull 的模型。";
+            Notify();
+            return;
+        }
+        if (!ProjectAskProviders.CanPullModels(AskBaseUrl))
+        {
+            AskPullOk = false;
+            AskPullMessage = "只有本機 Ollama 能在控制台內 pull。";
+            Notify();
+            return;
+        }
+        if (!_native.Confirm(
+            "pull " + name,
+            "將下載 " + name + " 到本機 Ollama。檔案可能數百 MB 到數 GB，需 Ollama 已啟動。確定？"))
+            return;
+
+        _askPullCts?.Cancel();
+        _askPullCts?.Dispose();
+        _askPullCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        var ct = _askPullCts.Token;
+        AskPullBusy = true;
+        AskPullOk = false;
+        AskPullModel = name;
+        AskPullMessage = "開始 pull " + name + "…";
+        Notify();
+        try
+        {
+            var result = await ProjectAskService.PullAsync(
+                new ProjectAskOptions(AskBaseUrl.Trim(), name, AskApiKey),
+                name,
+                onStatus: line =>
+                {
+                    AskPullMessage = Truncate(line, 120);
+                    Notify();
+                },
+                ct: ct).ConfigureAwait(false);
+            AskPullOk = result.Ok;
+            AskPullMessage = result.Message;
+            if (result.Ok)
+            {
+                AskModel = name;
+                AskPullBusy = false;
+                Notify();
+                await ProbeAskAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AskPullOk = false;
+            AskPullMessage = "已取消下載。";
+        }
+        catch (Exception ex)
+        {
+            AskPullOk = false;
+            AskPullMessage = ex.Message;
+        }
+        finally
+        {
+            AskPullBusy = false;
+            AskPullModel = "";
+            Notify();
+        }
     }
 
     public Task SendAskSuggestionAsync(string prompt) => SendAskAsync(prompt);
@@ -4173,12 +4463,17 @@ public sealed partial class ConsoleSession : IDisposable
     }
 
     /// <summary>
-    /// 雲端後端不詢問。本機 IDE／終端機會用目前 Agent 名稱詢問是否一併關閉。
+    /// 雲端後端不詢問。本機 IDE 只關這個專案的視窗；CLI 終端機仍問是否關閉該應用。
     /// </summary>
-    bool ConfirmCloseLocalAgent() =>
-        CurrentAgent.CanCloseIde
-        && CurrentAgent.Kind != AgentBackendKind.Cloud
-        && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
+    bool ConfirmCloseLocalAgent()
+    {
+        if (Catalog is null || !CurrentAgent.CanCloseIde || CurrentAgent.Kind == AgentBackendKind.Cloud)
+            return false;
+        var body = CurrentAgent.Kind == AgentBackendKind.Ide
+            ? $"要一併關閉這個專案的 {AgentDisplayName} 視窗嗎？其他專案的視窗不會關。"
+            : $"要一併關閉 {AgentDisplayName} 嗎？";
+        return _native.Confirm($"關閉 {AgentDisplayName}", body);
+    }
 
     public async Task ExitAsync()
     {
@@ -4215,7 +4510,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (closeIde)
         {
-            var err = CurrentAgent.CloseIde();
+            var err = CurrentAgent.CloseIde(Catalog?.Root);
             if (err is not null && !_native.Confirm($"關閉 {AgentDisplayName}", $"關閉 {AgentDisplayName} 時發生問題：\n{err}\n\n仍要離開控制台嗎？"))
                 return;
         }
@@ -4261,6 +4556,10 @@ public sealed partial class ConsoleSession : IDisposable
         StopDocsServe();
         _askCts?.Cancel();
         _askCts?.Dispose();
+        _askProbeCts?.Cancel();
+        _askProbeCts?.Dispose();
+        _askPullCts?.Cancel();
+        _askPullCts?.Dispose();
         _githubLoginCts?.Cancel();
         _githubLoginCts?.Dispose();
         _cts.Cancel();
@@ -5024,6 +5323,13 @@ public sealed partial class ConsoleSession : IDisposable
         var toolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in targets)
         {
+<<<<<<< HEAD
+            var host = ServiceCatalogBuilder.HostService(catalog, item);
+            if (ProcessSupervisor.RequiresPython(catalog, host))
+                needPython = true;
+            if (ProcessSupervisor.RequiresDotnet(catalog, host))
+                needDotnet = true;
+=======
             var path = ProcessSupervisor.ProjectPathFor(catalog, item);
             var stackId = TechStackDetector.StackIdForPath(path);
             if (string.IsNullOrEmpty(stackId) && path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
@@ -5032,6 +5338,7 @@ public sealed partial class ConsoleSession : IDisposable
                 stackId = "dotnet";
             foreach (var id in TechStackCatalog.RequiredToolIdsFor([stackId]))
                 toolIds.Add(id);
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
         var dir = catalog.Root;
         var missing = ToolchainBootstrap.MissingTools(toolIds, dir);
@@ -5366,7 +5673,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     private async Task RestoreLastProjectOnStartAsync()
     {
-        if (!RestoreLastProject)
+        if (!RestoreLastProject || !ConsoleProcess.IsPrimary)
             return;
         var path = ConsoleSettingsStore.LastProject();
         if (string.IsNullOrEmpty(path))
@@ -5441,5 +5748,18 @@ public sealed partial class ConsoleSession : IDisposable
             JobText = Catalog is null ? "待命" : JobText;
     }
 
-    private void Notify() => Changed?.Invoke();
+    private void Notify()
+    {
+        SyncWindowTitle();
+        Changed?.Invoke();
+    }
+
+    private void SyncWindowTitle()
+    {
+        var name = Catalog?.Name;
+        var title = string.IsNullOrWhiteSpace(name)
+            ? $"{AppInfo.Product} v{AppInfo.Version}"
+            : $"{name} · {AppInfo.Product} v{AppInfo.Version}";
+        _native.SetTitle(title);
+    }
 }

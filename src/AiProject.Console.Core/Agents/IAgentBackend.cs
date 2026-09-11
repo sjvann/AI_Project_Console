@@ -25,5 +25,8 @@ public interface IAgentBackend
     AgentDetectResult Detect(string? cliOverride = null);
     string? OpenWorkspace(string root, string? cliOverride = null);
     Task<string?> LaunchAgent(string root, string prompt, string? cliOverride = null);
-    string? CloseIde();
+    /// <summary>
+    /// 關閉此後端為該工作區開的 IDE 視窗或終端機。IDE 必須只關 <paramref name="workspaceRoot"/> 對應視窗，不可結束整份應用程式。
+    /// </summary>
+    string? CloseIde(string? workspaceRoot = null);
 }

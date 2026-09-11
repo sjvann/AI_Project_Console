@@ -2,6 +2,8 @@
   href: README.md
 - name: 一般使用者
   items:
+    - name: 現行版本
+      href: user/whats-new.md
     - name: 安裝與第一次使用
       href: user/getting-started.md
     - name: 畫面導覽
@@ -46,3 +48,17 @@
       href: maintainer/code-signing.md
     - name: 文件網站（DocFX）
       href: maintainer/docfx.md
+- name: 工程與營運
+  items:
+    - name: 工程架構
+      href: engineering/architecture.md
+    - name: 開發
+      href: engineering/develop.md
+    - name: 營運部署
+      href: operations/deploy.md
+- name: 版權
+  items:
+    - name: 版權與授權
+      href: legal/copyright.md
+    - name: 第三方聲明
+      href: legal/third-party.md

@@ -246,16 +246,184 @@ public class SelfUpdateTests
         Directory.CreateDirectory(dir);
         var src = Path.Combine(dir, "AI_Project_Console-0.6.10-win-x64-setup.exe");
         File.WriteAllText(src, "setup");
+<<<<<<< HEAD
+        string? staged = null;
+        try
+        {
+            staged = SelfUpdate.StageUpdateFile(src);
+            Assert.True(File.Exists(staged));
+            Assert.NotEqual(src, staged);
+            Assert.Equal("setup", File.ReadAllText(staged));
+            Assert.StartsWith("run-", Path.GetFileName(Path.GetDirectoryName(staged)!), StringComparison.OrdinalIgnoreCase);
+=======
         try
         {
             var staged = SelfUpdate.StageUpdateFile(src);
             Assert.True(File.Exists(staged));
             Assert.NotEqual(src, staged);
             Assert.Equal("setup", File.ReadAllText(staged));
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
         finally
         {
             Directory.Delete(dir, recursive: true);
+<<<<<<< HEAD
+            TryDeleteStaged(staged);
+=======
+            TryDelete(Path.Combine(Path.GetTempPath(), "AI_Project_Console-update", Path.GetFileName(src)));
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+        }
+    }
+
+    [Fact]
+<<<<<<< HEAD
+    public void StageUpdateFile_CopiesWhenAlreadyInStagingFolder()
+=======
+    public void StageUpdateFile_SkipsCopyWhenAlreadyInStagingFolder()
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(dir);
+        var src = Path.Combine(dir, "AI_Project_Console-stage-self-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe");
+        File.WriteAllText(src, "setup");
+<<<<<<< HEAD
+        string? staged = null;
+        try
+        {
+            staged = SelfUpdate.StageUpdateFile(src);
+            Assert.NotEqual(Path.GetFullPath(src), Path.GetFullPath(staged));
+            Assert.True(File.Exists(src));
+=======
+        try
+        {
+            var staged = SelfUpdate.StageUpdateFile(src);
+            Assert.Equal(Path.GetFullPath(src), staged);
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+            Assert.Equal("setup", File.ReadAllText(staged));
+        }
+        finally
+        {
+            TryDelete(src);
+<<<<<<< HEAD
+            TryDeleteStaged(staged);
+=======
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+        }
+    }
+
+    [Fact]
+    public void StageUpdateFile_UsesUniqueNameWhenDestLocked()
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(staging);
+        var name = "AI_Project_Console-lock-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe";
+        var dest = Path.Combine(staging, name);
+        var srcDir = Path.Combine(Path.GetTempPath(), "ai-console-stage-lock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(srcDir);
+        var src = Path.Combine(srcDir, name);
+        File.WriteAllText(src, "new");
+        File.WriteAllText(dest, "old");
+        string? staged = null;
+        try
+        {
+            using (new FileStream(dest, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                staged = SelfUpdate.StageUpdateFile(src);
+                Assert.True(File.Exists(staged));
+                Assert.NotEqual(Path.GetFullPath(dest), staged);
+                Assert.Equal("new", File.ReadAllText(staged));
+            }
+        }
+        finally
+        {
+            Directory.Delete(srcDir, recursive: true);
+            TryDelete(dest);
+            if (staged is not null)
+<<<<<<< HEAD
+                TryDeleteStaged(staged);
+        }
+    }
+
+    [Fact]
+    public void ReserveUpdatePath_RenamesExistingFile()
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(staging);
+        var name = "AI_Project_Console-reserve-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe";
+        var dest = Path.Combine(staging, name);
+        File.WriteAllText(dest, "old");
+        try
+        {
+            var reserved = SelfUpdate.ReserveUpdatePath(name);
+            Assert.Equal(Path.GetFullPath(dest), reserved);
+            Assert.False(File.Exists(dest));
+            var retired = Directory.GetFiles(staging, Path.GetFileNameWithoutExtension(name) + ".old-*" + Path.GetExtension(name));
+            Assert.Single(retired);
+            Assert.Equal("old", File.ReadAllText(retired[0]));
+            TryDelete(retired[0]);
+        }
+        finally
+        {
+            TryDelete(dest);
+        }
+    }
+
+    [Fact]
+    public void ReserveUpdatePath_UsesNewNameWhenOldLocked()
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "AI_Project_Console-update");
+        Directory.CreateDirectory(staging);
+        var name = "AI_Project_Console-lockres-" + Guid.NewGuid().ToString("N")[..8] + "-setup.exe";
+        var dest = Path.Combine(staging, name);
+        File.WriteAllText(dest, "old");
+        try
+        {
+            using (new FileStream(dest, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                var reserved = SelfUpdate.ReserveUpdatePath(name);
+                Assert.NotEqual(Path.GetFullPath(dest), Path.GetFullPath(reserved));
+                Assert.True(File.Exists(dest));
+                Assert.False(File.Exists(reserved));
+                Assert.Equal(staging, Path.GetDirectoryName(reserved));
+            }
+            Assert.Equal("old", File.ReadAllText(dest));
+        }
+        finally
+        {
+            TryDelete(dest);
+        }
+    }
+
+    static void TryDeleteStaged(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+        TryDelete(path);
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (dir is not null && Path.GetFileName(dir).StartsWith("run-", StringComparison.OrdinalIgnoreCase))
+                Directory.Delete(dir, recursive: true);
+        }
+        catch (Exception)
+        {
+            // ignore leftover temp files
+=======
+                TryDelete(staged);
+>>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
+        }
+    }
+
+    static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception)
+        {
+            // ignore leftover temp files
         }
     }
 }
