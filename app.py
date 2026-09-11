@@ -973,9 +973,9 @@ class ConsoleApp(tk.Tk):
             ):
                 return
 
-        close_ide = messagebox.askyesno(
+        close_ide = bool(self.catalog) and messagebox.askyesno(
             "關閉 Cursor",
-            "要一併關閉 Cursor 嗎？",
+            "要一併關閉這個專案的 Cursor 視窗嗎？其他專案的視窗不會關。",
             parent=self,
         )
 
@@ -991,7 +991,7 @@ class ConsoleApp(tk.Tk):
                     return
 
         if close_ide:
-            err = close_cursor()
+            err = close_cursor(self.catalog.root if self.catalog else None)
             if err:
                 if not messagebox.askyesno(
                     "關閉 Cursor",

@@ -1,3 +1,4 @@
+using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Cursor;
 
 namespace AiProject.Console.Core.Tests;
@@ -52,5 +53,22 @@ public class CursorLauncherTests
         Assert.Contains("Hub Api", prompt);
         Assert.Contains("啟動逾時", prompt);
         Assert.Contains("boom", prompt);
+    }
+
+    [Fact]
+    public void TitleMatches_FullPathInTitle()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-ws-title-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var full = Path.GetFullPath(root);
+            Assert.True(WorkspaceWindow.TitleMatches(full + " - Cursor", root));
+            Assert.Equal(Path.GetFileName(full), WorkspaceWindow.FolderName(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

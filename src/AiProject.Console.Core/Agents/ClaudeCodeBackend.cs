@@ -50,7 +50,7 @@ public sealed class ClaudeCodeBackend : IAgentBackend
         return TerminalSession.OpenUri(url);
     }
 
-    public string? CloseIde()
+    public string? CloseIde(string? workspaceRoot = null)
     {
         TerminalSession.CloseStarted();
         return LocalAppCloser.Close(

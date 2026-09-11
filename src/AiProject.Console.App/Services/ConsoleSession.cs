@@ -1229,7 +1229,7 @@ public sealed partial class ConsoleSession : IDisposable
 
         if (closeIde)
         {
-            var err = CurrentAgent.CloseIde();
+            var err = CurrentAgent.CloseIde(Catalog?.Root);
             if (err is not null)
                 _native.Warn($"關閉 {AgentDisplayName}", err);
         }
@@ -1244,7 +1244,11 @@ public sealed partial class ConsoleSession : IDisposable
         {
             // 歷史仍保留，還原標記失敗不阻擋關閉
         }
-        JobText = closeIde ? $"已關閉專案，並關閉 {AgentDisplayName}" : "已關閉專案";
+        JobText = closeIde
+            ? (CurrentAgent.Kind == AgentBackendKind.Ide
+                ? $"已關閉專案，並關閉這個專案的 {AgentDisplayName} 視窗"
+                : $"已關閉專案，並關閉 {AgentDisplayName}")
+            : "已關閉專案";
         Notify();
     }
 
@@ -4177,12 +4181,17 @@ public sealed partial class ConsoleSession : IDisposable
     }
 
     /// <summary>
-    /// 雲端後端不詢問。本機 IDE／終端機會用目前 Agent 名稱詢問是否一併關閉。
+    /// 雲端後端不詢問。本機 IDE 只關這個專案的視窗；CLI 終端機仍問是否關閉該應用。
     /// </summary>
-    bool ConfirmCloseLocalAgent() =>
-        CurrentAgent.CanCloseIde
-        && CurrentAgent.Kind != AgentBackendKind.Cloud
-        && _native.Confirm($"關閉 {AgentDisplayName}", $"要一併關閉 {AgentDisplayName} 嗎？");
+    bool ConfirmCloseLocalAgent()
+    {
+        if (Catalog is null || !CurrentAgent.CanCloseIde || CurrentAgent.Kind == AgentBackendKind.Cloud)
+            return false;
+        var body = CurrentAgent.Kind == AgentBackendKind.Ide
+            ? $"要一併關閉這個專案的 {AgentDisplayName} 視窗嗎？其他專案的視窗不會關。"
+            : $"要一併關閉 {AgentDisplayName} 嗎？";
+        return _native.Confirm($"關閉 {AgentDisplayName}", body);
+    }
 
     public async Task ExitAsync()
     {
@@ -4219,7 +4228,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (closeIde)
         {
-            var err = CurrentAgent.CloseIde();
+            var err = CurrentAgent.CloseIde(Catalog?.Root);
             if (err is not null && !_native.Confirm($"關閉 {AgentDisplayName}", $"關閉 {AgentDisplayName} 時發生問題：\n{err}\n\n仍要離開控制台嗎？"))
                 return;
         }

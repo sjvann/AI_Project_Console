@@ -33,7 +33,7 @@ public sealed class CustomCommandBackend : IAgentBackend
         return Task.FromResult(RunTemplate(detect.CliPath!, root, prompt ?? "", launch: true));
     }
 
-    public string? CloseIde()
+    public string? CloseIde(string? workspaceRoot = null)
     {
         TerminalSession.CloseStarted();
         return LocalAppCloser.Close(

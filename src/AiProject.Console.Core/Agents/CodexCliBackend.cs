@@ -44,7 +44,7 @@ public sealed class CodexCliBackend : IAgentBackend
         return TerminalSession.Start(detect.CliPath, ["exec", text], root, "Codex");
     }
 
-    public string? CloseIde()
+    public string? CloseIde(string? workspaceRoot = null)
     {
         TerminalSession.CloseStarted();
         return LocalAppCloser.Close(

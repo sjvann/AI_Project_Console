@@ -44,7 +44,7 @@ public sealed class AiderBackend : IAgentBackend
         return TerminalSession.Start(detect.CliPath, ["--message", text], root, "Aider");
     }
 
-    public string? CloseIde()
+    public string? CloseIde(string? workspaceRoot = null)
     {
         TerminalSession.CloseStarted();
         return LocalAppCloser.Close(

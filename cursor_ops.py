@@ -60,7 +60,7 @@ def new_agent_launch_delay_ms() -> int:
     return 400 if is_cursor_running() else 2200
 
 
-def open_in_cursor(path: Path, *, reuse_window: bool = True, extra_paths: list[Path] | None = None) -> str | None:
+def open_in_cursor(path: Path, *, reuse_window: bool = False, extra_paths: list[Path] | None = None) -> str | None:
     """開啟資料夾／檔案於 Cursor。成功回傳 None，失敗回傳錯誤說明。"""
     cli = resolve_cursor_cli()
     if not cli:
@@ -82,9 +82,12 @@ def open_in_cursor(path: Path, *, reuse_window: bool = True, extra_paths: list[P
     return None
 
 
-def close_cursor() -> str | None:
-    """關閉本機 Cursor 行程。成功回傳 None；無法執行時回傳錯誤說明。"""
+def close_cursor(workspace_root: Path | str | None = None) -> str | None:
+    """關閉此方案的 Cursor 視窗。未指定工作區時才結束整份 Cursor。"""
+    root = Path(workspace_root) if workspace_root else None
     try:
+        if root is not None:
+            return _close_workspace_window(root)
         if sys.platform == "win32":
             return _close_cursor_windows()
         if sys.platform == "darwin":
@@ -103,6 +106,105 @@ def close_cursor() -> str | None:
         return None
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"關閉 Cursor 失敗：{exc}"
+
+
+def _title_matches(title: str, workspace_root: Path) -> bool:
+    name = workspace_root.name
+    if not title or not name:
+        return False
+    full = str(workspace_root.resolve())
+    if full.lower() in title.lower():
+        return True
+    parts = [p.strip().lstrip("●* ").strip() for p in title.split(" - ")]
+    return any(p.lower() == name.lower() or p.lower() == full.lower() for p in parts if p)
+
+
+def _close_workspace_window(workspace_root: Path) -> str | None:
+    """只關這個方案的 Cursor 視窗，不結束其他專案。"""
+    if sys.platform == "win32":
+        _close_matching_windows_win32(workspace_root)
+        return None
+    if sys.platform == "darwin":
+        name = workspace_root.name.replace("\\", "\\\\").replace('"', '\\"')
+        script = (
+            'tell application "System Events"\n'
+            '  if not (exists process "Cursor") then return\n'
+            '  tell process "Cursor"\n'
+            "    repeat with w in (get windows)\n"
+            "      set wName to name of w as text\n"
+            f'      if (wName contains " - {name} - ") or (wName starts with "{name} - ") then\n'
+            "        try\n"
+            '          click (first button of w whose subrole is "AXCloseButton")\n'
+            "        end try\n"
+            "      end if\n"
+            "    end repeat\n"
+            "  end tell\n"
+            "end tell\n"
+        )
+        subprocess.run(["osascript"], input=script, capture_output=True, text=True, timeout=15)
+        return None
+    try:
+        listed = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=8)
+        for line in (listed.stdout or "").splitlines():
+            parts = line.split(None, 3)
+            if len(parts) < 4:
+                continue
+            if _title_matches(parts[3], workspace_root):
+                subprocess.run(["wmctrl", "-ic", parts[0]], capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _close_matching_windows_win32(workspace_root: Path) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    EnumWindows = user32.EnumWindows
+    GetWindowTextW = user32.GetWindowTextW
+    GetWindowTextLengthW = user32.GetWindowTextLengthW
+    IsWindowVisible = user32.IsWindowVisible
+    GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+    PostMessageW = user32.PostMessageW
+    GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    IsWindowVisible.argtypes = [wintypes.HWND]
+    PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _enum(hwnd, _lparam):
+        if not IsWindowVisible(hwnd):
+            return True
+        length = GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buf = ctypes.create_unicode_buffer(length + 1)
+        GetWindowTextW(hwnd, buf, length + 1)
+        title = buf.value or ""
+        if not _title_matches(title, workspace_root):
+            return True
+        pid = wintypes.DWORD()
+        GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            proc = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid.value}", "/NH", "/FO", "CSV"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+            )
+            blob = (proc.stdout or "").lower()
+            if "cursor.exe" not in blob:
+                return True
+        except (OSError, subprocess.TimeoutExpired):
+            return True
+        PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+        return True
+
+    cb = WNDENUMPROC(_enum)
+    EnumWindows(cb, 0)
 
 
 def _close_cursor_windows() -> str | None:
@@ -250,5 +352,5 @@ def open_prompt_deeplink(prompt: str) -> str | None:
 
 
 def open_project_for_new_agent(root: Path) -> str | None:
-    """先把專案開在 Cursor（Agents 視窗若已開，CLI 會再建一個 New Agent）。"""
-    return open_in_cursor(root, reuse_window=True)
+    """先把此方案開在／聚焦到 Cursor 視窗，再送 New Agent deeplink。"""
+    return open_in_cursor(root)
