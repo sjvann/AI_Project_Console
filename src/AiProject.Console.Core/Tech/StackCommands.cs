@@ -199,8 +199,8 @@ public static class StackCommands
     }
 
     /// <summary>
-    /// 目錄沒有專案檔時往上找所屬專案（例如 wwwroot/js → 上層 .csproj）。
-    /// 不把上層方案檔當成這個資料夾自己的專案，避免 templates/public、ui 去編整個 sln。
+    /// 目錄沒有專案檔時：含 .NET 原始碼才往上找 .csproj；wwwroot／靜態 JS／ui 略過，不要去編正在跑的宿主。
+    /// 不把上層方案檔當成這個資料夾自己的專案。
     /// </summary>
     static (string Dir, string? File, string StackId) ResolveFromDirectory(string workspaceRoot, string directory)
     {
@@ -210,13 +210,51 @@ public static class StackCommands
         while (true)
         {
             var local = ResolveLocal(current, allowSolution: !walked);
-            if (!string.IsNullOrEmpty(local.StackId) || local.File is not null)
+            if (IsResolvedBuildRoot(local, walked))
                 return local;
+            if (!ContainsDotnetSources(origin))
+                return (origin, null, "");
             var parent = Path.GetDirectoryName(current);
             if (string.IsNullOrEmpty(parent) || !IsSameOrUnder(workspaceRoot, parent))
                 return (origin, null, "");
             current = parent;
             walked = true;
+        }
+    }
+
+    static bool IsResolvedBuildRoot((string Dir, string? File, string StackId) local, bool walked)
+    {
+        if (local.File is not null)
+            return true;
+        if (walked || string.IsNullOrEmpty(local.StackId) || local.StackId == "dotnet")
+            return false;
+        if (local.StackId == "node")
+            return File.Exists(Path.Combine(local.Dir, "package.json"));
+        if (local.StackId == "python")
+            return TechStackDetector.DirectoryLooksLikePythonProject(local.Dir);
+        return true;
+    }
+
+    static bool ContainsDotnetSources(string directory)
+    {
+        if (!Directory.Exists(directory))
+            return false;
+        try
+        {
+            return Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                .Any(p =>
+                {
+                    var ext = Path.GetExtension(p);
+                    return ext.Equals(".cs", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".razor", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".cshtml", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".fs", StringComparison.OrdinalIgnoreCase)
+                        || ext.Equals(".vb", StringComparison.OrdinalIgnoreCase);
+                });
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

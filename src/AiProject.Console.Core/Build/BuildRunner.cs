@@ -50,6 +50,34 @@ public static class BuildRunner
             foreach (var p in catalog.Projects)
                 targets.Add(Path.Combine(catalog.Root, p.RelDir.Replace('/', Path.DirectorySeparatorChar)));
         }
-        return targets;
+        return Canonicalize(catalog.Root, targets);
+    }
+
+    /// <summary>
+    /// 略過沒有專案檔、不能編譯的靜態資料夾；同一工作目錄只編一次。
+    /// </summary>
+    public static IReadOnlyList<string> Canonicalize(string workspaceRoot, IReadOnlyList<string> targets)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var target in targets)
+        {
+            var plan = StackCommands.PlanBuild(workspaceRoot, target);
+            if (plan.MissingToolIds.Count > 0)
+            {
+                if (seen.Add(Path.GetFullPath(target)))
+                    result.Add(target);
+                continue;
+            }
+            if (string.IsNullOrEmpty(plan.FileName))
+                continue;
+            var key = string.IsNullOrEmpty(plan.WorkingDirectory)
+                ? Path.GetFullPath(target)
+                : Path.GetFullPath(plan.WorkingDirectory);
+            if (!seen.Add(key))
+                continue;
+            result.Add(plan.WorkingDirectory);
+        }
+        return result;
     }
 }

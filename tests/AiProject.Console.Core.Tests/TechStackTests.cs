@@ -196,7 +196,7 @@ public class TechStackTests
     }
 
     [Fact]
-    public void PlanBuild_WwwrootJs_BuildsParentCsproj()
+    public void PlanBuild_WwwrootJs_DoesNotDotnetBuild()
     {
         var root = Path.Combine(Path.GetTempPath(), "ai-stack-www-build-" + Guid.NewGuid().ToString("N"));
         var web = Path.Combine(root, "src", "Demo.Web");
@@ -214,6 +214,36 @@ public class TechStackTests
             """);
             File.WriteAllText(Path.Combine(js, "app.js"), "console.log(1)\n");
             var plan = StackCommands.PlanBuild(root, js);
+            Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("無需編譯", plan.Display);
+            Assert.Equal("", plan.FileName);
+            Assert.Empty(BuildRunner.Canonicalize(root, [js]));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void PlanBuild_CsSubfolder_BuildsParentCsproj()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-cs-sub-" + Guid.NewGuid().ToString("N"));
+        var web = Path.Combine(root, "src", "Demo.Web");
+        var controllers = Path.Combine(web, "Controllers");
+        Directory.CreateDirectory(controllers);
+        try
+        {
+            var csproj = Path.Combine(web, "Demo.Web.csproj");
+            File.WriteAllText(csproj, """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+              </PropertyGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(controllers, "HomeController.cs"), "class HomeController {}\n");
+            var plan = StackCommands.PlanBuild(root, controllers);
             Assert.Contains("dotnet build", plan.Display, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(plan.Arguments, a =>
                 string.Equals(Path.GetFullPath(a), Path.GetFullPath(csproj), StringComparison.OrdinalIgnoreCase));
@@ -240,6 +270,7 @@ public class TechStackTests
             Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("無需編譯", plan.Display);
             Assert.Equal("", plan.FileName);
+            Assert.Empty(BuildRunner.Canonicalize(root, [pub]));
         }
         finally
         {
@@ -262,6 +293,7 @@ public class TechStackTests
             Assert.DoesNotContain("dotnet", plan.Display, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("無需編譯", plan.Display);
             Assert.Equal("", plan.FileName);
+            Assert.Empty(BuildRunner.Canonicalize(root, [ui]));
         }
         finally
         {
