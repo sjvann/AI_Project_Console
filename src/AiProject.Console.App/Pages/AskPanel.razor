@@ -1,3 +1,4 @@
+@using AiProject.Console.Core.Agents
 @inject ConsoleSession S
 
 <div class="overlay" @onclick="S.CloseAskPanel">
@@ -5,7 +6,7 @@
         <div class="ask-dialog-head">
             <div>
                 <h2 id="ask-title">專案問答</h2>
-                <p class="hint">@(S.AskBusy ? S.AskStatus : (S.AskConfigured ? "本機堆疊事實 · 不鎖控制台" : "尚未設定模型"))</p>
+                <p class="hint">@(S.AskBusy ? S.AskStatus : (S.AskConfigured ? (ProjectAskModelSupport.SupportsTools(S.AskModel) ? "本機堆疊事實 · 不鎖控制台" : "目前模型不能當問答助手") : "尚未設定模型"))</p>
             </div>
             <span class="grow"></span>
             <button class="btn-sec" disabled="@(!S.AskBusy)" @onclick="S.CancelAsk">取消</button>
@@ -19,6 +20,11 @@
             else if (!S.AskConfigured)
             {
                 <p class="hint">請到設定點來源範本、填模型，並按「測試連線」。預設可接本機 Ollama（<code>http://127.0.0.1:11434/v1</code>）。</p>
+                <button class="btn-link" type="button" @onclick="OpenPrefs">前往問答設定</button>
+            }
+            else if (!ProjectAskModelSupport.SupportsTools(S.AskModel))
+            {
+                <p class="hint">@ProjectAskModelSupport.RejectReason(S.AskModel)</p>
                 <button class="btn-link" type="button" @onclick="OpenPrefs">前往問答設定</button>
             }
             else
@@ -74,7 +80,7 @@
         </div>
         <div class="ask-compose">
             <textarea value="@S.AskDraft" @oninput="OnDraft" placeholder="問這個專案：離線、需重編、Log、MCP 拒絕…"
-                      disabled="@(!S.HasProject || !S.AskConfigured || S.AskBusy)"></textarea>
+                      disabled="@(!S.CanAsk)"></textarea>
             <button class="btn-primary" type="button" disabled="@(!S.CanAsk || string.IsNullOrWhiteSpace(S.AskDraft))"
                     @onclick="@(() => S.SendAskAsync())">送出</button>
         </div>

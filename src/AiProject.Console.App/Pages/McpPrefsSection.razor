@@ -188,7 +188,7 @@
             <strong id="ask-title">專案問答</strong>
             <span class="hint">控制台內對談 · OpenAI 相容</span>
         </div>
-        <p class="hint">點範本帶入網址與模型，再按「測試連線」確認來源。可記住多組來源，之後一鍵切換。工具列「專案問答」用目前這組端點回答，並本機呼叫值班／Log／審計工具。</p>
+        <p class="hint">點範本帶入網址與模型，再按「測試連線」確認來源。清單只列出支援工具呼叫的模型。本機 Ollama 的建議模型可一鍵 pull。</p>
 
         <div class="field field-top">
             <span>來源範本</span>
@@ -237,6 +237,10 @@
             <span>模型</span>
             <input value="@S.AskModel" @oninput="OnAskModel" list="ask-models" placeholder="llama3.2" />
         </div>
+        @if (!string.IsNullOrWhiteSpace(S.AskModel) && !ProjectAskModelSupport.SupportsTools(S.AskModel))
+        {
+            <p class="hint ask-probe is-fail">@ProjectAskModelSupport.RejectReason(S.AskModel)</p>
+        }
         <datalist id="ask-models">
             @foreach (var m in S.AskModelChoices)
             {
@@ -253,12 +257,35 @@
                 }
             </div>
         }
+        @if (S.AskCanPull && (S.AskPullModels.Count > 0 || S.AskPullBusy))
+        {
+            <p class="hint ask-pull-label">尚未安裝的建議模型，可直接 pull 到本機 Ollama：</p>
+            <div class="ask-model-picks" role="list">
+                @foreach (var m in S.AskPullModels)
+                {
+                    <button type="button" class="ask-chip is-suggest @(string.Equals(S.AskPullModel, m, StringComparison.OrdinalIgnoreCase) ? "is-on" : null)"
+                            role="listitem" disabled="@(S.AskPullBusy || S.AskProbeBusy)"
+                            title="@("ollama pull " + m)"
+                            @onclick="@(() => S.PullAskModelAsync(m))">
+                        pull @m
+                    </button>
+                }
+            </div>
+        }
         <div class="row ask-probe-row">
-            <button class="btn-sec" type="button" disabled="@(S.AskProbeBusy || string.IsNullOrWhiteSpace(S.AskBaseUrl))" @onclick="S.ProbeAskAsync">
+            <button class="btn-sec" type="button" disabled="@(S.AskProbeBusy || S.AskPullBusy || string.IsNullOrWhiteSpace(S.AskBaseUrl))" @onclick="S.ProbeAskAsync">
                 @(S.AskProbeBusy ? "測試中…" : "測試連線")
             </button>
             <button class="btn-sec" type="button" disabled="@string.IsNullOrWhiteSpace(S.AskBaseUrl)" @onclick="S.RememberAskSource" title="儲存偏好設定時一併寫入">記住目前</button>
+            @if (S.AskPullBusy)
+            {
+                <button class="btn-link" type="button" @onclick="S.CancelAskPull">取消下載</button>
+            }
         </div>
+        @if (!string.IsNullOrEmpty(S.AskPullMessage))
+        {
+            <p class="hint ask-probe @S.AskPullTone">@S.AskPullMessage</p>
+        }
         @if (!string.IsNullOrEmpty(S.AskProbeMessage))
         {
             <p class="hint ask-probe @S.AskProbeTone">@S.AskProbeMessage</p>

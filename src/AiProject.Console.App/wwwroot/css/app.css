@@ -324,6 +324,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .ask-provider-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ask-provider-chips .ask-chip { background: var(--panel); }
 .ask-model-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px 148px; }
+.ask-pull-label { margin: 4px 0 6px 148px; }
 .ask-probe-row { margin-top: 10px; }
 .ask-probe { margin: 8px 0 0; }
 .ask-probe.is-ok { color: var(--ok); }

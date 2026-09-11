@@ -16,6 +16,8 @@ public sealed record ProjectAskProbeResult(
     string Message,
     IReadOnlyList<string> Models);
 
+public sealed record ProjectAskPullResult(bool Ok, string Message);
+
 /// <summary>
 /// 控制台內專案問答：OpenAI 相容 HTTP + 本機唯讀堆疊工具。不佔用桌面 JobBusy。
 /// </summary>
@@ -46,6 +48,20 @@ public static class ProjectAskService
         return u + "/models";
     }
 
+    public static string NativeOrigin(string baseUrl)
+    {
+        var u = (baseUrl ?? "").Trim().TrimEnd('/');
+        if (u.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+            u = u[..^"/chat/completions".Length].TrimEnd('/');
+        if (u.EndsWith("/models", StringComparison.OrdinalIgnoreCase))
+            u = u[..^"/models".Length].TrimEnd('/');
+        if (u.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+            u = u[..^"/v1".Length].TrimEnd('/');
+        return u;
+    }
+
+    public static string PullUrl(string baseUrl) => NativeOrigin(baseUrl) + "/api/pull";
+
     public static bool ModelInList(string? model, IReadOnlyList<string> models)
     {
         var m = (model ?? "").Trim();
@@ -62,6 +78,37 @@ public static class ProjectAskService
                 return true;
         }
         return false;
+    }
+
+    public static IReadOnlyList<string> PullCandidates(
+        string? baseUrl,
+        string? currentModel,
+        IReadOnlyList<string> installed)
+    {
+        if (!ProjectAskProviders.CanPullModels(baseUrl))
+            return [];
+        var provider = ProjectAskProviders.Get(ProjectAskProviders.MatchId(baseUrl));
+        var suggested = provider.SuggestedModels.Count > 0
+            ? provider.SuggestedModels
+            : ProjectAskProviders.Get("ollama").SuggestedModels;
+        var have = installed ?? [];
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<string>();
+        void Add(string? value)
+        {
+            var t = (value ?? "").Trim();
+            if (string.IsNullOrEmpty(t) || !seen.Add(t))
+                return;
+            if (!ProjectAskModelSupport.SupportsTools(t))
+                return;
+            if (have.Count > 0 && ModelInList(t, have))
+                return;
+            list.Add(t);
+        }
+        foreach (var m in suggested)
+            Add(m);
+        Add(currentModel);
+        return list;
     }
 
     /// <summary>測 OpenAI 相容端點：先 GET /models，不行再送極短 chat。</summary>
@@ -84,6 +131,8 @@ public static class ProjectAskService
                 return Fail("此端點沒有模型清單。請填模型名稱後再測。");
 
             await PingChatAsync(client, options, ct).ConfigureAwait(false);
+            if (ProjectAskModelSupport.RejectReason(options.Model) is { } reason)
+                return new ProjectAskProbeResult(false, false, reason, []);
             return new ProjectAskProbeResult(
                 true,
                 true,
@@ -105,6 +154,107 @@ public static class ProjectAskService
         catch (Exception ex)
         {
             return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>對本機 Ollama POST /api/pull，串流進度。不佔用桌面 JobBusy。</summary>
+    public static async Task<ProjectAskPullResult> PullAsync(
+        ProjectAskOptions options,
+        string? model = null,
+        Action<string>? onStatus = null,
+        HttpMessageHandler? handler = null,
+        CancellationToken ct = default)
+    {
+        var name = (model ?? options.Model ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(options.BaseUrl))
+            return new ProjectAskPullResult(false, "請先填 Base URL。");
+        if (string.IsNullOrWhiteSpace(name))
+            return new ProjectAskPullResult(false, "請先填要 pull 的模型。");
+        if (ProjectAskModelSupport.RejectReason(name) is { } reason)
+            return new ProjectAskPullResult(false, reason);
+        if (!ProjectAskProviders.CanPullModels(options.BaseUrl))
+            return new ProjectAskPullResult(false, "只有本機 Ollama 能在控制台內 pull。");
+
+        using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        try
+        {
+            var body = new JsonObject
+            {
+                ["model"] = name,
+                ["name"] = name,
+                ["stream"] = true,
+            };
+            using var req = new HttpRequestMessage(HttpMethod.Post, PullUrl(options.BaseUrl));
+            req.Content = new StringContent(body.ToJsonString(JsonUtil.Options), Encoding.UTF8, "application/json");
+            if (!string.IsNullOrWhiteSpace(options.ApiKey))
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey.Trim());
+
+            onStatus?.Invoke("開始 pull " + name + "…");
+            using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            var raw = "";
+            if (!res.IsSuccessStatusCode)
+            {
+                raw = await res.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                return new ProjectAskPullResult(false, FormatPullHttpError((int)res.StatusCode, raw));
+            }
+
+            await using var stream = await res.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var reader = new StreamReader(stream);
+            var lastStatus = "";
+            string? line;
+            while ((line = await reader.ReadLineAsync(ct).ConfigureAwait(false)) is not null)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                JsonObject? obj;
+                try { obj = JsonNode.Parse(line) as JsonObject; }
+                catch (System.Text.Json.JsonException)
+                {
+                    lastStatus = Truncate(line.Trim(), 120);
+                    onStatus?.Invoke(lastStatus);
+                    continue;
+                }
+                if (obj is null)
+                    continue;
+                if (obj["error"] is JsonNode errNode)
+                {
+                    var err = JsonUtil.Str(errNode);
+                    if (errNode is JsonObject errObj)
+                        err = JsonUtil.Pick(JsonUtil.Str(errObj["message"]), err);
+                    return new ProjectAskPullResult(false, string.IsNullOrEmpty(err) ? "pull 失敗。" : err);
+                }
+
+                lastStatus = FormatPullStatus(name, obj);
+                onStatus?.Invoke(lastStatus);
+                var status = JsonUtil.Str(obj["status"]);
+                if (status.Equals("success", StringComparison.OrdinalIgnoreCase)
+                    || JsonUtil.Str(obj["completed"]).Equals("true", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ProjectAskPullResult(true, "已 pull " + name + "。");
+                }
+            }
+
+            return string.IsNullOrEmpty(lastStatus)
+                ? new ProjectAskPullResult(false, "pull 沒有回傳進度。請確認 Ollama 已啟動。")
+                : new ProjectAskPullResult(false, "pull 中斷：" + lastStatus);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return new ProjectAskPullResult(false, "已取消下載。");
+        }
+        catch (OperationCanceledException)
+        {
+            return new ProjectAskPullResult(false, "pull 逾時。請確認 Ollama 已啟動後再試。");
+        }
+        catch (HttpRequestException ex)
+        {
+            return new ProjectAskPullResult(false, FormatHttpError(options.BaseUrl, ex));
+        }
+        catch (Exception ex)
+        {
+            return new ProjectAskPullResult(false, Truncate(ex.Message, 180));
         }
     }
 
@@ -133,6 +283,8 @@ public static class ProjectAskService
     {
         if (!IsConfigured(options.BaseUrl, options.Model))
             throw new InvalidOperationException("請在設定填專案問答的 Base URL 與模型。");
+        if (ProjectAskModelSupport.RejectReason(options.Model) is { } reason)
+            throw new InvalidOperationException(reason);
         if (string.IsNullOrWhiteSpace(question))
             throw new ArgumentException("請輸入問題。");
 
@@ -220,7 +372,7 @@ public static class ProjectAskService
         using var res = await client.SendAsync(req, ct).ConfigureAwait(false);
         var raw = await res.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!res.IsSuccessStatusCode)
-            throw new InvalidOperationException($"模型 HTTP {(int)res.StatusCode}：{Truncate(raw, 400)}");
+            throw new InvalidOperationException(FormatChatError((int)res.StatusCode, raw));
         if (JsonNode.Parse(raw) is not JsonObject obj)
             throw new InvalidOperationException("模型回應不是 JSON 物件。");
         if (obj["error"] is JsonObject err)
@@ -328,10 +480,13 @@ public static class ProjectAskService
         if (obj["error"] is JsonObject err)
             throw new InvalidOperationException(JsonUtil.Str(err["message"]) is { Length: > 0 } msg ? msg : err.ToJsonString());
 
-        var models = ParseModelIds(obj);
+        var listed = ParseModelIds(obj);
+        var models = ProjectAskModelSupport.FilterToolCapable(listed);
+        var skipped = listed.Count - models.Count;
         var wanted = options.Model.Trim();
         var found = ModelInList(wanted, models);
-        if (models.Count == 0)
+        var installed = ModelInList(wanted, listed);
+        if (listed.Count == 0)
         {
             return new ProjectAskProbeResult(
                 true,
@@ -340,13 +495,23 @@ public static class ProjectAskService
                 []);
         }
 
+        if (models.Count == 0)
+        {
+            return new ProjectAskProbeResult(
+                false,
+                false,
+                "已連上，但沒有支援工具呼叫的模型。" + ProjectAskModelSupport.NeedToolsHint,
+                []);
+        }
+
         var sample = string.Join("、", models.Take(4));
+        var skipNote = skipped > 0 ? " 已略過不支援工具的模型。" : "";
         if (string.IsNullOrEmpty(wanted))
         {
             return new ProjectAskProbeResult(
                 true,
                 false,
-                $"來源正常 · 已連上，共 {models.Count} 個模型。請從下方選一個。",
+                $"來源正常 · 已連上，共 {models.Count} 個可用模型。請從下方選一個。" + skipNote,
                 models);
         }
         if (found)
@@ -354,7 +519,16 @@ public static class ProjectAskService
             return new ProjectAskProbeResult(
                 true,
                 true,
-                $"來源正常 · 已連上，清單含 {wanted}（共 {models.Count} 個）。",
+                $"來源正常 · 已連上，清單含 {wanted}（共 {models.Count} 個可用）。" + skipNote,
+                models);
+        }
+
+        if (installed)
+        {
+            return new ProjectAskProbeResult(
+                false,
+                false,
+                ProjectAskModelSupport.RejectReason(wanted) ?? ("此模型不支援工具呼叫。" + ProjectAskModelSupport.NeedToolsHint),
                 models);
         }
 
@@ -400,6 +574,13 @@ public static class ProjectAskService
     static ProjectAskProbeResult Fail(string message) =>
         new(false, false, message, []);
 
+    static string FormatChatError(int status, string raw)
+    {
+        if (ProjectAskModelSupport.LooksLikeToolsUnsupportedError(raw))
+            return "此模型不支援工具呼叫。" + ProjectAskModelSupport.NeedToolsHint;
+        return FormatStatusError(status, raw);
+    }
+
     static string FormatStatusError(int status, string raw)
     {
         var detail = Truncate(raw.Trim(), 180);
@@ -423,5 +604,49 @@ public static class ProjectAskService
             return $"連不上 {host}。本機 Ollama 請先啟動；LM Studio 請開啟本機伺服器。";
         }
         return $"連不上 {host}：{Truncate(text, 180)}";
+    }
+
+    static string FormatPullHttpError(int status, string raw)
+    {
+        if (status is 404)
+            return "此端點沒有 Ollama pull API（HTTP 404）。請確認是本機 Ollama 且已啟動。";
+        return FormatStatusError(status, raw);
+    }
+
+    static string FormatPullStatus(string model, JsonObject obj)
+    {
+        var total = JsonLong(obj["total"]);
+        var completed = JsonLong(obj["completed"]);
+        if (total > 0)
+        {
+            var pct = (int)Math.Min(100, completed * 100 / total);
+            return $"{model} {pct}%（{FormatBytes(completed)} / {FormatBytes(total)}）";
+        }
+        var status = JsonUtil.Str(obj["status"]);
+        return string.IsNullOrEmpty(status) ? "正在 pull " + model + "…" : model + "：" + status;
+    }
+
+    static long JsonLong(JsonNode? node)
+    {
+        if (node is not JsonValue v)
+            return 0;
+        if (v.TryGetValue<long>(out var l))
+            return l;
+        if (v.TryGetValue<int>(out var i))
+            return i;
+        if (v.TryGetValue<double>(out var d))
+            return (long)d;
+        return long.TryParse(JsonUtil.Str(v), out var parsed) ? parsed : 0;
+    }
+
+    static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024)
+            return bytes + " B";
+        if (bytes < 1024 * 1024)
+            return (bytes / 1024.0).ToString("0") + " KB";
+        if (bytes < 1024L * 1024 * 1024)
+            return (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB";
+        return (bytes / (1024.0 * 1024.0 * 1024.0)).ToString("0.00") + " GB";
     }
 }

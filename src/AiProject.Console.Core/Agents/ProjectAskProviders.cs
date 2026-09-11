@@ -29,11 +29,11 @@ public static class ProjectAskProviders
         new(
             "ollama",
             "本機 Ollama",
-            "本機、免 API key。需先啟動 Ollama 並 pull 模型。",
+            "本機、免 API key。需先啟動 Ollama。建議模型可在下方一鍵 pull。Gemma 只能聊天，不會列入。",
             "http://127.0.0.1:11434/v1",
             "llama3.2",
             false,
-            ["llama3.2", "llama3.1", "qwen2.5", "gemma3"]),
+            ["llama3.2", "llama3.1", "qwen2.5", "mistral"]),
         new(
             "lmstudio",
             "LM Studio",
@@ -96,6 +96,15 @@ public static class ProjectAskProviders
                 return p.Id;
         }
         return CustomId;
+    }
+
+    public static bool CanPullModels(string? baseUrl)
+    {
+        if (MatchId(baseUrl) == "ollama")
+            return true;
+        if (!Uri.TryCreate((baseUrl ?? "").Trim(), UriKind.Absolute, out var uri))
+            return false;
+        return uri.Port == 11434;
     }
 
     public static string NormalizeUrl(string? url)

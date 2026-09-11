@@ -28,6 +28,7 @@ public sealed partial class ConsoleSession : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenSource? _askCts;
     private CancellationTokenSource? _askProbeCts;
+    private CancellationTokenSource? _askPullCts;
     private CancellationTokenSource? _githubLoginCts;
     private bool _pendingOpenCursor;
     private bool _unassignedCollapseUserSet;
@@ -114,6 +115,10 @@ public sealed partial class ConsoleSession : IDisposable
     public bool AskProbeOk { get; private set; }
     public bool AskProbeModelFound { get; private set; }
     public IReadOnlyList<string> AskProbeModels { get; private set; } = [];
+    public bool AskPullBusy { get; private set; }
+    public string AskPullModel { get; private set; } = "";
+    public string AskPullMessage { get; private set; } = "";
+    public bool AskPullOk { get; private set; }
     public IReadOnlyList<ProjectAskChatItem> AskMessages { get; private set; } = [];
     public string AgentDetectSummary { get; private set; } = "";
     public bool AgentAvailable { get; private set; }
@@ -537,7 +542,7 @@ public sealed partial class ConsoleSession : IDisposable
             : DutySummary.Attention(OfflineCount, StaleProjectCount, AuditIncidentCount, LastAuditIncidentTool);
     public bool DutyOk => Catalog is not null && DutySummary.IsClear(OfflineCount, StaleProjectCount, AuditIncidentCount);
     public bool AskConfigured => ProjectAskService.IsConfigured(AskBaseUrl, AskModel);
-    public bool CanAsk => HasProject && AskConfigured && !AskBusy;
+    public bool CanAsk => HasProject && AskConfigured && ProjectAskModelSupport.SupportsTools(AskModel) && !AskBusy;
     public string AskProviderId => ProjectAskProviders.MatchId(AskBaseUrl);
     public string AskActiveSourceId =>
         AskSources.FirstOrDefault(s =>
@@ -558,18 +563,30 @@ public sealed partial class ConsoleSession : IDisposable
                     return;
                 list.Add(t);
             }
-            Add(AskModel);
+            if (ProjectAskModelSupport.SupportsTools(AskModel))
+                Add(AskModel);
             foreach (var m in AskProbeModels)
                 Add(m);
             foreach (var m in ProjectAskProviders.Get(AskProviderId).SuggestedModels)
-                Add(m);
+            {
+                if (ProjectAskModelSupport.SupportsTools(m))
+                    Add(m);
+            }
             return list;
         }
     }
+    public IReadOnlyList<string> AskPullModels =>
+        ProjectAskService.PullCandidates(AskBaseUrl, AskModel, AskProbeModels);
+    public bool AskCanPull => ProjectAskProviders.CanPullModels(AskBaseUrl);
+    public string AskPullTone =>
+        AskPullBusy ? "is-wait" :
+        string.IsNullOrEmpty(AskPullMessage) ? "" :
+        AskPullOk ? "is-ok" : "is-fail";
     public string AskProbeTone =>
         string.IsNullOrEmpty(AskProbeMessage) || AskProbeBusy ? "" :
         !AskProbeOk ? "is-fail" :
-        AskProbeModelFound || AskProbeModels.Count == 0 ? "is-ok" : "is-wait";
+        AskProbeModelFound ? "is-ok" :
+        "is-wait";
     public IReadOnlyList<ProjectAskSuggestionView> AskSuggestions =>
         ProjectAskPrompts.Rank(OfflineCount, StaleProjectCount, AuditIncidentCount);
 
@@ -2139,7 +2156,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     public async Task ProbeAskAsync()
     {
-        if (AskProbeBusy)
+        if (AskProbeBusy || AskPullBusy)
             return;
         if (string.IsNullOrWhiteSpace(AskBaseUrl))
         {
@@ -2196,11 +2213,96 @@ public sealed partial class ConsoleSession : IDisposable
     void ClearAskProbe()
     {
         _askProbeCts?.Cancel();
+        _askPullCts?.Cancel();
         AskProbeBusy = false;
         AskProbeOk = false;
         AskProbeModelFound = false;
         AskProbeMessage = "";
         AskProbeModels = [];
+    }
+
+    public void CancelAskPull()
+    {
+        _askPullCts?.Cancel();
+    }
+
+    public async Task PullAskModelAsync(string? model)
+    {
+        var name = (model ?? "").Trim();
+        if (AskPullBusy || AskProbeBusy)
+            return;
+        if (string.IsNullOrWhiteSpace(AskBaseUrl))
+        {
+            AskPullOk = false;
+            AskPullMessage = "請先填 Base URL。";
+            Notify();
+            return;
+        }
+        if (string.IsNullOrEmpty(name))
+        {
+            AskPullOk = false;
+            AskPullMessage = "請先填要 pull 的模型。";
+            Notify();
+            return;
+        }
+        if (!ProjectAskProviders.CanPullModels(AskBaseUrl))
+        {
+            AskPullOk = false;
+            AskPullMessage = "只有本機 Ollama 能在控制台內 pull。";
+            Notify();
+            return;
+        }
+        if (!_native.Confirm(
+            "pull " + name,
+            "將下載 " + name + " 到本機 Ollama。檔案可能數百 MB 到數 GB，需 Ollama 已啟動。確定？"))
+            return;
+
+        _askPullCts?.Cancel();
+        _askPullCts?.Dispose();
+        _askPullCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        var ct = _askPullCts.Token;
+        AskPullBusy = true;
+        AskPullOk = false;
+        AskPullModel = name;
+        AskPullMessage = "開始 pull " + name + "…";
+        Notify();
+        try
+        {
+            var result = await ProjectAskService.PullAsync(
+                new ProjectAskOptions(AskBaseUrl.Trim(), name, AskApiKey),
+                name,
+                onStatus: line =>
+                {
+                    AskPullMessage = Truncate(line, 120);
+                    Notify();
+                },
+                ct: ct).ConfigureAwait(false);
+            AskPullOk = result.Ok;
+            AskPullMessage = result.Message;
+            if (result.Ok)
+            {
+                AskModel = name;
+                AskPullBusy = false;
+                Notify();
+                await ProbeAskAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AskPullOk = false;
+            AskPullMessage = "已取消下載。";
+        }
+        catch (Exception ex)
+        {
+            AskPullOk = false;
+            AskPullMessage = ex.Message;
+        }
+        finally
+        {
+            AskPullBusy = false;
+            AskPullModel = "";
+            Notify();
+        }
     }
 
     public Task SendAskSuggestionAsync(string prompt) => SendAskAsync(prompt);
@@ -4449,6 +4551,8 @@ public sealed partial class ConsoleSession : IDisposable
         _askCts?.Dispose();
         _askProbeCts?.Cancel();
         _askProbeCts?.Dispose();
+        _askPullCts?.Cancel();
+        _askPullCts?.Dispose();
         _githubLoginCts?.Cancel();
         _githubLoginCts?.Dispose();
         _cts.Cancel();
