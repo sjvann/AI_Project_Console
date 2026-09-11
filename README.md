@@ -37,6 +37,12 @@
 dotnet run --project src/AiProject.Console.App
 ```
 
+第二個視窗（第一個還在跑時不要再編譯）：
+
+```powershell
+dotnet run --no-build --project src/AiProject.Console.App
+```
+
 Windows 安裝包與 GitHub Release：[scripts/README.md](scripts/README.md)。方案結構與測試：[開發與維護](docs/maintainer/develop.md)。
 
 倉庫根目錄的 Python／Tk 實作僅供對照，不是正式產品路徑。

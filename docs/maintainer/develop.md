@@ -12,6 +12,22 @@
 dotnet run --project src/AiProject.Console.App
 ```
 
+可以同時開多個控制台視窗，各自管不同專案。安裝包／exe 直接再開一份即可。
+
+從原始碼用 `dotnet run` 時，**第一個視窗會鎖住 `bin\Debug` 的 DLL**，第二個再 `dotnet run` 會因為無法覆寫而建置失敗。第二個（與之後）請略過建置：
+
+```powershell
+dotnet run --no-build --project src/AiProject.Console.App
+```
+
+或一律用腳本（已有實例在跑時會自動加 `--no-build`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run-console.ps1
+```
+
+若要載入剛改的程式碼，先關掉所有控制台視窗，再一般 `dotnet run` 一次。
+
 Debug 建置不產生 `AI_Project_Console.exe`（改由 `dotnet.exe` 載入 DLL）。Windows 若擋未簽名的 apphost，會出現「存取被拒」；這是為了避開該限制。Release／安裝包仍用 exe。
 
 發布單檔執行檔：
