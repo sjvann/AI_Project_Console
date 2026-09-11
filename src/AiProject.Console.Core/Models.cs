@@ -154,6 +154,8 @@ public sealed record GitBriefStatus(
     }
 }
 
+public readonly record struct GitBriefProbe(bool IsRepo, GitBriefStatus? Brief);
+
 public sealed record GitBranchInfo(
     string Name,
     bool IsCurrent,

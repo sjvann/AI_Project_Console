@@ -315,6 +315,8 @@ public sealed partial class ConsoleSession : IDisposable
     public bool CommitPreviewBusy { get; private set; }
     public string CommitSuggestHint { get; private set; } = "";
     public GitBriefStatus? GitBrief { get; private set; }
+    public bool? GitRepoKnown { get; private set; }
+    public string? GitPulseEmptyMeta => GitHubNextAction.EmptyPulseMeta(GitRepoKnown);
     public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
     public IReadOnlyList<GitBranchInfo> BranchList { get; private set; } = [];
     public string NewBranchName { get; set; } = "";
@@ -365,7 +367,8 @@ public sealed partial class ConsoleSession : IDisposable
         PullRequest?.HasPr ?? false,
         string.IsNullOrWhiteSpace(GithubDraft.DefaultBranch) ? "main" : GithubDraft.DefaultBranch,
         Actions?.Latest?.IsInProgress == true,
-        WatchingCi && Actions?.Latest?.IsFailure == true);
+        WatchingCi && Actions?.Latest?.IsFailure == true,
+        GitRepoKnown);
     public string GithubRepoText
     {
         get
@@ -5573,6 +5576,7 @@ public sealed partial class ConsoleSession : IDisposable
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
+        GitRepoKnown = null;
         GithubHubOpen = false;
         _autoSyncSkippedDirty = false;
         Actions = null;
@@ -5698,15 +5702,17 @@ public sealed partial class ConsoleSession : IDisposable
         if (string.IsNullOrEmpty(root))
         {
             GitBrief = null;
+            GitRepoKnown = null;
             GitStatusText = "";
             ReconcileAutoSyncSkipMessage();
             return;
         }
         try
         {
-            var brief = await GitHubService.TryBriefStatusAsync(root).ConfigureAwait(false);
-            GitBrief = brief;
-            GitStatusText = brief?.Format() ?? "";
+            var probe = await GitHubService.ProbeBriefStatusAsync(root).ConfigureAwait(false);
+            GitRepoKnown = probe.IsRepo;
+            GitBrief = probe.Brief;
+            GitStatusText = probe.Brief?.Format() ?? "";
             ReconcileAutoSyncSkipMessage();
         }
         catch

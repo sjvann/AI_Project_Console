@@ -107,6 +107,20 @@ public class GitHubNextActionTests
         var step = GitHubNextAction.Decide(null, hasPr: false);
         Assert.True(step.OpensHub);
         Assert.Contains("尚未讀到", step.Hint);
+        Assert.DoesNotContain("不是 git", step.Hint);
+        Assert.Null(GitHubNextAction.EmptyPulseMeta(null));
+        Assert.Null(GitHubNextAction.EmptyPulseMeta(true));
+    }
+
+    [Fact]
+    public void MissingBrief_WhenNotRepo_DoesNotSayUnread()
+    {
+        var step = GitHubNextAction.Decide(null, hasPr: false, isGitRepo: false);
+        Assert.True(step.OpensHub);
+        Assert.Contains("不是 git 倉庫", step.Hint);
+        Assert.DoesNotContain("尚未讀到", step.Hint);
+        Assert.Equal("不是 git 倉", GitHubNextAction.EmptyPulseMeta(false));
+        Assert.Equal("尚未讀到 git 狀態。可從操作台接入遠端或看全部動作。", GitHubNextAction.EmptyPulseHint(true));
     }
 
     [Fact]

@@ -654,11 +654,17 @@ public static class GitHubService
 
     public static async Task<GitBriefStatus?> TryBriefStatusAsync(string root)
     {
+        var probe = await ProbeBriefStatusAsync(root).ConfigureAwait(false);
+        return probe.Brief;
+    }
+
+    public static async Task<GitBriefProbe> ProbeBriefStatusAsync(string root)
+    {
         if (string.IsNullOrWhiteSpace(root) || !await IsGitRepoAsync(root).ConfigureAwait(false))
-            return null;
+            return new GitBriefProbe(false, null);
         var (c1, branch) = await CliUtil.RunAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).ConfigureAwait(false);
         if (c1 != 0 || string.IsNullOrWhiteSpace(branch))
-            return null;
+            return new GitBriefProbe(true, null);
         var dirtyN = await DirtyCountAsync(root).ConfigureAwait(false);
         int? ahead = null;
         int? behind = null;
@@ -674,7 +680,7 @@ public static class GitHubService
                 hasUpstream = true;
             }
         }
-        return new GitBriefStatus(branch.Trim(), dirtyN, ahead, behind, hasUpstream);
+        return new GitBriefProbe(true, new GitBriefStatus(branch.Trim(), dirtyN, ahead, behind, hasUpstream));
     }
 
     public static async Task<bool> HasRemoteAsync(string root, string? remote = null)
