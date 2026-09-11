@@ -26,6 +26,7 @@ class ServiceEntry:
     group: str
     hosted_by: str | None = None
     aspnet_urls: str | None = None
+    pre_start: str | None = None
     source: str = "scan"
 
 
@@ -113,6 +114,8 @@ def _service_from_manifest(item: dict[str, Any]) -> ServiceEntry | None:
     open_url = str(item.get("openUrl") or item.get("open_url") or "").strip()
     aspnet = item.get("aspnetUrls") or item.get("aspnet_urls") or item.get("urls")
     hosted = item.get("hostedBy") or item.get("hosted_by")
+    pre = item.get("preStart") or item.get("pre_start") or item.get("ensure")
+    pre_start = str(pre).replace("\\", "/").strip() if pre else None
     return ServiceEntry(
         id=sid,
         label=label,
@@ -124,6 +127,7 @@ def _service_from_manifest(item: dict[str, Any]) -> ServiceEntry | None:
         group=str(item.get("group") or _guess_group_from_project(project)),
         hosted_by=str(hosted) if hosted else None,
         aspnet_urls=str(aspnet).strip() if aspnet else None,
+        pre_start=pre_start or None,
         source="manifest",
     )
 

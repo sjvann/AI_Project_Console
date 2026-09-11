@@ -4434,10 +4434,10 @@ public sealed partial class ConsoleSession : IDisposable
         var needPython = false;
         foreach (var item in targets)
         {
-            var path = ProcessSupervisor.ProjectPathFor(catalog, item);
-            if (path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+            var host = ServiceCatalogBuilder.HostService(catalog, item);
+            if (ProcessSupervisor.RequiresPython(catalog, host))
                 needPython = true;
-            else
+            if (ProcessSupervisor.RequiresDotnet(catalog, host))
                 needDotnet = true;
         }
         if (needPython && !CliUtil.CommandExists("py") && !CliUtil.CommandExists("python") && !CliUtil.CommandExists("python3"))

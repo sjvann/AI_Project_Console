@@ -160,6 +160,77 @@ def project_path_for(catalog: ProjectCatalog, svc: ServiceEntry) -> Path:
     return path
 
 
+def python_launcher() -> list[str]:
+    if sys.platform == "win32":
+        py = shutil.which("py")
+        if py:
+            return [py, "-3"]
+    for name in ("python", "python3"):
+        found = shutil.which(name)
+        if found:
+            return [found]
+    raise FileNotFoundError("找不到 Python（py / python / python3）。")
+
+
+def resolve_pre_start_path(root: Path, pre_start: str | None) -> Path | None:
+    if not pre_start or not str(pre_start).strip():
+        return None
+    root_full = root.resolve()
+    full = (root_full / str(pre_start).replace("/", os.sep)).resolve()
+    try:
+        full.relative_to(root_full)
+    except ValueError:
+        return None
+    return full if full.is_file() else None
+
+
+def pre_start_command(script: Path) -> tuple[list[str], dict[str, str] | None]:
+    ext = script.suffix.lower()
+    if ext == ".py":
+        env = {"PYTHONUNBUFFERED": "1"}
+        return [*python_launcher(), str(script)], env
+    if ext == ".sh":
+        bash = shutil.which("bash")
+        if not bash:
+            raise FileNotFoundError("找不到 bash，無法執行 .sh preStart。")
+        return [bash, str(script)], None
+    if ext == ".ps1":
+        shell = "powershell" if sys.platform == "win32" else "pwsh"
+        return [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)], None
+    raise RuntimeError(f"不支援的 preStart 副檔名（請用 .py／.ps1／.sh）：{script.name}")
+
+
+def run_pre_start(catalog: ProjectCatalog, host: ServiceEntry, log_fh) -> None:
+    if not host.pre_start:
+        return
+    script = resolve_pre_start_path(catalog.root, host.pre_start)
+    if script is None:
+        raise FileNotFoundError(f"找不到 preStart（必須位於專案目錄內）：{host.pre_start}")
+    log_fh.write(f"=== preStart {host.pre_start} ===\n")
+    log_fh.flush()
+    cmd, extra_env = pre_start_command(script)
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+    proc = subprocess.run(
+        cmd,
+        cwd=str(catalog.root),
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
+    text = f"{proc.stdout or ''}{proc.stderr or ''}"
+    if text:
+        log_fh.write(text if text.endswith("\n") else text + "\n")
+    if proc.returncode != 0:
+        raise RuntimeError(f"{host.label} 前置檢查失敗（exit {proc.returncode}）。見 Log。")
+    log_fh.write("=== preStart ok ===\n")
+    log_fh.flush()
+
+
 def start_service(catalog: ProjectCatalog, rt: ProjectRuntime, svc: ServiceEntry) -> int | None:
     host = host_service(catalog, svc)
     stem = host.stem
@@ -177,6 +248,7 @@ def start_service(catalog: ProjectCatalog, rt: ProjectRuntime, svc: ServiceEntry
     log_fh = open(log_file, "a", encoding="utf-8", errors="replace")
     log_fh.write(f"\n=== {host.label} start {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
     log_fh.flush()
+    run_pre_start(catalog, host, log_fh)
 
     rel_proj = proj.resolve().relative_to(catalog.root.resolve())
     kwargs: dict = {
