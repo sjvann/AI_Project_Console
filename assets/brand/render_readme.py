@@ -58,6 +58,13 @@ def rr(draw: ImageDraw.ImageDraw, box, r, fill, outline=None, width=1):
     draw.rounded_rectangle(box, radius=r, fill=fill, outline=outline, width=width)
 
 
+def load_logo(size: int) -> Image.Image:
+    im = Image.open(ROOT / "logo.png").convert("RGBA")
+    pixels = [(0, 0, 0, 0) if r < 18 and g < 18 and b < 18 else (r, g, b, a) for r, g, b, a in im.getdata()]
+    im.putdata(pixels)
+    return im.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def render_hero() -> None:
     img = Image.new("RGBA", (W, H), GREEN_DEEP + (255,))
     gradient_bg(img)
@@ -197,7 +204,47 @@ def render_cta() -> None:
     print("wrote CTAs")
 
 
+def render_social() -> None:
+    """GitHub social preview: 1280x640, under 1 MB."""
+    w, h = 1280, 640
+    img = Image.new("RGBA", (w, h), GREEN_DEEP + (255,))
+    px = img.load()
+    for y in range(h):
+        ty = y / (h - 1)
+        for x in range(w):
+            tx = x / (w - 1)
+            c1 = lerp(GREEN_DEEP, GREEN, 0.35 + 0.45 * tx)
+            c2 = lerp(GREEN, GREEN_MID, ty)
+            c = lerp(c1, c2, ty * 0.7)
+            glow = max(0.0, 1.0 - ((x - 180) ** 2 + (y - 40) ** 2) ** 0.5 / 520)
+            c = lerp(c, GREEN_BRIGHT, glow * 0.22)
+            px[x, y] = c + (255,)
+    d = ImageDraw.Draw(img)
+    logo = load_logo(128)
+    img.alpha_composite(logo, (80, 168))
+    d.text((236, 176), "AI_Project 控制台", font=font(48, True), fill=WHITE)
+    d.text((236, 244), "本機堆疊控制台 · 給軟體公司", font=font(24, True), fill=(215, 245, 234))
+    d.text((80, 340), "選專案、編譯、一鍵啟動", font=font(44, True), fill=WHITE)
+    d.text((80, 412), "掃描服務與需重編 · GitHub · MCP · 卡住交給本機 Agent", font=font(26, False), fill=(215, 238, 230))
+
+    chips = [("Windows x64", WHITE, (255, 255, 255, 40)), ("公開可見", WHITE, (255, 255, 255, 40)), ("保留一切權利", (243, 226, 168), (212, 160, 23, 72))]
+    x = 80
+    for text, fg, bg in chips:
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(overlay)
+        f = font(22, True)
+        cw = int(od.textlength(text, font=f)) + 40
+        od.rounded_rectangle((x, 488, x + cw, 540), 24, fill=bg)
+        img.alpha_composite(overlay)
+        ImageDraw.Draw(img).text((x + 20, 498), text, font=f, fill=fg)
+        x += cw + 16
+
+    img.convert("RGB").save(OUT / "github-social-preview.png", "PNG", optimize=True)
+    print("wrote", OUT / "github-social-preview.png")
+
+
 if __name__ == "__main__":
     render_hero()
     render_steps()
     render_cta()
+    render_social()
