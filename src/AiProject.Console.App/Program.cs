@@ -54,7 +54,7 @@ internal static class Program
 
         var iconFile = ResolveWindowIcon();
         window
-            .SetTitle($"{AppInfo.Product} v{AppInfo.Version}")
+            .SetTitle(AppInfo.WindowTitle())
             .SetNotificationRegistrationId(AppInfo.AppUserModelId)
             .SetNotificationsEnabled(false)
             .SetUseOsDefaultSize(false)

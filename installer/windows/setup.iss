@@ -9,12 +9,17 @@
 #define MyAppPublisher "sjvann"
 #define MyAppURL "https://github.com/sjvann/AI_Project_Console"
 #define MyAppExeName "AI_Project_Console.exe"
+#define MyAppUserModelId "sjvann.AIProjectConsole"
 
 [Setup]
 AppId={{E7C3A91F-4B2D-48A6-9F15-6D8E2C1B0A47}
+; 應用程式名稱不可含版號，否則 Windows 會當成新程式、舊安裝與捷徑不會被取代
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} {#MyAppVersion}
+AppVerName={#MyAppName}
+UninstallDisplayName={#MyAppName}
+VersionInfoProductName={#MyAppName}
+VersionInfoVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppCopyright=Copyright (C) 2026 sjvann. All rights reserved.
 LicenseFile=..\..\LICENSE
@@ -23,6 +28,9 @@ AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={localappdata}\Programs\AI_Project_Console
 DefaultGroupName={#MyAppName}
+UsePreviousAppDir=yes
+UsePreviousGroup=yes
+DisableDirPage=auto
 DisableProgramGroupPage=yes
 OutputDir=..\..\dist
 OutputBaseFilename=AI_Project_Console-{#MyAppVersion}-win-x64-setup
@@ -48,10 +56,21 @@ Name: "desktopicon"; Description: "建立桌面捷徑"; GroupDescription: "捷�
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; 早期視窗標題含版號時，Windows 會在開始選單根目錄留下「控制台 v0.x.x」捷徑
+[InstallDelete]
+Type: files; Name: "{userprograms}\{#MyAppName} v*.lnk"
+Type: files; Name: "{userprograms}\{#MyAppName} 0.*.lnk"
+Type: files; Name: "{userdesktop}\{#MyAppName} v*.lnk"
+Type: files; Name: "{userdesktop}\{#MyAppName} 0.*.lnk"
+Type: files; Name: "{commonprograms}\{#MyAppName} v*.lnk"
+Type: files; Name: "{commonprograms}\{#MyAppName} 0.*.lnk"
+Type: files; Name: "{commondesktop}\{#MyAppName} v*.lnk"
+Type: files; Name: "{commondesktop}\{#MyAppName} 0.*.lnk"
+
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; AppUserModelID: "{#MyAppUserModelId}"
 Name: "{group}\解除安裝 {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; AppUserModelID: "{#MyAppUserModelId}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "啟動 {#MyAppName}"; Flags: nowait postinstall skipifsilent

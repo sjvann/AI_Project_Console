@@ -5326,12 +5326,8 @@ public sealed partial class ConsoleSession : IDisposable
         var toolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in targets)
         {
-<<<<<<< HEAD
             var host = ServiceCatalogBuilder.HostService(catalog, item);
             var path = ProcessSupervisor.ProjectPathFor(catalog, host);
-=======
-            var path = ProcessSupervisor.ProjectPathFor(catalog, item);
->>>>>>> 0990c14f141450362211959d0900c0742231fc50
             var stackId = TechStackDetector.StackIdForPath(path);
             if (string.IsNullOrEmpty(stackId) && path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
                 stackId = "python";
@@ -5759,10 +5755,6 @@ public sealed partial class ConsoleSession : IDisposable
 
     private void SyncWindowTitle()
     {
-        var name = Catalog?.Name;
-        var title = string.IsNullOrWhiteSpace(name)
-            ? $"{AppInfo.Product} v{AppInfo.Version}"
-            : $"{name} · {AppInfo.Product} v{AppInfo.Version}";
-        _native.SetTitle(title);
+        _native.SetTitle(AppInfo.WindowTitle(Catalog?.Name));
     }
 }

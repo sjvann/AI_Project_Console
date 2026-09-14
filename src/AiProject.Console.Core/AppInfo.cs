@@ -12,6 +12,11 @@ public static class AppInfo
     public const string ExeName = "AI_Project_Console.exe";
     public const string AppUserModelId = "sjvann.AIProjectConsole";
 
+    public static string WindowTitle(string? workspaceName = null) =>
+        string.IsNullOrWhiteSpace(workspaceName)
+            ? Product
+            : workspaceName.Trim() + " · " + Product;
+
     public static string GitHubSlug => GitHubOwner + "/" + GitHubRepo;
     public static string ReleasesUrl => $"https://github.com/{GitHubSlug}/releases";
     public static string LatestReleaseApiUrl => $"https://api.github.com/repos/{GitHubSlug}/releases/latest";
