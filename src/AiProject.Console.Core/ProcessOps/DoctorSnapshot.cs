@@ -121,11 +121,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
     {
         var hasGit = CliUtil.CommandExists("git");
         var hasGh = CliUtil.CommandExists("gh");
-<<<<<<< HEAD
-        var hasPython = ProcessSupervisor.HasPythonLauncher();
-=======
         var hasWinget = ToolchainBootstrap.HasWinget();
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         var installKind = SelfUpdate.DetectInstallKind();
         var agent = AgentBackendRegistry.Inspect();
         var agentCli = CommitMessageSuggester.InspectCli();
@@ -141,13 +137,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         var tools = new List<DoctorItem>
         {
             new("控制台", $"{AppInfo.Version} · {InstallKindLabel(installKind)}", DoctorLevel.Info),
-<<<<<<< HEAD
-            new(".NET", Environment.Version.ToString(), DoctorLevel.Info),
-            Tool("dotnet", hasDotnet),
-            Tool("python", hasPython),
-=======
             new(".NET 執行環境", Environment.Version.ToString(), DoctorLevel.Info),
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             Tool("git", hasGit),
             new("gh", hasGh ? "已安裝" : "未安裝（GitHub CLI，選用）",
                 hasGh ? DoctorLevel.Ok : DoctorLevel.Info,
@@ -424,11 +414,6 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             "",
             $".NET: {Environment.Version}",
             $"控制台: {AppInfo.Version}（{SelfUpdate.DetectInstallKind()}）",
-<<<<<<< HEAD
-            $"dotnet: {(CliUtil.CommandExists("dotnet") ? "OK" : "缺少")}",
-            $"python: {(ProcessSupervisor.HasPythonLauncher() ? "OK" : "缺少（preStart .py 需要）")}",
-=======
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
             $"git: {(CliUtil.CommandExists("git") ? "OK" : "缺少")}",
             $"gh: {(CliUtil.CommandExists("gh") ? "OK" : "缺少（GitHub CLI，選用）")}",
             "",

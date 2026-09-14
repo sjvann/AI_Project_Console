@@ -5314,14 +5314,8 @@ public sealed partial class ConsoleSession : IDisposable
         var toolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in targets)
         {
-<<<<<<< HEAD
             var host = ServiceCatalogBuilder.HostService(catalog, item);
-            if (ProcessSupervisor.RequiresPython(catalog, host))
-                needPython = true;
-            if (ProcessSupervisor.RequiresDotnet(catalog, host))
-                needDotnet = true;
-=======
-            var path = ProcessSupervisor.ProjectPathFor(catalog, item);
+            var path = ProcessSupervisor.ProjectPathFor(catalog, host);
             var stackId = TechStackDetector.StackIdForPath(path);
             if (string.IsNullOrEmpty(stackId) && path.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
                 stackId = "python";
@@ -5329,7 +5323,6 @@ public sealed partial class ConsoleSession : IDisposable
                 stackId = "dotnet";
             foreach (var id in TechStackCatalog.RequiredToolIdsFor([stackId]))
                 toolIds.Add(id);
->>>>>>> f55e2ad032f0c6166b24b0d4da0ab3b5841f0927
         }
         var dir = catalog.Root;
         var missing = ToolchainBootstrap.MissingTools(toolIds, dir);

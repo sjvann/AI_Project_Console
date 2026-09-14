@@ -4,16 +4,16 @@
   href: overview.md
 - name: 詞彙
   href: glossary.md
-- name: 進件
-  href: intake.md
 - name: 願景與買家
   href: vision.md
-- name: 仲介平台
-  href: marketplace.md
-- name: 角色
-  href: personas.md
 - name: 總規格
   href: spec.md
+- name: 公開回報契約
+  href: reporting.md
+- name: 進件
+  href: intake.md
+- name: 角色
+  href: personas.md
 - name: 產品需求（PRD）
   href: prd.md
 - name: 系統執行計劃書
@@ -32,6 +32,10 @@
       href: modules/payroll.md
     - name: 戰情室
       href: modules/war-room.md
+- name: 系統分析輔助
+  href: analysis.md
+- name: 仲介平台
+  href: marketplace.md
 - name: UI／UX
   href: ux.md
 - name: 技術架構
