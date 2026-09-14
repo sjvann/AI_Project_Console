@@ -1,0 +1,51 @@
+<Project>
+  <!-- 控制台執行中時，複製參考組件會撞上 MSB3027。先把被鎖的目的檔改名。 -->
+  <UsingTask TaskName="UnlockIfLocked"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+if (Files != null)
+{
+  foreach (var item in Files)
+  {
+    var path = item.ItemSpec;
+    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+      continue;
+    var locked = false;
+    try
+    {
+      using (var fs = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None)) { }
+    }
+    catch (IOException) { locked = true; }
+    catch (UnauthorizedAccessException) { locked = true; }
+    if (!locked)
+      continue;
+    var dest = path + "." + Guid.NewGuid().ToString("N") + ".replaced";
+    try { File.Move(path, dest); }
+    catch (IOException) { }
+    catch (UnauthorizedAccessException) { }
+  }
+}
+]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="UnlockLockedOutputs"
+          BeforeTargets="_CopyFilesMarkedCopyLocal;CopyFilesToOutputDirectory;_CopyOutOfDateSourceItemsToOutputDirectory">
+    <ItemGroup>
+      <_ReplacedStale Include="$(OutDir)**\*.replaced" Condition="'$(OutDir)' != '' and Exists('$(OutDir)')" />
+      <_UnlockDest Include="$(OutDir)%(ReferenceCopyLocalPaths.DestinationSubDirectory)%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)"
+                   Condition="'@(ReferenceCopyLocalPaths)' != ''" />
+      <_UnlockDest Include="$(TargetPath)" Condition="'$(TargetPath)' != ''" />
+      <_UnlockDest Include="$(TargetDir)$(TargetName).pdb" Condition="'$(TargetDir)' != '' and '$(TargetName)' != ''" />
+      <_UnlockDest Include="$(TargetDir)$(TargetName).exe" Condition="'$(TargetDir)' != '' and '$(TargetName)' != ''" />
+    </ItemGroup>
+    <Delete Files="@(_ReplacedStale)" ContinueOnError="true" TreatErrorsAsWarnings="true" />
+    <UnlockIfLocked Files="@(_UnlockDest)" Condition="'@(_UnlockDest)' != ''" />
+  </Target>
+</Project>

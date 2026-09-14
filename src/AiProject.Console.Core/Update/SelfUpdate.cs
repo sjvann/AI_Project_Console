@@ -158,7 +158,10 @@ public static class SelfUpdate
                 "release", "download", update.Tag,
                 "--repo", AppInfo.GitHubSlug,
                 "--pattern", asset.Name,
+<<<<<<< HEAD
                 "--clobber",
+=======
+>>>>>>> 0990c14f141450362211959d0900c0742231fc50
                 "--output", dest,
             };
             var (code, stdout, stderr) = await CliUtil.RunCaptureAsync(

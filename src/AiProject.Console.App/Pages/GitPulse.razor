@@ -16,9 +16,9 @@
             </button>
             <span class="git-pulse-meta">@brief.PulseMeta()</span>
         }
-        else
+        else if (S.GitPulseEmptyMeta is { } empty)
         {
-            <span class="git-pulse-meta">尚未是 git 倉</span>
+            <span class="git-pulse-meta">@empty</span>
         }
         <span class="git-pulse-hint" title="@S.GithubNext.Hint">@S.GithubNext.Hint</span>
         <span class="grow"></span>

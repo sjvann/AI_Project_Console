@@ -362,12 +362,12 @@ public static class ProcessSupervisor
         }
 
         var psi = CreateStartInfo(catalog, host, proj);
-        if (psi.Environment.ContainsKey("__missing_toolchain"))
+        if (psi.Environment.TryGetValue("__missing_toolchain", out var toolchain)
+            && !string.IsNullOrEmpty(toolchain))
         {
-            var missing = psi.Environment["__missing_toolchain"];
-            writer.WriteLine(missing);
+            writer.WriteLine(toolchain);
             CloseLog(logFile, writer);
-            throw new InvalidOperationException(missing);
+            throw new InvalidOperationException(toolchain);
         }
         writer.WriteLine($"{psi.FileName} {string.Join(' ', psi.ArgumentList)}");
         writer.WriteLine($"cwd {psi.WorkingDirectory}");

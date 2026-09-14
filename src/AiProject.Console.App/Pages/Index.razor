@@ -792,6 +792,8 @@
             <label class="check"><input type="checkbox" checked="@S.ReleaseDraft" @onchange="e => S.ReleaseDraft = (bool)(e.Value ?? false)" /> 草稿（draft，先不公開）</label>
             <label class="check"><input type="checkbox" checked="@S.ReleasePrerelease" @onchange="e => S.ReleasePrerelease = (bool)(e.Value ?? false)" /> 預發行（prerelease，例如 beta／rc）</label>
             <label class="check"><input type="checkbox" checked="@S.ReleaseMakeLatest" @onchange="e => S.ReleaseMakeLatest = (bool)(e.Value ?? false)" /> 標為 Latest（正式發行時）</label>
+            <label class="check"><input type="checkbox" checked="@S.ReleaseIncludeSource" @onchange="e => S.ReleaseIncludeSource = (bool)(e.Value ?? false)" /> 附上原始碼壓縮檔讓人下載</label>
+            <p class="hint">預設不另傳原始碼。GitHub 仍會在 Release 頁底部顯示 Source code 連結（平台無法關閉）；公開倉本來就能 clone。</p>
             <div class="field" style="align-items:start">
                 <span>附加檔案</span>
                 <div>

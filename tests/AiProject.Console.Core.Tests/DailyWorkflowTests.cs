@@ -384,6 +384,25 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public async Task ProbeBriefStatus_EmptyFolderIsNotRepo()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-nongit-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var probe = await GitHubService.ProbeBriefStatusAsync(root);
+            Assert.False(probe.IsRepo);
+            Assert.Null(probe.Brief);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
     public async Task ListAndSwitchBranch_RequiresCleanWorkspace()
     {
         if (!CliUtil.CommandExists("git"))

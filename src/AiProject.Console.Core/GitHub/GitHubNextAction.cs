@@ -34,12 +34,21 @@ public static class GitHubNextAction
     public const string KindRelease = "release";
     public const string KindHub = "hub";
 
+    public static string? EmptyPulseMeta(bool? isGitRepo) =>
+        isGitRepo == false ? "不是 git 倉" : null;
+
+    public static string EmptyPulseHint(bool? isGitRepo) =>
+        isGitRepo == false
+            ? "這個目錄不是 git 倉庫。可從操作台接入遠端或看全部動作。"
+            : "尚未讀到 git 狀態。可從操作台接入遠端或看全部動作。";
+
     public static GitHubNextStep Decide(
         GitBriefStatus? brief,
         bool hasPr,
         string defaultBranch = "main",
         bool ciInProgress = false,
-        bool ciJustFailed = false)
+        bool ciJustFailed = false,
+        bool? isGitRepo = null)
     {
         if (brief is { DirtyCount: > 0 } dirty)
         {
@@ -125,7 +134,7 @@ public static class GitHubNextAction
             KindHub,
             "",
             "全部動作",
-            brief is null ? "尚未讀到 git 狀態。可從操作台接入遠端或看全部動作。" : "已與遠端一致。其餘動作在操作台。",
+            brief is null ? EmptyPulseHint(isGitRepo) : "已與遠端一致。其餘動作在操作台。",
             GithubActionLanes.Daily,
             OpensHub: true);
     }
