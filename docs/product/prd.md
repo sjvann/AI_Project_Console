@@ -118,7 +118,7 @@ title: 產品需求文件（PRD）
 
 ### 開門條件（進波次 C 前）
 
-見 [analysis.md](analysis.md) G-01～G-04。未通過則 **不** 開工仲介。
+見 [analysis.md](analysis.md) G-01～G-04。見證與簽核填 [analysis-gate-checklist.md](analysis-gate-checklist.md)。未通過則 **不** 開工仲介。
 
 ### 波次 C（仲介；門檻後）
 

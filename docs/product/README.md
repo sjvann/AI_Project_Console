@@ -50,7 +50,8 @@ title: 產品規格
    - [預算費用](modules/budget.md)
    - [薪資](modules/payroll.md)
    - [戰情室](modules/war-room.md)
-11. [系統分析輔助](analysis.md) — 概念到 Issue 的過程與開門條件
+11. [系統分析輔助](analysis.md) — 概念到 Issue 的過程與開門條件  
+    - [開門見證清單 G-01～G-04](analysis-gate-checklist.md) — 仲介開工前必填
 12. [仲介平台](marketplace.md) — 會員、成交、合同、抽成（門檻後）
 13. [UI／UX](ux.md) — 資訊架構、引導精靈、企業色盤、桌面 vs Web
 14. [技術架構](architecture.md) — 四套獨立安裝、契約整合、AD 不變量、自動更新

@@ -95,7 +95,7 @@ K1 不連到 Co：宿主 spike **不擋**工作區上線。O 不連到 Co：佔�
 | D-O | Occupancy 單一進行中＋一個排隊；MCP 與桌面同一建置域；輸出合併刷新 | **O1 合併前** | AD-32～AD-34。**已關**（使用者回饋：建置時以為當機） |
 | D-03～D-07 | 派工條、認列兩步、加密、讀取審計、匯率 | A 內可分期 | 不擋「第一筆上傳」演示，但擋 A 完整營運關門 |
 | D-10／D-11／D-12 | 仲介法律、KYC、押金 | **C 前** | 不擋 A／B／K |
-| G-01～G-04 | 系統分析開門條件 | **C 前** | 見 [analysis.md](analysis.md) |
+| G-01～G-04 | 系統分析開門條件 | **C 前** | 見 [analysis.md](analysis.md)；見證表 [analysis-gate-checklist.md](analysis-gate-checklist.md) |
 
 ## 4. 架構（實作約束）
 
@@ -434,7 +434,7 @@ K0 對控制台只准**抽出與改吃套件**，不准借機做上述以外的�
 
 1. 合併 Issue 包＋dry-run／真實 GitHub 發布＋assignee。
 2. 演示：開案 → 需求 → 規格 → 發布 Issue（可 dry-run）→ 工程師在 GitHub／控制台任務面看到。
-3. 累積 G-01～G-04 證據後才開仲介。
+3. 累積 G-01～G-04 證據後才開仲介（填 [analysis-gate-checklist.md](analysis-gate-checklist.md)）。
 
 **不要：**
 
