@@ -1,0 +1,10 @@
+**/.git
+**/bin
+**/obj
+**/.vs
+**/node_modules
+**/company.dev.db*
+**/dist
+**/TestResults
+**/*.user
+**/agent-transcripts

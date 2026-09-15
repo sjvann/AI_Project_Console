@@ -46,6 +46,7 @@ public sealed class CompanyApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Company:Auth:LocalOwner:Password", "AiProject-Owner-2026");
         builder.UseSetting("Company:Auth:LocalOwner:DisplayName", "公司管理員");
         builder.UseSetting("Company:SeedDemoData", "false");
+        builder.UseSetting("Hosting:Mode", "SelfHosted");
         builder.ConfigureAppConfiguration((_, cfg) =>
         {
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
@@ -86,6 +87,7 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
         var body = await res.Content.ReadAsStringAsync();
         Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
         Assert.Contains("ok", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SelfHosted", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

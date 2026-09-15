@@ -68,4 +68,36 @@ public class AuthorizationTests
         Assert.True(gate.Can(PlatformCapability.InviteUser));
         Assert.True(gate.Can(PlatformCapability.ViewWarRoom));
     }
+
+    [Fact]
+    public void Server_gate_rejects_sensitive_ops_for_engineer_and_vendor_kpi06()
+    {
+        var engineer = new AuthorizationGate(new StubUser { Role = PlatformRole.Engineer, PersonId = Guid.NewGuid() });
+        Assert.Equal(ErrorCodes.Forbidden, engineer.Ensure(PlatformCapability.ViewWarRoom).Code);
+        Assert.Equal(ErrorCodes.Forbidden, engineer.Ensure(PlatformCapability.ManageBudget).Code);
+        Assert.Equal(ErrorCodes.Forbidden, engineer.Ensure(PlatformCapability.LockPayroll).Code);
+        Assert.Equal(ErrorCodes.Forbidden, engineer.Ensure(PlatformCapability.Dispatch).Code);
+        Assert.Equal(ErrorCodes.RateHidden, engineer.Ensure(PlatformCapability.ViewClientRate).Code);
+
+        var vendor = new AuthorizationGate(new StubUser
+        {
+            Role = PlatformRole.VendorAdmin,
+            PersonId = Guid.NewGuid(),
+            VendorId = Guid.NewGuid(),
+        });
+        Assert.Equal(ErrorCodes.Forbidden, vendor.Ensure(PlatformCapability.ViewWarRoom).Code);
+        Assert.Equal(ErrorCodes.Forbidden, vendor.Ensure(PlatformCapability.ManageBudget).Code);
+        Assert.Equal(ErrorCodes.Forbidden, vendor.Ensure(PlatformCapability.ManageClients).Code);
+        Assert.Equal(ErrorCodes.Forbidden, vendor.Ensure(PlatformCapability.LockPayroll).Code);
+    }
+
+    [Fact]
+    public void Exec_can_view_war_room_but_not_change_rates()
+    {
+        var gate = new AuthorizationGate(new StubUser { Role = PlatformRole.Exec, PersonId = Guid.NewGuid() });
+        Assert.True(gate.Can(PlatformCapability.ViewWarRoom));
+        Assert.False(gate.Can(PlatformCapability.ManageBudget));
+        Assert.False(gate.Can(PlatformCapability.ChangeRate));
+        Assert.False(gate.Can(PlatformCapability.Dispatch));
+    }
 }

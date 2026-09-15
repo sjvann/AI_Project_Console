@@ -1,0 +1,20 @@
+@inject DirectoryQueries Directory
+@inject IJSRuntime Js
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        try
+        {
+            var settings = await Directory.SettingsAsync();
+            var theme = ThemePacks.Normalize(settings.ThemeId);
+            await Js.InvokeVoidAsync("eval", $"document.documentElement.setAttribute('data-theme','{theme}')");
+        }
+        catch
+        {
+            // 匿名頁或靜態預渲染略過
+        }
+    }
+}

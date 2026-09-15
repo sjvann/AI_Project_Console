@@ -46,6 +46,19 @@ public sealed class SettingsCommands
         return Outcome.Success();
     }
 
+    public async Task<Outcome> SetThemeAsync(string themeId, CancellationToken ct = default)
+    {
+        var gate = _auth.Ensure(PlatformCapability.ManageSettings);
+        if (!gate.Ok)
+            return gate;
+        var company = await _settings.GetAsync(ct);
+        var before = company.ThemeId;
+        company.SetTheme(themeId);
+        await _uow.SaveChangesAsync(ct);
+        await _audit.SensitiveChange(AuditActions.UpdateSettings, "CompanySettings", company.Id, "更新主題包", before, company.ThemeId, ct);
+        return Outcome.Success();
+    }
+
     public async Task<Outcome> SetRateAsync(string currency, decimal rate, DateOnly asOf, string reason, CancellationToken ct = default)
     {
         var gate = _auth.Ensure(PlatformCapability.ManageSettings);

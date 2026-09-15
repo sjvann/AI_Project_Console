@@ -255,6 +255,18 @@ public class DomainPolicyTests
     }
 
     [Fact]
+    public void Theme_and_hosting_normalize()
+    {
+        Assert.Equal("pine", ThemePacks.Normalize(null));
+        Assert.Equal("ocean", ThemePacks.Normalize("Ocean"));
+        Assert.Equal("pine", ThemePacks.Normalize("unknown"));
+        Assert.Equal(5, ThemePacks.All.Count);
+        Assert.Equal(HostingModes.SelfHosted, HostingModes.Normalize(null));
+        Assert.Equal(HostingModes.SaaS, HostingModes.Normalize("saas"));
+        Assert.True(HostingModes.IsSaaS("SaaS"));
+    }
+
+    [Fact]
     public void Payroll_csv_header_is_stable()
     {
         Assert.Equal("personId,displayName,kind,amount,costAmount,projectId,hours,payable,note", PayrollCsv.Header);

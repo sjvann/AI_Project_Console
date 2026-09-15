@@ -93,3 +93,18 @@ gh release view v0.3.8
 ## 圖示
 
 logo 原始檔在 `assets/brand/`。工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改，否則 Windows 11 可能再快取成預設圖。
+
+## 公司工作區 Docker（workspace-v*）
+
+同一映像給自架與我們 SaaS；差在 `Hosting:Mode`。細節見 [deploy-company.md](../docs/product/deploy-company.md)。
+
+```powershell
+# 本機起站
+cd deploy/workspace
+Copy-Item .env.example .env
+docker compose up -d --build
+
+# 發行資產（需 Docker）
+.\scripts\pack-workspace.ps1 -Version 0.1.0
+# → dist/workspace-v0.1.0/（compose、.env.example、digest、SHA256SUMS）
+```

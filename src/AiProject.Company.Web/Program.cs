@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.Configure<HostingOptions>(builder.Configuration.GetSection(HostingOptions.SectionName));
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddCompanyPlatform(builder.Configuration);
 builder.Services.AddOpenApi();
@@ -46,10 +47,16 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
-app.MapGet("/health", async (CompanyDbContext db) =>
+app.MapGet("/health", async (CompanyDbContext db, Microsoft.Extensions.Options.IOptions<HostingOptions> hosting) =>
 {
     var ok = await db.Database.CanConnectAsync();
-    return ok ? Results.Ok(new { status = "ok" }) : Results.StatusCode(503);
+    if (!ok)
+        return Results.StatusCode(503);
+    return Results.Ok(new
+    {
+        status = "ok",
+        hostingMode = hosting.Value.NormalizedMode,
+    });
 }).AllowAnonymous();
 app.MapPost("/login/account", async (HttpContext http, AccountCommands accounts) =>
 {

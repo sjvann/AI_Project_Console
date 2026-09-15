@@ -3,9 +3,12 @@
 @inject SettingsCommands Commands
 @inject DirectoryQueries Directory
 @inject IAuthorizationGate Gate
+@inject Microsoft.Extensions.Options.IOptions<HostingOptions> Hosting
+@inject IJSRuntime Js
 
 <PageTitle>設定</PageTitle>
 <h1>公司設定</h1>
+<p class="hint">@Hosting.Value.OperatorLabel · Hosting:Mode=@Hosting.Value.NormalizedMode</p>
 @if (!Gate.Can(PlatformCapability.ManageSettings))
 {
     <p>只有公司管理員能改全公司設定。</p>
@@ -30,6 +33,17 @@ else if (_model is not null)
         <button class="btn-primary" @onclick="Save">存檔</button>
         <p class="hint">@_message</p>
     </div>
+    <section class="card">
+        <h2>主題包</h2>
+        <p class="hint">五色選盤（對比已對淺底檢查）。完整開帳精靈下一切可後補；色票來自 Shared.DesignSystem，畫面不散落硬編碼 accent。</p>
+        <div class="toolbar">
+            @foreach (var pack in ThemePacks.All)
+            {
+                <button type="button" class="btn-sec @(_theme == pack.Id ? "is-on" : "")" @onclick="() => SaveTheme(pack.Id)">@pack.Label</button>
+            }
+        </div>
+        <p class="hint">@_themeMessage</p>
+    </section>
     <p class="hint">人員帳戶改到 <a href="/accounts">帳戶管理</a>。公司管理人員用帳號密碼進後台。從線上招募進來的外部工程師用 GitHub 邀請，走桌面控制台。</p>
     <h2>外幣匯率（換成 @_currency）</h2>
     <p class="hint">合約若用外幣計價，預算損益要先換成記帳貨幣才看得懂毛利。這裡是人工匯率表，可同時維護多種外幣；同一幣別再存一次會覆蓋。記帳貨幣本身固定為 1，不必填。</p>
@@ -94,6 +108,8 @@ else if (_model is not null)
     decimal _red = 10;
     bool _writeBack = true;
     string _message = "";
+    string _theme = ThemePacks.Default;
+    string _themeMessage = "";
     string _fxPick = "USD";
     string _fxCustom = "";
     decimal _fxRate = 32;
@@ -131,9 +147,28 @@ else if (_model is not null)
         _yellow = _model.YellowPercent;
         _red = _model.RedPercent;
         _writeBack = _model.WriteBackGithubAssignee;
+        _theme = ThemePacks.Normalize(_model.ThemeId);
         if (!ForeignCodes.Contains(_fxPick) && _fxPick != Currencies.Other)
             _fxPick = ForeignCodes.FirstOrDefault() ?? Currencies.Other;
         PrefillFromTable();
+        await ApplyThemeAsync(_theme);
+    }
+
+    async Task SaveTheme(string id)
+    {
+        var result = await Commands.SetThemeAsync(id);
+        _themeMessage = result.Ok ? "主題已套用全公司。" : result.Message;
+        if (result.Ok)
+        {
+            _theme = ThemePacks.Normalize(id);
+            await ApplyThemeAsync(_theme);
+        }
+    }
+
+    async Task ApplyThemeAsync(string id)
+    {
+        try { await Js.InvokeVoidAsync("eval", $"document.documentElement.setAttribute('data-theme','{ThemePacks.Normalize(id)}')"); }
+        catch { /* 靜態預渲染略過 */ }
     }
 
     async Task Save()

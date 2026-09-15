@@ -29,6 +29,7 @@ public sealed class CompanyDbContext : DbContext
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.TenantId);
+            e.Property(x => x.ThemeId).HasMaxLength(32);
             e.OwnsMany(x => x.ExchangeRates, r =>
             {
                 r.ToTable("exchange_rates");

@@ -1,6 +1,8 @@
 /* AI_Project Shared DesignSystem — pine 預設（K0-2 / AD-21～AD-23）
-   semantic 契約名；legacy alias 維持現況 Console／Company 規則不炸。 */
-:root {
+   semantic 契約名；legacy alias 維持現況 Console／Company 規則不炸。
+   主題包：html[data-theme]（A8-4）。 */
+:root,
+[data-theme="pine"] {
     --color-accent: #0b6e56;
     --color-accent-hi: #0a5c48;
     --color-danger: #9b2c2c;
@@ -22,6 +24,58 @@
     --text: var(--color-text);
     --muted: var(--color-muted);
     --border: var(--color-border);
+}
+
+[data-theme="ocean"] {
+    --color-accent: #0a5f8c;
+    --color-accent-hi: #084a6e;
+    --color-danger: #9b2c2c;
+    --color-warning: #b86e00;
+    --color-success: #1a7f4b;
+    --color-surface: #f5f8fb;
+    --color-bg: #e4ebf2;
+    --color-text: #15202b;
+    --color-muted: #5a6a7a;
+    --color-border: #c0cad6;
+}
+
+[data-theme="slate"] {
+    --color-accent: #3d4f5f;
+    --color-accent-hi: #2f3d4a;
+    --color-danger: #9b2c2c;
+    --color-warning: #b86e00;
+    --color-success: #1a7f4b;
+    --color-surface: #f6f7f8;
+    --color-bg: #e6e9ed;
+    --color-text: #1a1f26;
+    --color-muted: #5a6570;
+    --color-border: #c4c8d0;
+}
+
+[data-theme="clay"] {
+    --color-accent: #8a4b2f;
+    --color-accent-hi: #6e3b25;
+    --color-danger: #9b2c2c;
+    --color-warning: #b86e00;
+    --color-success: #1a7f4b;
+    --color-surface: #faf7f4;
+    --color-bg: #efe8e1;
+    --color-text: #2a211c;
+    --color-muted: #6a5a50;
+    --color-border: #d4c6b8;
+}
+
+[data-theme="forest"] {
+    --color-accent: #2f6b3a;
+    --color-accent-hi: #24532d;
+    --color-danger: #9b2c2c;
+    --color-warning: #b86e00;
+    --color-success: #1a7f4b;
+    --color-surface: #f5f8f5;
+    --color-bg: #e5ede6;
+    --color-text: #1a241c;
+    --color-muted: #5a6a5c;
+    --color-border: #c2d0c4;
 }
 
 [data-theme="dark"] {

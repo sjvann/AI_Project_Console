@@ -19,6 +19,7 @@ public static class CompanyHostStartup
         await EnsureDefaultTenantAsync(db);
         await EnsureReportingApiKeysAndProjectCodeAsync(db);
         await EnsureAssignmentSyncColumnsAsync(db);
+        await EnsureThemeColumnAsync(db);
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsRepository>();
         await settings.GetAsync();
         var accounts = scope.ServiceProvider.GetRequiredService<IStaffAccountRepository>();
@@ -255,6 +256,16 @@ public static class CompanyHostStartup
             return;
         }
         await TryAlterAsync(db, """ALTER TABLE "Assignments" ADD COLUMN IF NOT EXISTS "SyncNote" text NULL;""");
+    }
+
+    static async Task EnsureThemeColumnAsync(CompanyDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            await TryAlterAsync(db, "ALTER TABLE CompanySettings ADD COLUMN ThemeId TEXT NULL;");
+            return;
+        }
+        await TryAlterAsync(db, """ALTER TABLE "CompanySettings" ADD COLUMN IF NOT EXISTS "ThemeId" character varying(32) NULL;""");
     }
 
     static async Task TryAlterAsync(CompanyDbContext db, string sql)

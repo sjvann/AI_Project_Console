@@ -14,6 +14,8 @@ public sealed class CompanySettings : IMarginThresholds, ITenantScoped
     public decimal RedPercent { get; private set; } = 10m;
     public bool WriteBackGithubAssignee { get; private set; } = true;
     public bool SetupCompleted { get; private set; }
+    /// <summary>DesignSystem data-theme id（pine／ocean／slate／clay／forest）。</summary>
+    public string ThemeId { get; private set; } = ThemePacks.Default;
     public List<ExchangeRate> ExchangeRates { get; private set; } = [];
 
     public static CompanySettings CreateDefault() => CreateForTenant(TenantIds.Default);
@@ -43,6 +45,8 @@ public sealed class CompanySettings : IMarginThresholds, ITenantScoped
         WriteBackGithubAssignee = writeBack;
         SetupCompleted = true;
     }
+
+    public void SetTheme(string themeId) => ThemeId = ThemePacks.Normalize(themeId);
 
     public void SetExchangeRate(string currency, decimal rateToCompany, DateOnly asOf)
     {

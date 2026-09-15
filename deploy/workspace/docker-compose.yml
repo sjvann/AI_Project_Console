@@ -1,0 +1,47 @@
+# 公司工作區自架（與我們 SaaS 同一映像；差在 Hosting:Mode 與連線字串）
+# 用法（倉庫根）：
+#   cd deploy/workspace
+#   copy .env.example .env   # 改密碼與 EncryptionKey
+#   docker compose up -d --build
+# 健康檢查：http://localhost:5100/health
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aiproject_company
+      POSTGRES_USER: aiproject
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiproject-change-me}
+    volumes:
+      - workspace_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiproject -d aiproject_company"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  workspace:
+    build:
+      context: ../..
+      dockerfile: deploy/workspace/Dockerfile
+    image: ${WORKSPACE_IMAGE:-aiproject-workspace:local}
+    ports:
+      - "${WORKSPACE_PORT:-5100}:8080"
+    environment:
+      Hosting__Mode: ${HOSTING_MODE:-SelfHosted}
+      ConnectionStrings__Company: >-
+        Host=db;Port=5432;Database=aiproject_company;Username=aiproject;Password=${POSTGRES_PASSWORD:-aiproject-change-me}
+      Company__EncryptionKey: ${COMPANY_ENCRYPTION_KEY:?set COMPANY_ENCRYPTION_KEY in .env}
+      Company__SeedDemoData: ${SEED_DEMO:-false}
+      Company__Auth__LocalOwner__Enabled: ${OWNER_ENABLED:-true}
+      Company__Auth__LocalOwner__UserName: ${OWNER_USER:-owner}
+      Company__Auth__LocalOwner__Password: ${OWNER_PASSWORD:?set OWNER_PASSWORD in .env}
+      Company__Auth__LocalOwner__DisplayName: ${OWNER_DISPLAY:-公司管理員}
+      Company__GitHub__Org: ${GITHUB_ORG:-}
+      Company__GitHub__Token: ${GITHUB_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  workspace_pg:

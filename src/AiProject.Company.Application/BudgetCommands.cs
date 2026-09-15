@@ -90,9 +90,13 @@ public sealed class BudgetCommands
 
     public async Task<ProjectPnl> PnlAsync(Guid projectId, int? year = null, int? month = null, CancellationToken ct = default)
     {
-        var gate = _auth.Ensure(PlatformCapability.ManageBudget, projectId: projectId);
-        if (!gate.Ok)
+        // 戰情室只讀（ViewWarRoom）與預算編輯（ManageBudget）皆可讀損益。
+        if (!_auth.Can(PlatformCapability.ManageBudget, projectId: projectId)
+            && !_auth.Can(PlatformCapability.ViewWarRoom))
+        {
+            var gate = _auth.Ensure(PlatformCapability.ManageBudget, projectId: projectId);
             throw new DomainException(gate.Code, gate.Message);
+        }
         var project = await _projects.GetAsync(projectId, ct) ?? throw new DomainException(ErrorCodes.NotFound, Messages.NotFound("專案"));
         return await BuildPnlAsync(project, year, month, ct);
     }

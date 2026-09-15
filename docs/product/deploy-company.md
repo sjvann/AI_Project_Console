@@ -45,7 +45,28 @@ title: 公司平台自架
 dotnet run --project src/AiProject.Company.Web
 ```
 
-健康檢查：`GET /health`。OpenAPI：`/openapi/v1.json`。
+健康檢查：`GET /health`（回傳 `status` 與 `hostingMode`）。OpenAPI：`/openapi/v1.json`。
+
+## Docker／compose（A8 同一產物）
+
+倉庫內路徑：`deploy/workspace/`。自架與我們主機**同一 Dockerfile**；差在環境變數。
+
+```powershell
+cd deploy/workspace
+Copy-Item .env.example .env
+# 編輯 .env：COMPANY_ENCRYPTION_KEY、OWNER_PASSWORD、POSTGRES_PASSWORD
+docker compose up -d --build
+# 瀏覽 http://localhost:5100 ；健康檢查 http://localhost:5100/health
+```
+
+| 環境變數 | 對應設定 |
+|----------|----------|
+| `Hosting__Mode` | `SelfHosted`（預設）或 `SaaS` |
+| `ConnectionStrings__Company` | compose 已指向 `db` 服務 |
+| `Company__EncryptionKey` | 欄位加密（必填） |
+| `Company__Auth__LocalOwner__*` | 第一次啟動種 owner |
+
+發行資產：`scripts/pack-workspace.ps1 -Version 0.1.0` → `dist/workspace-v0.1.0/`（compose、`.env.example`、`image-digest.txt`、`SHA256SUMS.txt`）。Release tag 前綴 `workspace-v*`。
 
 ## 後台管理者（公司帳戶，不是 GitHub）
 
