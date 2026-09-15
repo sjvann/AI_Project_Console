@@ -67,3 +67,46 @@ public sealed record BudgetCsvRow(
     string PlannedRate,
     string ActualRate,
     string Currency);
+
+public static class CostAllocationCsv
+{
+    public const string Header = "personId,displayName,projectId,projectName,hours,costAmount,weightPercent,source";
+
+    public static string Render(IEnumerable<CostAllocationRow> rows)
+    {
+        var output = new System.Text.StringBuilder();
+        output.AppendLine(Header);
+        foreach (var row in rows)
+        {
+            output.Append(row.PersonId).Append(',')
+                .Append(Csv(row.DisplayName)).Append(',')
+                .Append(row.ProjectId).Append(',')
+                .Append(Csv(row.ProjectName)).Append(',')
+                .Append(N(row.Hours)).Append(',')
+                .Append(N(row.CostAmount)).Append(',')
+                .Append(N(row.WeightPercent)).Append(',')
+                .Append(Csv(row.Source))
+                .AppendLine();
+        }
+        return output.ToString();
+    }
+
+    static string N(decimal value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    static string Csv(string value)
+    {
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
+    }
+}
+
+public sealed record CostAllocationRow(
+    Guid PersonId,
+    string DisplayName,
+    Guid ProjectId,
+    string ProjectName,
+    decimal Hours,
+    decimal CostAmount,
+    decimal WeightPercent,
+    string Source);

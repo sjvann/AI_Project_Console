@@ -39,6 +39,33 @@ T&M 合約：收入 = 已核准工時 × 對客戶費率（與對內人事成本
 
 門檻由公司設定（例如低於 25% 變黃、低於 10% 變紅）。戰情室讀同一組門檻。
 
+## 月報 CSV
+
+**專案損益表頭（固定，權威實作 `BudgetCsv.Header`）：**
+
+| 欄位 | 語意 |
+|------|------|
+| `projectId` | 專案 Guid |
+| `projectName` | 專案名 |
+| `clientName` | 客戶名 |
+| `plannedRevenue` / `actualRevenue` | 計劃／實際收入 |
+| `plannedCost` / `actualCost` | 計劃／實際人事成本 |
+| `otherPlanned` / `otherActual` | 其他費用 |
+| `plannedMargin` / `actualMargin` | 毛利金額 |
+| `plannedRate` / `actualRate` | 毛利率字串（收入為 0 為 `—`） |
+| `currency` | 公司記帳幣 |
+
+**正職／時計分攤明細表頭（`CostAllocationCsv.Header`）：**
+
+| 欄位 | 語意 |
+|------|------|
+| `personId` / `displayName` | 人員 |
+| `projectId` / `projectName` | 專案 |
+| `hours` | 權重小時 |
+| `costAmount` | 分攤成本 |
+| `weightPercent` | 佔該人總分攤比重 |
+| `source` | `核准工時`／`已送工時`／`派工規劃` |
+
 ## 關鍵畫面
 
 - **專案損益卡：** 收入、人事、其他、毛利、率；計劃 vs 實際並排。

@@ -36,6 +36,15 @@ input, select { padding: 6px 8px; border: 1px solid var(--border); border-radius
 .matrix { overflow: auto; min-width: 960px; border: 1px solid var(--border); background: var(--panel); }
 .matrix-head, .matrix-row { display: grid; grid-template-columns: 160px repeat(5, 1fr) 90px; }
 .matrix-cell, .matrix-head span, .matrix-row > span { border: 1px solid var(--border); padding: 6px; min-height: 40px; }
+.matrix-chip { display: inline-block; margin: 1px; padding: 2px 6px; border-radius: 3px; color: #fff; font-size: 12px; line-height: 1.3; }
+.matrix-chip em { font-style: normal; opacity: 0.85; }
+.chart-preview { margin: 0; padding-left: 1.1rem; font-size: 13px; }
+.chart-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; background: var(--muted); }
+.chart-dot.intensity-1 { background: #9ec5b3; }
+.chart-dot.intensity-2 { background: var(--accent); }
+.chart-dot.intensity-3 { background: var(--ok, #1a7f4b); }
+.pnl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pnl-grid h3 { margin: 0 0 6px; font-size: 14px; }
 .is-overload, .is-overdue { background: #fde8e8; color: var(--danger); }
 .is-follow-yellow { background: #fff4d6; color: var(--wait); }
 .gantt-row { display: grid; grid-template-columns: 140px 1fr minmax(12rem, 1.2fr); gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }

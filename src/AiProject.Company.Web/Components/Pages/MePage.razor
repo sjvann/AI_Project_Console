@@ -4,7 +4,33 @@
 @inject DirectoryQueries Directory
 
 <PageTitle>我的工時</PageTitle>
-<h1>我的工時／薪資條</h1>
+<h1>我的工時／派工／薪資條</h1>
+<section class="card">
+    <h2>我的派工</h2>
+    <p class="hint">只讀期間與專案；改碼與上傳仍在控制台。</p>
+    @if (_assignments.Count == 0)
+    {
+        <p class="empty">目前沒有派工單。</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead><tr><th>專案</th><th>期間</th><th>時／週</th><th>角色</th><th>同步</th></tr></thead>
+            <tbody>
+            @foreach (var a in _assignments)
+            {
+                <tr>
+                    <td>@a.ProjectName</td>
+                    <td>@a.Start – @a.End</td>
+                    <td>@a.HoursPerWeek.ToString("0.##")</td>
+                    <td>@a.Role</td>
+                    <td>@SyncLabel(a.SyncState)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</section>
 <p class="hint">@_hours?.DrawHint</p>
 <a class="btn-primary" href="#">到控制台畫狀態並上傳</a>
 <table class="grid">
@@ -37,10 +63,21 @@
 @code {
     MyHoursView? _hours;
     PayslipDto? _slip;
+    IReadOnlyList<AssignmentDto> _assignments = [];
+
     protected override async Task OnInitializedAsync()
     {
+        _assignments = await Me.MyAssignmentsAsync();
         _hours = await Me.MyHoursAsync();
         try { _slip = await Me.LatestPayslipAsync(); }
         catch (DomainException) { _slip = null; }
     }
+
+    static string SyncLabel(string state) => state switch
+    {
+        "Synced" or "synced" => "已同步",
+        "Pending" or "pending" => "待同步",
+        "NotRequired" or "not_required" => "無需寫回",
+        _ => state,
+    };
 }

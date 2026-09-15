@@ -224,9 +224,14 @@ else
                 {
                     <li>
                         @ms.Name · @ms.Due · @ms.BillingAmount @(ms.Completed ? "完成" : "") @(ms.Recognition)
+                        @(ms.BonusPayable ? "· 獎金可發" : "")
                         @if (Gate.Can(PlatformCapability.RecognizeRevenue, projectId: Id))
                         {
                             <button class="btn-link" @onclick="() => Recognize(ms.Id)">一鍵已認列</button>
+                        }
+                        @if (Gate.Can(PlatformCapability.ManageProjects, projectId: Id))
+                        {
+                            <button class="btn-link" @onclick="() => ToggleBonus(ms.Id, !ms.BonusPayable)">@(ms.BonusPayable ? "取消可發" : "標記獎金可發")</button>
                         }
                     </li>
                 }
@@ -240,9 +245,26 @@ else
             }
             else
             {
-                <p>計劃收入 @_pnl.Margin.PlannedRevenue / 實際 @_pnl.Margin.ActualRevenue</p>
-                <p>計劃成本 @_pnl.Margin.PlannedCost / 實際 @_pnl.Margin.ActualCost</p>
-                <p>毛利 @_pnl.Margin.ActualMargin（@MarginResult.Display(_pnl.Margin.ActualRate) · @_pnl.Tone）</p>
+                <div class="pnl-grid">
+                    <div>
+                        <h3>計劃</h3>
+                        <p>收入 @_pnl.Margin.PlannedRevenue</p>
+                        <p>人事 @_pnl.Margin.PlannedCost</p>
+                        <p>其他 @_pnl.Margin.OtherPlanned</p>
+                        <p>毛利 @_pnl.Margin.PlannedMargin（@MarginResult.Display(_pnl.Margin.PlannedRate)）</p>
+                    </div>
+                    <div>
+                        <h3>實際</h3>
+                        <p>收入 @_pnl.Margin.ActualRevenue</p>
+                        <p>人事 @_pnl.Margin.ActualCost</p>
+                        <p>其他 @_pnl.Margin.OtherActual</p>
+                        <p>毛利 @_pnl.Margin.ActualMargin（@MarginResult.Display(_pnl.Margin.ActualRate) · @_pnl.Tone）</p>
+                    </div>
+                </div>
+                @if (_pnl.ClientRateVisible)
+                {
+                    <p class="hint">對客戶費率 @_pnl.ClientRate · 核准工時 @_pnl.ApprovedHours.ToString("0.##")</p>
+                }
             }
         </aside>
     </div>
@@ -438,6 +460,13 @@ else
         _project = await Directory.ProjectAsync(Id);
         try { _pnl = await Budget.PnlAsync(Id); }
         catch (DomainException) { _pnl = null; }
+    }
+
+    async Task ToggleBonus(Guid milestoneId, bool payable)
+    {
+        var result = await Commands.SetMilestoneBonusPayableAsync(Id, milestoneId, payable);
+        _message = result.Ok ? (payable ? "已標記獎金可發" : "已取消獎金可發") : result.Message;
+        _project = await Directory.ProjectAsync(Id);
     }
 
     async Task Close()

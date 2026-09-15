@@ -22,7 +22,8 @@ public sealed class MonthlySalaryCalculator : IPayrollCalculator
     {
         if (person.CostAllocationExempt)
             return [];
-        var mine = approved.Where(t => t.PersonId == person.Id && t.Status == TimesheetStatus.Approved).ToList();
+        // 呼叫端決定口徑（核准／已送）；此處只依傳入列分攤。
+        var mine = approved.Where(t => t.PersonId == person.Id).ToList();
         var byProject = mine.GroupBy(t => t.ProjectId).ToDictionary(g => g.Key, g => g.Sum(x => x.Hours));
         if (byProject.Count == 0)
         {
@@ -73,6 +74,30 @@ public sealed class HourlyCalculator : IPayrollCalculator
             ? new PayrollLine(person.Id, PayrollLineKind.OvertimePending, 0, 0, null, overtimeHours, "超過每日上限，待人資核准金額", false)
             : null;
         return (payable, overtime);
+    }
+
+    /// <summary>依專案拆成本列（實發仍用 CalculateWithRate 的無專案列）。</summary>
+    public IReadOnlyList<PayrollLine> AllocateCost(Person person, decimal hourlyRate, IReadOnlyList<Timesheet> sheets)
+    {
+        var mine = sheets.Where(t => t.PersonId == person.Id).ToList();
+        if (mine.Count == 0)
+            return [];
+        return mine
+            .GroupBy(t => t.ProjectId)
+            .Select(g =>
+            {
+                var hours = g.Sum(t => t.Hours);
+                return new PayrollLine(
+                    person.Id,
+                    PayrollLineKind.Hourly,
+                    0,
+                    decimal.Round(hours * hourlyRate, 2),
+                    g.Key,
+                    hours,
+                    "時計成本分攤",
+                    false);
+            })
+            .ToList();
     }
 }
 

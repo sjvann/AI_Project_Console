@@ -54,6 +54,14 @@ public sealed class PayrollCommands
         var gate = _auth.Ensure(PlatformCapability.LockPayroll);
         if (!gate.Ok)
             return Outcome<Guid>.Fail(gate.Code, gate.Message);
+        if (correctsId is Guid cid)
+        {
+            var prior = await _periods.GetAsync(cid, ct);
+            if (prior is null)
+                return Outcome<Guid>.Fail(ErrorCodes.NotFound, Messages.NotFound("原薪資週期"));
+            if (prior.Status != PayrollPeriodStatus.Locked)
+                return Outcome<Guid>.Fail(ErrorCodes.InvalidState, "只能對已鎖定的週期開更正週期。");
+        }
         var period = PayrollPeriod.Open(start, end, correctsId);
         await _periods.AddAsync(period, ct);
         await RecalculateAsync(period, ct);
@@ -153,11 +161,19 @@ public sealed class PayrollCommands
         var bonuses = new List<ProjectBonusGrant>();
         foreach (var project in projects)
         {
-            foreach (var milestone in project.Milestones.Where(m => m.BonusPayable))
-            {
-                foreach (var assignment in assignments.Where(a => a.ProjectId == project.Id && a.Status != AssignmentStatus.Cancelled))
-                    bonuses.Add(new ProjectBonusGrant(assignment.PersonId, project.Id, 0, true));
-            }
+            var payableTotal = project.Milestones.Where(m => m.BonusPayable).Sum(m => m.BillingAmount);
+            if (payableTotal <= 0)
+                continue;
+            var assignees = assignments
+                .Where(a => a.ProjectId == project.Id && a.Status != AssignmentStatus.Cancelled)
+                .Select(a => a.PersonId)
+                .Distinct()
+                .ToList();
+            if (assignees.Count == 0)
+                continue;
+            var each = decimal.Round(payableTotal / assignees.Count, 2);
+            foreach (var personId in assignees)
+                bonuses.Add(new ProjectBonusGrant(personId, project.Id, each, true));
         }
         var lines = new List<PayrollLine>();
         foreach (var person in people.Where(p => !p.IsDeleted))
@@ -178,6 +194,7 @@ public sealed class PayrollCommands
                 lines.Add(payable);
                 if (overtime is not null)
                     lines.Add(overtime);
+                lines.AddRange(_hourly.AllocateCost(person, rate, mine));
             }
             lines.AddRange(_bonus.Expand(person, personBonuses));
         }

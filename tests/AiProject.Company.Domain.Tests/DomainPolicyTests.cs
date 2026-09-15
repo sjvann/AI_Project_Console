@@ -237,10 +237,29 @@ public class DomainPolicyTests
     }
 
     [Fact]
+    public void Hourly_cost_allocated_by_project()
+    {
+        var person = Person.Create("外包", EmploymentKind.Freelance, null, DateTimeOffset.UtcNow);
+        var projectA = Guid.NewGuid();
+        var projectB = Guid.NewGuid();
+        var a = Timesheet.Upload("a", person.Id, projectA, new DateOnly(2026, 9, 1), 4, [], [], false, null, DateTimeOffset.UtcNow);
+        var b = Timesheet.Upload("b", person.Id, projectB, new DateOnly(2026, 9, 2), 6, [], [], false, null, DateTimeOffset.UtcNow);
+        a.Confirm(DateTimeOffset.UtcNow);
+        b.Confirm(DateTimeOffset.UtcNow);
+        var calc = new HourlyCalculator();
+        var lines = calc.AllocateCost(person, 1000, [a, b]);
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(4000, lines.Single(l => l.ProjectId == projectA).CostAmount);
+        Assert.Equal(6000, lines.Single(l => l.ProjectId == projectB).CostAmount);
+        Assert.All(lines, l => Assert.False(l.Payable));
+    }
+
+    [Fact]
     public void Payroll_csv_header_is_stable()
     {
         Assert.Equal("personId,displayName,kind,amount,costAmount,projectId,hours,payable,note", PayrollCsv.Header);
         Assert.Contains("plannedRevenue", BudgetCsv.Header);
+        Assert.Equal("personId,displayName,projectId,projectName,hours,costAmount,weightPercent,source", CostAllocationCsv.Header);
     }
 
     [Fact]

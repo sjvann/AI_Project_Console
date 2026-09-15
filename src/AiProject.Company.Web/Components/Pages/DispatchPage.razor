@@ -33,18 +33,19 @@
                     <span>@row.Person.DisplayName @(row.Overload ? "超載" : "")</span>
                     @foreach (var day in Days)
                     {
-                        var cell = row.Cells.FirstOrDefault(c => c.Date == day);
-                        <div class="matrix-cell @(row.Overload ? "is-overload" : "")"
+                        <div class="matrix-cell @(CellOverload(row, day) ? "is-overload" : "")"
                              @ondrop="() => Drop(row.Person.Id, day)"
                              @ondragover:preventDefault
                              @onclick="() => Select(row.Person.Id, day)">
-                            @if (cell is not null)
+                            @foreach (var cell in row.Cells.Where(c => c.Date == day))
                             {
-                                <span>@cell.ProjectName @cell.Hours</span>
-                                @if (cell.Pending)
-                                {
-                                    <em>待同步</em>
-                                }
+                                <span class="matrix-chip" style="background:@cell.Color" title="@cell.ProjectName @cell.Hours.ToString("0.#")h@(cell.Pending ? " · 待同步" : "")">
+                                    @cell.ShortName
+                                    @if (cell.Pending)
+                                    {
+                                        <em>*</em>
+                                    }
+                                </span>
                             }
                         </div>
                     }
@@ -102,7 +103,11 @@
         {
             <li>
                 @PersonName(a.PersonId) · @ProjectName(a.ProjectId) · @a.PlannedHoursPerWeek 時
-                @(a.SyncState == AssignmentSyncState.Pending ? "待同步" : "")
+                @(a.SyncState == AssignmentSyncState.Pending ? "待同步" : a.SyncState == AssignmentSyncState.Synced ? "已同步" : "")
+                @if (!string.IsNullOrWhiteSpace(a.SyncNote))
+                {
+                    <span class="hint">（@a.SyncNote）</span>
+                }
                 <button class="btn-link" @onclick="() => Cancel(a.Id)">取消（工時保留）</button>
                 @if (a.SyncState == AssignmentSyncState.Pending)
                 {
@@ -129,9 +134,10 @@
     IReadOnlyList<Assignment> _weekAssignments = [];
     IReadOnlyList<Person> _people = [];
     HashSet<int> _issueNumbers = [];
+    Dictionary<int, string> _issueRepos = [];
     List<VendorGroup> _groups = [];
 
-    record Cell(Guid AssignmentId, DateOnly Date, string ProjectName, decimal Hours, bool Pending);
+    record Cell(Guid AssignmentId, DateOnly Date, string ProjectName, string ShortName, string Color, decimal Hours, bool Pending);
     record Row(Person Person, decimal Assigned, decimal Cap, bool Overload, List<Cell> Cells);
     class VendorGroup
     {
@@ -161,8 +167,9 @@
         var vendors = await Directory.VendorsAsync();
         var avail = await Directory.WeekAvailabilityAsync(_weekStart);
         var assignments = await Directory.AssignmentsAsync();
-        _weekAssignments = assignments.Where(x => x.Overlaps(_weekStart, _weekStart.AddDays(6)) && x.Status != AssignmentStatus.Cancelled).ToList();
-        var projects = _projects.ToDictionary(p => p.Id);
+        var weekEnd = _weekStart.AddDays(4);
+        _weekAssignments = assignments.Where(x => x.Overlaps(_weekStart, weekEnd) && x.Status != AssignmentStatus.Cancelled).ToList();
+        var projects = (await Directory.ProjectsAsync()).ToDictionary(p => p.Id);
         _groups = people.GroupBy(p => p.VendorId is Guid vid ? vendors.FirstOrDefault(v => v.Id == vid)?.Name ?? "外包" : "正職")
             .Select(g => new VendorGroup
             {
@@ -170,12 +177,48 @@
                 Rows = g.Select(p =>
                 {
                     var a = avail.FirstOrDefault(x => x.PersonId == p.Id);
-                    var cells = assignments.Where(x => x.PersonId == p.Id && x.Overlaps(_weekStart, _weekStart.AddDays(6)) && x.Status != AssignmentStatus.Cancelled)
-                        .Select(x => new Cell(x.Id, x.Start, projects.TryGetValue(x.ProjectId, out var pr) ? pr.Name : "", x.PlannedHoursPerWeek, x.SyncState == AssignmentSyncState.Pending)).ToList();
+                    var cells = ExpandCells(
+                        assignments.Where(x => x.PersonId == p.Id && x.Overlaps(_weekStart, weekEnd) && x.Status != AssignmentStatus.Cancelled),
+                        projects);
                     return new Row(p, a?.AssignedHours ?? 0, a?.CapHours ?? p.WeeklyHourCap, a?.Overload ?? false, cells);
                 }).ToList()
             }).ToList();
-        _issues = await Directory.UnassignedIssuesAsync();
+        _issues = await Directory.UnassignedIssuesAsync(_projectId == Guid.Empty ? null : _projectId);
+        _issueNumbers.RemoveWhere(n => _issues.All(i => i.Number != n));
+        foreach (var gone in _issueRepos.Keys.Where(k => !_issueNumbers.Contains(k)).ToList())
+            _issueRepos.Remove(gone);
+    }
+
+    List<Cell> ExpandCells(IEnumerable<Assignment> items, Dictionary<Guid, Project> projects)
+    {
+        var cells = new List<Cell>();
+        foreach (var x in items)
+        {
+            projects.TryGetValue(x.ProjectId, out var pr);
+            var name = pr?.Name ?? "";
+            var color = ProjectColor(x.ProjectId);
+            var shortName = name.Length <= 6 ? name : name[..6];
+            var weekdayCount = Days.Count(d => d >= x.Start && d <= x.End);
+            var daily = weekdayCount == 0 ? x.PlannedHoursPerWeek : decimal.Round(x.PlannedHoursPerWeek / weekdayCount, 1);
+            foreach (var day in Days.Where(d => d >= x.Start && d <= x.End))
+                cells.Add(new Cell(x.Id, day, name, shortName, color, daily, x.SyncState == AssignmentSyncState.Pending));
+        }
+        return cells;
+    }
+
+    static string ProjectColor(Guid id)
+    {
+        var hash = id.GetHashCode();
+        var hue = Math.Abs(hash) % 360;
+        return $"hsl({hue} 42% 42%)";
+    }
+
+    static bool CellOverload(Row row, DateOnly day)
+    {
+        if (row.Overload)
+            return true;
+        var dayHours = row.Cells.Where(c => c.Date == day).Sum(c => c.Hours);
+        return dayHours > row.Cap / 5m;
     }
 
     void Toggle(string key)
@@ -199,11 +242,13 @@
 
     async Task AssignAt(DateOnly start)
     {
-        var result = await Commands.AssignAsync(_personId, _projectId, start, start.AddDays(4), _hours, _role, _issueNumbers.ToList(), null, string.IsNullOrWhiteSpace(_force) ? null : _force);
+        var issues = _issueNumbers.Select(n => (_issueRepos.TryGetValue(n, out var r) ? r : "", n)).ToList();
+        var result = await Commands.AssignAsync(_personId, _projectId, start, start.AddDays(4), _hours, _role, issues, null, string.IsNullOrWhiteSpace(_force) ? null : _force);
         _message = result.Ok ? "已寫入派工單" : result.Message;
         if (result.Ok)
         {
             _issueNumbers.Clear();
+            _issueRepos.Clear();
             await Reload();
         }
     }
@@ -219,9 +264,17 @@
     {
         var on = e.Value is bool b && b || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
         if (on)
+        {
             _issueNumbers.Add(number);
+            var issue = _issues.FirstOrDefault(i => i.Number == number);
+            if (issue is not null)
+                _issueRepos[number] = issue.Repo;
+        }
         else
+        {
             _issueNumbers.Remove(number);
+            _issueRepos.Remove(number);
+        }
     }
 
     async Task Cancel(Guid id)

@@ -295,6 +295,23 @@ public sealed class ProjectCommands
         return Outcome.Success();
     }
 
+    public async Task<Outcome> SetMilestoneBonusPayableAsync(Guid projectId, Guid milestoneId, bool payable, CancellationToken ct = default)
+    {
+        var project = await _projects.GetAsync(projectId, ct);
+        if (project is null)
+            return Outcome.Fail(ErrorCodes.NotFound, Messages.NotFound("專案"));
+        var gate = _auth.Ensure(PlatformCapability.ManageProjects, projectId: projectId);
+        if (!gate.Ok)
+            return gate;
+        var milestone = project.Milestones.FirstOrDefault(m => m.Id == milestoneId);
+        if (milestone is null)
+            return Outcome.Fail(ErrorCodes.NotFound, Messages.NotFound("里程碑"));
+        milestone.MarkBonusPayable(payable);
+        project.AddJournal(_clock.UtcNow, Actor(), ProjectJournalKind.Note, payable ? $"里程碑 {milestone.Name} 標記獎金可發" : $"里程碑 {milestone.Name} 取消獎金可發");
+        await _uow.SaveChangesAsync(ct);
+        return Outcome.Success();
+    }
+
     public async Task<Outcome> AddRepoAsync(Guid projectId, string ownerRepo, CancellationToken ct = default)
     {
         var project = await _projects.GetAsync(projectId, ct);

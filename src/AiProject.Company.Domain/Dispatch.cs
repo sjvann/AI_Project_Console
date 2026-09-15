@@ -43,7 +43,10 @@ public sealed class Assignment : ITenantScoped
     public AssignmentSource Source { get; private set; }
     public AssignmentStatus Status { get; private set; }
     public AssignmentSyncState SyncState { get; private set; }
+    public string? SyncNote { get; private set; }
     public List<int> IssueNumbers { get; private set; } = [];
+    /// <summary>與 IssueNumbers 同序的 owner/repo；空字串表示建立時未帶倉。</summary>
+    public List<string> IssueRepos { get; private set; } = [];
     public Guid? MilestoneId { get; private set; }
     public string? ForceReason { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -104,13 +107,38 @@ public sealed class Assignment : ITenantScoped
     }
 
     public void AttachIssues(IEnumerable<int> numbers) =>
-        IssueNumbers = numbers.Where(n => n > 0).Distinct().ToList();
+        AttachIssues(numbers.Select(n => ("", n)));
+
+    public void AttachIssues(IEnumerable<(string Repo, int Number)> issues)
+    {
+        var list = issues
+            .Where(i => i.Number > 0)
+            .GroupBy(i => i.Number)
+            .Select(g => g.First())
+            .ToList();
+        IssueNumbers = list.Select(i => i.Number).ToList();
+        IssueRepos = list.Select(i => string.IsNullOrWhiteSpace(i.Repo) ? "" : i.Repo.Trim()).ToList();
+    }
 
     public void AttachMilestone(Guid? milestoneId) => MilestoneId = milestoneId;
 
-    public void MarkSynced() => SyncState = AssignmentSyncState.Synced;
+    public void MarkSynced()
+    {
+        SyncState = AssignmentSyncState.Synced;
+        SyncNote = null;
+    }
 
-    public void MarkPendingSync() => SyncState = AssignmentSyncState.Pending;
+    public void MarkPendingSync(string? note = null)
+    {
+        SyncState = AssignmentSyncState.Pending;
+        SyncNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+    }
+
+    public void MarkSyncNotRequired(string? note = null)
+    {
+        SyncState = AssignmentSyncState.NotRequired;
+        SyncNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+    }
 
     public void Cancel()
     {

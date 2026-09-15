@@ -132,6 +132,8 @@ public sealed class CompanyDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.TenantId);
             e.PrimitiveCollection(x => x.IssueNumbers);
+            e.PrimitiveCollection(x => x.IssueRepos);
+            e.Property(x => x.SyncNote).HasMaxLength(400);
         });
         model.Entity<Timesheet>(e =>
         {

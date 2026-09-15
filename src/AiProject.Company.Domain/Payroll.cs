@@ -73,6 +73,8 @@ public sealed class PayrollPeriod : ITenantScoped
         if (Status == PayrollPeriodStatus.Locked)
             throw new DomainException(ErrorCodes.PayrollLocked, Messages.PayrollLocked);
     }
+
+    public bool Overlaps(DateOnly start, DateOnly end) => Start <= end && End >= start;
 }
 
 public sealed class PayrollLine

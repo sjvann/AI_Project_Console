@@ -18,6 +18,7 @@ public static class CompanyHostStartup
         await EnsureTenantSchemaAsync(db);
         await EnsureDefaultTenantAsync(db);
         await EnsureReportingApiKeysAndProjectCodeAsync(db);
+        await EnsureAssignmentSyncColumnsAsync(db);
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsRepository>();
         await settings.GetAsync();
         var accounts = scope.ServiceProvider.GetRequiredService<IStaffAccountRepository>();
@@ -244,6 +245,16 @@ public static class CompanyHostStartup
             );
             """);
         await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_reporting_api_keys_KeyHash" ON reporting_api_keys ("KeyHash");""");
+    }
+
+    static async Task EnsureAssignmentSyncColumnsAsync(CompanyDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            await TryAlterAsync(db, "ALTER TABLE Assignments ADD COLUMN SyncNote TEXT NULL;");
+            return;
+        }
+        await TryAlterAsync(db, """ALTER TABLE "Assignments" ADD COLUMN IF NOT EXISTS "SyncNote" text NULL;""");
     }
 
     static async Task TryAlterAsync(CompanyDbContext db, string sql)

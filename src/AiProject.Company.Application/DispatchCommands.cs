@@ -61,7 +61,7 @@ public sealed class DispatchCommands
         DateOnly end,
         decimal hoursPerWeek,
         AssignmentRole role,
-        IEnumerable<int> issues,
+        IEnumerable<(string Repo, int Number)> issues,
         Guid? milestoneId,
         string? forceReason,
         CancellationToken ct = default)
@@ -89,20 +89,20 @@ public sealed class DispatchCommands
         var availability = _availability.ForWeek(person, weekStart, weekAssignments);
         var settings = await _settings.GetAsync(ct);
         var canForce = _auth.Can(PlatformCapability.ForceOverload);
-        var created = Assignment.Create(person, project, contract, start, end, hoursPerWeek, role, AssignmentSource.Manual, _staffing, availability, forceReason, canForce, settings.WriteBackGithubAssignee, _clock.UtcNow);
+        var issueList = issues.Where(i => i.Number > 0).ToList();
+        var source = issueList.Count > 0 ? AssignmentSource.FromIssue : AssignmentSource.Manual;
+        var created = Assignment.Create(person, project, contract, start, end, hoursPerWeek, role, source, _staffing, availability, forceReason, canForce, settings.WriteBackGithubAssignee, _clock.UtcNow);
         if (!created.Ok)
             return Outcome<Guid>.Fail(created.Code, created.Message);
         var assignment = created.Value!;
-        assignment.AttachIssues(issues);
+        assignment.AttachIssues(issueList);
         assignment.AttachMilestone(milestoneId);
         await _assignments.AddAsync(assignment, ct);
         await _uow.SaveChangesAsync(ct);
         if (!string.IsNullOrWhiteSpace(forceReason) && availability.AssignedHours + hoursPerWeek > availability.CapHours)
             await _audit.SensitiveChange(AuditActions.ForceOverload, "Assignment", assignment.Id, forceReason, availability, hoursPerWeek, ct);
-        if (settings.WriteBackGithubAssignee && !string.IsNullOrWhiteSpace(person.GitHubLogin))
+        if (settings.WriteBackGithubAssignee)
             await TryWriteBackAsync(assignment, project, person.GitHubLogin, ct);
-        else
-            await _uow.SaveChangesAsync(ct);
         return Outcome<Guid>.Success(assignment.Id);
     }
 
@@ -129,10 +129,12 @@ public sealed class DispatchCommands
             return gate;
         var project = await _projects.GetAsync(assignment.ProjectId, ct);
         var person = await _people.GetAsync(assignment.PersonId, ct);
-        if (project is null || person is null || string.IsNullOrWhiteSpace(person.GitHubLogin))
-            return Outcome.Fail(ErrorCodes.InvalidState, "沒有可寫回的 GitHub 帳號。");
+        if (project is null || person is null)
+            return Outcome.Fail(ErrorCodes.InvalidState, "找不到專案或人員。");
         await TryWriteBackAsync(assignment, project, person.GitHubLogin, ct);
-        return Outcome.Success();
+        return assignment.SyncState == AssignmentSyncState.Synced
+            ? Outcome.Success()
+            : Outcome.Fail(ErrorCodes.InvalidState, assignment.SyncNote ?? "寫回仍待同步。");
     }
 
     public async Task<IReadOnlyList<AssignmentSuggestion>> SuggestAsync(Guid projectId, DateOnly weekStart, CancellationToken ct = default)
@@ -143,26 +145,73 @@ public sealed class DispatchCommands
         return _suggester.Suggest(project, people, week, weekStart);
     }
 
-    async Task TryWriteBackAsync(Assignment assignment, Project project, string login, CancellationToken ct)
+    async Task TryWriteBackAsync(Assignment assignment, Project project, string? login, CancellationToken ct)
     {
-        if (assignment.IssueNumbers.Count == 0 || project.Repos.Count == 0)
+        if (assignment.IssueNumbers.Count == 0)
         {
-            assignment.MarkPendingSync();
+            assignment.MarkSyncNotRequired("未關聯 Issue，無需寫回 assignee。");
             await _uow.SaveChangesAsync(ct);
             return;
         }
-        var repo = project.Repos[0].OwnerRepo;
-        var allOk = true;
-        foreach (var number in assignment.IssueNumbers)
+        if (string.IsNullOrWhiteSpace(login))
         {
+            assignment.MarkPendingSync("人員未綁定 GitHub，無法寫回 assignee。");
+            await _uow.SaveChangesAsync(ct);
+            return;
+        }
+        if (project.Repos.Count == 0)
+        {
+            assignment.MarkPendingSync("專案尚未掛倉，無法寫回 assignee。");
+            await _uow.SaveChangesAsync(ct);
+            return;
+        }
+
+        var repoByNumber = await ResolveIssueReposAsync(assignment, project, ct);
+        var failures = new List<string>();
+        for (var i = 0; i < assignment.IssueNumbers.Count; i++)
+        {
+            var number = assignment.IssueNumbers[i];
+            if (!repoByNumber.TryGetValue(number, out var repo) || string.IsNullOrWhiteSpace(repo))
+            {
+                failures.Add($"#{number} 找不到所屬倉");
+                continue;
+            }
             var result = await _github.AddAssigneeAsync(repo, number, login, ct);
             if (!result.Ok)
-                allOk = false;
+                failures.Add($"#{number}@{repo}：{result.Message}");
         }
-        if (allOk)
+
+        if (failures.Count == 0)
             assignment.MarkSynced();
         else
-            assignment.MarkPendingSync();
+            assignment.MarkPendingSync(string.Join("；", failures.Take(3)));
         await _uow.SaveChangesAsync(ct);
+    }
+
+    async Task<Dictionary<int, string>> ResolveIssueReposAsync(Assignment assignment, Project project, CancellationToken ct)
+    {
+        var map = new Dictionary<int, string>();
+        for (var i = 0; i < assignment.IssueNumbers.Count; i++)
+        {
+            var number = assignment.IssueNumbers[i];
+            var stored = i < assignment.IssueRepos.Count ? assignment.IssueRepos[i] : "";
+            if (!string.IsNullOrWhiteSpace(stored))
+                map[number] = stored;
+        }
+
+        var missing = assignment.IssueNumbers.Where(n => !map.ContainsKey(n)).ToList();
+        if (missing.Count == 0)
+            return map;
+
+        foreach (var repo in project.Repos)
+        {
+            var open = await _github.ListOpenIssuesAsync(repo.OwnerRepo, ct);
+            foreach (var issue in open.Where(i => missing.Contains(i.Number)))
+                map[issue.Number] = string.IsNullOrWhiteSpace(issue.Repo) ? repo.OwnerRepo : issue.Repo;
+        }
+
+        foreach (var number in missing.Where(n => !map.ContainsKey(n)))
+            map[number] = project.Repos[0].OwnerRepo;
+        return map;
     }
 }

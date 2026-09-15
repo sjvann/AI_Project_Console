@@ -13,46 +13,123 @@
 else
 {
     <div class="toolbar">
-        <button class="btn-primary" @onclick="Export">匯出本月 CSV</button>
+        <label>年 <input type="number" @bind="_year" style="width:5rem;" /></label>
+        <label>月 <input type="number" @bind="_month" min="1" max="12" style="width:4rem;" /></label>
+        <button class="btn-sec" @onclick="ReloadMonth">重新整理</button>
+        <button class="btn-primary" @onclick="Export">匯出月報 CSV</button>
+        <button class="btn-sec" @onclick="ExportAlloc">匯出分攤明細</button>
+        @if (!string.IsNullOrEmpty(_csv) && _csvKind == "month")
+        {
+            <a class="btn-primary" href="@CsvDataUri(_csv)" download="@($"budget-{_year}{_month:00}.csv")">下載月報</a>
+        }
+        @if (!string.IsNullOrEmpty(_csv) && _csvKind == "alloc")
+        {
+            <a class="btn-primary" href="@CsvDataUri(_csv)" download="@($"allocation-{_year}{_month:00}.csv")">下載分攤</a>
+        }
     </div>
-    <p>@_message</p>
+    <p class="hint">@_message</p>
     @if (!string.IsNullOrEmpty(_csv))
     {
+        <h2>CSV 預覽</h2>
+        <p class="hint">表頭：@(_csvKind == "alloc" ? CostAllocationCsv.Header : BudgetCsv.Header)</p>
         <pre>@_csv</pre>
     }
     @foreach (var project in _projects)
     {
-        <section class="card">
-            <h2><a href="/projects/@project.Id#pnl">@project.Name</a></h2>
-            <button class="btn-sec" @onclick="() => Load(project.Id)">看損益</button>
-            @if (_pnl?.ProjectId == project.Id)
+        var pnl = _pnls.FirstOrDefault(p => p.ProjectId == project.Id);
+        <section class="card @(ToneClass(pnl?.Tone))">
+            <h2><a href="/projects/@project.Id#pnl">@project.Name</a> @(pnl is null ? "" : "· " + pnl.Tone)</h2>
+            @if (pnl is null)
             {
-                <p>收入計劃 @_pnl.Margin.PlannedRevenue / 實際 @_pnl.Margin.ActualRevenue</p>
-                <p>人事計劃 @_pnl.Margin.PlannedCost / 實際 @_pnl.Margin.ActualCost</p>
-                <p>其他費用計劃 @_pnl.Margin.OtherPlanned / 實際 @_pnl.Margin.OtherActual</p>
-                <p>毛利率 @MarginResult.Display(_pnl.Margin.ActualRate)（收入為 0 顯示 —）</p>
+                <p class="hint">載入中或無權限。</p>
+            }
+            else
+            {
+                <div class="pnl-grid">
+                    <div>
+                        <h3>計劃</h3>
+                        <p>收入 @pnl.Margin.PlannedRevenue</p>
+                        <p>人事 @pnl.Margin.PlannedCost</p>
+                        <p>其他 @pnl.Margin.OtherPlanned</p>
+                        <p>毛利 @pnl.Margin.PlannedMargin（@MarginResult.Display(pnl.Margin.PlannedRate)）</p>
+                    </div>
+                    <div>
+                        <h3>實際</h3>
+                        <p>收入 @pnl.Margin.ActualRevenue</p>
+                        <p>人事 @pnl.Margin.ActualCost</p>
+                        <p>其他 @pnl.Margin.OtherActual</p>
+                        <p>毛利 @pnl.Margin.ActualMargin（@MarginResult.Display(pnl.Margin.ActualRate)）</p>
+                    </div>
+                </div>
+                <p class="hint">核准工時 @pnl.ApprovedHours.ToString("0.##")@(pnl.ClientRateVisible ? $" · 對客戶費率 {pnl.ClientRate}" : "")</p>
             }
             <div class="toolbar">
+                <button class="btn-sec" @onclick="() => ShowAlloc(project.Id)">看分攤明細</button>
                 <input placeholder="其他費用名稱" @bind="_expLabel" />
                 <input type="number" placeholder="計劃" @bind="_expPlan" />
                 <input type="number" placeholder="實際" @bind="_expActual" />
                 <label class="check"><input type="checkbox" @bind="_expIsActual" /> 已發生</label>
                 <button class="btn-sec" @onclick="() => AddExpense(project.Id)">加一筆其他費用</button>
             </div>
+            @if (_allocProjectId == project.Id && _alloc.Count > 0)
+            {
+                <table class="grid">
+                    <thead><tr><th>人</th><th>小時</th><th>成本</th><th>佔比</th><th>口徑</th></tr></thead>
+                    <tbody>
+                    @foreach (var row in _alloc)
+                    {
+                        <tr>
+                            <td>@row.DisplayName</td>
+                            <td>@row.Hours.ToString("0.##")</td>
+                            <td>@row.CostAmount</td>
+                            <td>@row.WeightPercent.ToString("0.#")%</td>
+                            <td>@row.Source</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+            else if (_allocProjectId == project.Id)
+            {
+                <p class="empty">這個月還沒有可分攤的人事成本（檢查工時核准或「不參與專案分攤」標記）。</p>
+            }
         </section>
     }
 }
 
 @code {
     IReadOnlyList<Project> _projects = [];
-    ProjectPnl? _pnl;
+    List<ProjectPnl> _pnls = [];
+    IReadOnlyList<CostAllocationRow> _alloc = [];
+    Guid? _allocProjectId;
     string _csv = "";
+    string _csvKind = "";
     string _message = "";
     string _expLabel = "";
     decimal _expPlan;
     decimal _expActual;
     bool _expIsActual = true;
-    protected override async Task OnInitializedAsync() => _projects = await Directory.ProjectsAsync();
+    int _year = DateTime.Today.Year;
+    int _month = DateTime.Today.Month;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projects = await Directory.ProjectsAsync();
+        if (Gate.Can(PlatformCapability.ManageBudget))
+            await ReloadMonth();
+    }
+
+    async Task ReloadMonth()
+    {
+        _pnls = [];
+        foreach (var project in _projects.Where(p => !p.IsDeleted))
+        {
+            try { _pnls.Add(await Commands.PnlAsync(project.Id, _year, _month)); }
+            catch (DomainException ex) { _message = ex.Message; }
+        }
+        if (_allocProjectId is Guid pid)
+            await ShowAlloc(pid);
+    }
 
     async Task AddExpense(Guid projectId)
     {
@@ -61,19 +138,48 @@ else
         if (result.Ok)
         {
             _expLabel = "";
-            await Load(projectId);
+            await ReloadMonth();
         }
     }
-    async Task Load(Guid id)
+
+    async Task ShowAlloc(Guid projectId)
     {
-        try { _pnl = await Commands.PnlAsync(id); }
-        catch (DomainException ex) { _message = ex.Message; }
+        try
+        {
+            _allocProjectId = projectId;
+            _alloc = await Commands.AllocationForMonthAsync(_year, _month, projectId);
+        }
+        catch (DomainException ex)
+        {
+            _message = ex.Message;
+            _alloc = [];
+        }
     }
+
     async Task Export()
     {
-        var today = Directory.Today();
-        var result = await Commands.ExportMonthAsync(today.Year, today.Month);
+        var result = await Commands.ExportMonthAsync(_year, _month);
         _csv = result.Ok ? result.Value! : "";
-        _message = result.Ok ? "欄位固定，可給會計再加工。" : result.Message;
+        _csvKind = result.Ok ? "month" : "";
+        _message = result.Ok ? "月報欄位固定，可給會計再加工。" : result.Message;
     }
+
+    async Task ExportAlloc()
+    {
+        var result = await Commands.ExportAllocationAsync(_year, _month);
+        _csv = result.Ok ? result.Value! : "";
+        _csvKind = result.Ok ? "alloc" : "";
+        _message = result.Ok ? "分攤明細已產出（正職／時計）。" : result.Message;
+    }
+
+    static string ToneClass(string? tone) => tone switch
+    {
+        "紅" => "tone-red",
+        "黃" => "tone-yellow",
+        "綠" => "tone-green",
+        _ => "",
+    };
+
+    static string CsvDataUri(string csv) =>
+        "data:text/csv;charset=utf-8," + Uri.EscapeDataString(csv);
 }

@@ -25,9 +25,15 @@ else
     @foreach (var period in _periods)
     {
         <section class="card">
-            <h2>@period.Start – @period.End · @StatusLabel(period.Status)</h2>
+            <h2>
+                @period.Start – @period.End · @StatusLabel(period.Status)
+                @if (period.CorrectsPeriodId is Guid cid)
+                {
+                    <span class="hint">（更正自 @cid.ToString()[..8]）</span>
+                }
+            </h2>
             <table class="grid">
-                <thead><tr><th>人</th><th>類型</th><th>實發</th><th>成本</th><th>小時</th><th>專案</th><th>備註</th><th></th></tr></thead>
+                <thead><tr><th>人</th><th>所得類別</th><th>實發</th><th>成本</th><th>小時</th><th>專案</th><th>備註</th><th></th></tr></thead>
                 <tbody>
                     @foreach (var line in period.Lines)
                     {
@@ -54,9 +60,21 @@ else
             @if (Gate.Can(PlatformCapability.LockPayroll))
             {
                 <div class="toolbar">
-                    <input placeholder="鎖定原因" @bind="_reason" />
-                    <button class="btn-primary" @onclick="() => Lock(period.Id)">鎖定本月</button>
-                    <button class="btn-sec" @onclick="() => Export(period.Id)">匯出 CSV</button>
+                    @if (period.Status != PayrollPeriodStatus.Locked)
+                    {
+                        <button class="btn-sec" @onclick="() => Recalc(period.Id)">重新核算</button>
+                        <input placeholder="鎖定原因" @bind="_reason" />
+                        <button class="btn-primary" @onclick="() => Lock(period.Id)">鎖定本月</button>
+                    }
+                    else
+                    {
+                        <button class="btn-sec" @onclick="() => OpenCorrection(period)">開更正週期</button>
+                        <button class="btn-sec" @onclick="() => Export(period.Id)">匯出 CSV</button>
+                        @if (!string.IsNullOrEmpty(_csv) && _csvPeriodId == period.Id)
+                        {
+                            <a class="btn-primary" href="@CsvDataUri()" download="@($"payroll-{period.Start:yyyyMM}.csv")">下載 .csv</a>
+                        }
+                    }
                 </div>
             }
         </section>
@@ -65,6 +83,9 @@ else
     {
         <h2>待 PM 確認</h2>
         <p class="hint">PM 確認專案歸屬與狀態圖，不核定薪水金額。繪圖入口在控制台。</p>
+        <div class="toolbar">
+            <input placeholder="退回原因（必填）" @bind="_returnReason" style="min-width: 16rem;" />
+        </div>
         <table class="grid">
             <thead><tr><th>日</th><th>人</th><th>專案</th><th>小時</th><th>狀態圖</th><th></th></tr></thead>
             <tbody>
@@ -75,7 +96,24 @@ else
                         <td>@PersonName(sheet.PersonId)</td>
                         <td>@ProjectName(sheet.ProjectId)</td>
                         <td>@sheet.Hours</td>
-                        <td>@(sheet.Chart.Count == 0 ? "未繪" : sheet.Chart.Count + " 格")</td>
+                        <td>
+                            @if (sheet.Chart.Count == 0)
+                            {
+                                <span class="hint">未繪</span>
+                            }
+                            else
+                            {
+                                <ul class="chart-preview">
+                                    @foreach (var cell in sheet.Chart.OrderBy(c => c.Date))
+                                    {
+                                        <li>
+                                            <span class="chart-dot intensity-@cell.Intensity" title="強度 @cell.Intensity"></span>
+                                            @cell.Date @(string.IsNullOrWhiteSpace(cell.Note) ? "" : "· " + cell.Note)
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </td>
                         <td>
                             <button class="btn-primary" @onclick="() => Confirm(sheet.Id)">確認歸屬</button>
                             <button class="btn-sec" @onclick="() => Return(sheet.Id)">退回</button>
@@ -87,6 +125,8 @@ else
     }
     @if (!string.IsNullOrEmpty(_csv))
     {
+        <h2>CSV 預覽</h2>
+        <p class="hint">表頭：@PayrollCsv.Header（見薪資模組文件）</p>
         <pre>@_csv</pre>
     }
 }
@@ -95,8 +135,10 @@ else
     DateOnly _start = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     DateOnly _end;
     string _reason = "";
+    string _returnReason = "";
     string _message = "";
     string _csv = "";
+    Guid? _csvPeriodId;
     decimal _overtime;
     string _overtimeReason = "";
     IReadOnlyList<PayrollPeriod> _periods = [];
@@ -114,16 +156,19 @@ else
     {
         _people = (await Directory.PeopleAsync()).ToDictionary(p => p.Id, p => p.DisplayName);
         _projects = (await Directory.ProjectsAsync()).ToDictionary(p => p.Id, p => p.Name);
-        _periods = await Directory.PeriodsAsync();
-        _pending = (await Directory.TimesheetsAsync()).Where(t => t.Status == TimesheetStatus.PendingPm).ToList();
+        _periods = (await Directory.PeriodsAsync()).OrderByDescending(p => p.Start).ToList();
+        _pending = (await Directory.TimesheetsAsync()).Where(t => t.Status == TimesheetStatus.PendingPm).OrderBy(t => t.WorkDate).ToList();
     }
 
     string PersonName(Guid id) => _people.TryGetValue(id, out var n) ? n : "（已停用或不在名冊）";
     string ProjectName(Guid? id) => id is Guid pid && _projects.TryGetValue(pid, out var n) ? n : "";
+    string CsvDataUri() => "data:text/csv;charset=utf-8," + Uri.EscapeDataString(_csv);
+
     static string StatusLabel(PayrollPeriodStatus status) => status switch
     {
         PayrollPeriodStatus.Locked => "已鎖定",
         PayrollPeriodStatus.PmConfirming => "核算中",
+        PayrollPeriodStatus.Collecting => "收集中",
         _ => status.ToString(),
     };
     static string KindLabel(PayrollLineKind kind) => kind switch
@@ -142,6 +187,20 @@ else
         await Reload();
     }
 
+    async Task OpenCorrection(PayrollPeriod locked)
+    {
+        var result = await Commands.OpenAsync(locked.Start, locked.End, locked.Id);
+        _message = result.Ok ? "已開更正週期（原週期仍鎖定）。" : result.Message;
+        await Reload();
+    }
+
+    async Task Recalc(Guid id)
+    {
+        var result = await Commands.RecalculateAsync(id);
+        _message = result.Ok ? "已重新核算。" : result.Message;
+        await Reload();
+    }
+
     async Task Lock(Guid id)
     {
         var result = await Commands.LockAsync(id, _reason);
@@ -152,8 +211,9 @@ else
     async Task Export(Guid id)
     {
         var result = await Commands.ExportCsvAsync(id);
-        _csv = result.Ok ? result.Value! : result.Message;
-        _message = result.Ok ? "CSV 欄位固定，可給既有發薪。" : result.Message;
+        _csv = result.Ok ? result.Value! : "";
+        _csvPeriodId = result.Ok ? id : null;
+        _message = result.Ok ? "CSV 已就緒，可下載。" : result.Message;
     }
 
     async Task SetOvertime(Guid periodId, Guid lineId)
@@ -172,8 +232,15 @@ else
 
     async Task Return(Guid id)
     {
-        var result = await Timesheets.ReturnAsync(id, "狀態圖或專案歸屬不合理");
+        if (string.IsNullOrWhiteSpace(_returnReason))
+        {
+            _message = "退回必須填原因。";
+            return;
+        }
+        var result = await Timesheets.ReturnAsync(id, _returnReason);
         _message = result.Ok ? "已退回" : result.Message;
+        if (result.Ok)
+            _returnReason = "";
         await Reload();
     }
 }

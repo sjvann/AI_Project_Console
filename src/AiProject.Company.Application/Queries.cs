@@ -271,16 +271,26 @@ public sealed class DirectoryQueries
         return people.Select(p => _availability.ForWeek(p, weekStart, assignments)).ToList();
     }
 
-    public async Task<IReadOnlyList<GitHubIssueRef>> UnassignedIssuesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<GitHubIssueRef>> UnassignedIssuesAsync(Guid? projectId = null, CancellationToken ct = default)
     {
         var projects = await AssignableProjectsAsync(ct);
+        if (projectId is Guid pid)
+            projects = projects.Where(p => p.Id == pid).ToList();
+        var assignments = await _assignments.ListAsync(ct);
+        var takenByProject = assignments
+            .Where(a => a.Status != AssignmentStatus.Cancelled)
+            .GroupBy(a => a.ProjectId)
+            .ToDictionary(g => g.Key, g => g.SelectMany(a => a.IssueNumbers).ToHashSet());
         var list = new List<GitHubIssueRef>();
         foreach (var project in projects.Where(p => p.Status != ProjectStatus.Closed))
         {
+            takenByProject.TryGetValue(project.Id, out var taken);
+            taken ??= [];
             foreach (var repo in project.Repos)
             {
                 var issues = await _github.ListOpenIssuesAsync(repo.OwnerRepo, ct);
-                list.AddRange(issues.Where(i => string.IsNullOrWhiteSpace(i.AssigneeLogin)));
+                list.AddRange(issues.Where(i =>
+                    string.IsNullOrWhiteSpace(i.AssigneeLogin) && !taken.Contains(i.Number)));
             }
         }
         return list;

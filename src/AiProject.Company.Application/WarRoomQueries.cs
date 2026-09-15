@@ -81,7 +81,7 @@ public sealed class WarRoomQueries
             {
                 try
                 {
-                    var pnl = await _budget.PnlAsync(project.Id, ct);
+                    var pnl = await _budget.PnlAsync(project.Id, ct: ct);
                     margin = pnl.Margin.ActualRate;
                 }
                 catch (DomainException)

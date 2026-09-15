@@ -55,6 +55,20 @@ flowchart LR
 
 鎖定週期後匯出 CSV（人員、所得類別、金額、專案分攤備註）。格式文件化，方便接既有發薪或外包請款。不內建扣繳、勞健保、銀行檔。
 
+**CSV 表頭（固定，權威實作 `PayrollCsv.Header`）：**
+
+| 欄位 | 語意 |
+|------|------|
+| `personId` | 人員 Guid |
+| `displayName` | 顯示名 |
+| `kind` | 所得類別 enum：`Monthly` 月薪／`Hourly` 時計／`ProjectBonus` 專案獎金／`OvertimePending` 待核准加班 |
+| `amount` | 實發金額（`payable=false` 時仍可能有列，以 `payable` 為準） |
+| `costAmount` | 成本分攤金額（月薪分攤列常用） |
+| `projectId` | 專案 Guid（可空） |
+| `hours` | 核准小時 |
+| `payable` | 是否計入實發 |
+| `note` | 備註（含專案分攤說明） |
+
 ## 關鍵畫面
 
 - **我的工時（Web）：** 狀態、退回原因、補傳入口說明（實際繪圖仍在控制台）。
