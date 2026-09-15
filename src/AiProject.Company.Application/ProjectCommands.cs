@@ -257,6 +257,44 @@ public sealed class ProjectCommands
         return Outcome.Success();
     }
 
+    public async Task<Outcome> SetProjectCodeAsync(Guid id, string? projectCode, CancellationToken ct = default)
+    {
+        var project = await _projects.GetAsync(id, ct);
+        if (project is null)
+            return Outcome.Fail(ErrorCodes.NotFound, Messages.NotFound("專案"));
+        var gate = _auth.Ensure(PlatformCapability.ManageProjects, projectId: id);
+        if (!gate.Ok)
+            return gate;
+        try
+        {
+            project.SetProjectCode(projectCode);
+        }
+        catch (DomainException ex)
+        {
+            return Outcome.Fail(ex.Code, ex.Message);
+        }
+        await _uow.SaveChangesAsync(ct);
+        return Outcome.Success();
+    }
+
+    public async Task<Outcome> SetProjectStatusAsync(Guid id, ProjectStatus status, CancellationToken ct = default)
+    {
+        if (status == ProjectStatus.Closed)
+            return await CloseProjectAsync(id, ct);
+        var project = await _projects.GetAsync(id, ct);
+        if (project is null)
+            return Outcome.Fail(ErrorCodes.NotFound, Messages.NotFound("專案"));
+        var gate = _auth.Ensure(PlatformCapability.ManageProjects, projectId: id);
+        if (!gate.Ok)
+            return gate;
+        if (project.Status == ProjectStatus.Closed)
+            return Outcome.Fail(ErrorCodes.ProjectClosed, Messages.ProjectClosed);
+        project.SetStatus(status);
+        project.AddJournal(_clock.UtcNow, Actor(), ProjectJournalKind.Note, $"狀態改為 {status}");
+        await _uow.SaveChangesAsync(ct);
+        return Outcome.Success();
+    }
+
     public async Task<Outcome> AddRepoAsync(Guid projectId, string ownerRepo, CancellationToken ct = default)
     {
         var project = await _projects.GetAsync(projectId, ct);

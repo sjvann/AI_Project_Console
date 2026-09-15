@@ -13,13 +13,46 @@
 }
 <div class="toolbar">
     <input placeholder="顯示名" @bind="_newName" />
-    <select @bind="_newKind">
+    <select @bind="_newKind" @bind:after="OnKindChanged">
         <option value="@EmploymentKind.FullTime">正職</option>
         <option value="@EmploymentKind.Freelance">個人外包</option>
         <option value="@EmploymentKind.VendorStaff">承攬派駐</option>
     </select>
+    @if (_newKind == EmploymentKind.VendorStaff)
+    {
+        <select @bind="_newVendor">
+            <option value="">選外包商（必填）</option>
+            @foreach (var v in _vendors)
+            {
+                <option value="@v.Id">@v.Name</option>
+            }
+        </select>
+    }
     <button class="btn-primary" @onclick="Create">建立</button>
     <a href="/people/unmatched">待歸戶佇列</a>
+    <a href="/vendors">外包商</a>
+</div>
+<div class="toolbar">
+    <select @bind="_filterKind">
+        <option value="">全部類型</option>
+        <option value="@EmploymentKind.FullTime">正職</option>
+        <option value="@EmploymentKind.Freelance">個人外包</option>
+        <option value="@EmploymentKind.VendorStaff">承攬派駐</option>
+    </select>
+    <select @bind="_filterVendor">
+        <option value="">全部外包商</option>
+        @foreach (var v in _vendors)
+        {
+            <option value="@v.Id">@v.Name</option>
+        }
+    </select>
+    <select @bind="_filterStatus">
+        <option value="">全部狀態</option>
+        <option value="@PersonStatus.Active">在職</option>
+        <option value="@PersonStatus.Inactive">停用</option>
+        <option value="@PersonStatus.Blacklisted">黑名單</option>
+    </select>
+    <input placeholder="技能關鍵字" @bind="_filterSkill" />
 </div>
 <p class="hint">@_message</p>
 <table class="grid">
@@ -27,15 +60,15 @@
         <tr><th>名</th><th>類型</th><th>外包商</th><th>GitHub</th><th>本週已派／上限</th><th>狀態</th></tr>
     </thead>
     <tbody>
-        @foreach (var row in _rows)
+        @foreach (var row in FilteredRows())
         {
             <tr>
                 <td><a href="/people/@row.Person.Id">@row.Person.DisplayName</a></td>
-                <td>@row.Person.EmploymentKind</td>
+                <td>@row.Person.EmploymentKind.Display()</td>
                 <td>@(string.IsNullOrEmpty(row.VendorName) ? "—" : row.VendorName)</td>
                 <td>@(string.IsNullOrEmpty(row.Person.GitHubLogin) ? "—" : row.Person.GitHubLogin)</td>
                 <td>@row.Assigned / @row.Cap</td>
-                <td>@row.Person.Status</td>
+                <td>@row.Person.Status.Display()</td>
             </tr>
         }
     </tbody>
@@ -45,14 +78,21 @@
     Outcome _gate = Outcome.Success();
     string _newName = "";
     EmploymentKind _newKind = EmploymentKind.FullTime;
+    string _newVendor = "";
     string _message = "";
+    string _filterKind = "";
+    string _filterVendor = "";
+    string _filterStatus = "";
+    string _filterSkill = "";
+    IReadOnlyList<Vendor> _vendors = [];
     List<(Person Person, string VendorName, decimal Assigned, decimal Cap)> _rows = [];
 
     protected override async Task OnInitializedAsync()
     {
         _gate = Gate.Ensure(PlatformCapability.ManagePeople);
+        _vendors = await Directory.VendorsAsync();
         var people = await Directory.PeopleAsync();
-        var vendors = (await Directory.VendorsAsync()).ToDictionary(v => v.Id, v => v.Name);
+        var vendors = _vendors.ToDictionary(v => v.Id, v => v.Name);
         var week = Directory.Today().AddDays(-((int)Directory.Today().DayOfWeek + 6) % 7);
         var avail = await Directory.WeekAvailabilityAsync(week);
         _rows = people.Select(p =>
@@ -63,11 +103,47 @@
         }).ToList();
     }
 
+    void OnKindChanged()
+    {
+        if (_newKind != EmploymentKind.VendorStaff)
+            _newVendor = "";
+    }
+
+    IEnumerable<(Person Person, string VendorName, decimal Assigned, decimal Cap)> FilteredRows()
+    {
+        IEnumerable<(Person Person, string VendorName, decimal Assigned, decimal Cap)> q = _rows;
+        if (Enum.TryParse<EmploymentKind>(_filterKind, out var kind))
+            q = q.Where(r => r.Person.EmploymentKind == kind);
+        if (Guid.TryParse(_filterVendor, out var vendorId))
+            q = q.Where(r => r.Person.VendorId == vendorId);
+        if (Enum.TryParse<PersonStatus>(_filterStatus, out var status))
+            q = q.Where(r => r.Person.Status == status);
+        if (!string.IsNullOrWhiteSpace(_filterSkill))
+        {
+            var skill = _filterSkill.Trim();
+            q = q.Where(r => r.Person.Skills.Any(s => s.Contains(skill, StringComparison.OrdinalIgnoreCase)));
+        }
+        return q;
+    }
+
     async Task Create()
     {
-        var result = await Commands.CreatePersonAsync(_newName, _newKind, null);
+        Guid? vendorId = null;
+        if (_newKind == EmploymentKind.VendorStaff)
+        {
+            if (!Guid.TryParse(_newVendor, out var vid))
+            {
+                _message = "承攬派駐必須選外包商。";
+                return;
+            }
+            vendorId = vid;
+        }
+        var result = await Commands.CreatePersonAsync(_newName, _newKind, vendorId);
         _message = result.Ok ? "已建立" : result.Message;
         if (result.Ok)
+        {
+            _newName = "";
             await OnInitializedAsync();
+        }
     }
 }

@@ -141,6 +141,33 @@ public class DomainPolicyTests
     }
 
     [Fact]
+    public void Vendor_staff_requires_vendor_id()
+    {
+        Assert.Throws<DomainException>(() => Person.Create("派駐", EmploymentKind.VendorStaff, null, DateTimeOffset.UtcNow));
+        var person = Person.Create("派駐", EmploymentKind.VendorStaff, Guid.NewGuid(), DateTimeOffset.UtcNow);
+        Assert.Equal(EmploymentKind.VendorStaff, person.EmploymentKind);
+        Assert.NotNull(person.VendorId);
+    }
+
+    [Fact]
+    public void Timesheet_normalizes_contribution_types()
+    {
+        var sheet = Timesheet.Upload(
+            "slot-types",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new DateOnly(2026, 9, 1),
+            2,
+            [1],
+            [],
+            false,
+            null,
+            DateTimeOffset.UtcNow,
+            [" Code ", "code", "ISSUE", ""]);
+        Assert.Equal(["code", "issue"], sheet.ContributionTypes);
+    }
+
+    [Fact]
     public void Approved_timesheet_cannot_be_overwritten()
     {
         var sheet = Timesheet.Upload("slot-1", Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 1), 8, [], [], false, null, DateTimeOffset.UtcNow);

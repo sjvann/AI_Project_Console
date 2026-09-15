@@ -136,9 +136,29 @@ public class EstablishCommandTests
         Assert.Equal("需求", project.CurrentPhase(DateTimeOffset.UtcNow)?.Name);
     }
 
-    static (ProjectCommands Commands, MemoryClients Clients, MemoryContracts Contracts, MemoryProjects Projects) Harness()
+    [Fact]
+    public async Task Set_project_code_and_pause_status()
     {
-        var user = new StubUser { Role = PlatformRole.Pm, PersonId = Guid.NewGuid(), DisplayName = "周專案", UserName = "pm" };
+        var user = new StubUser { Role = PlatformRole.Delivery, PersonId = Guid.NewGuid(), DisplayName = "交付", UserName = "delivery" };
+        var (commands, clients, _, projects) = Harness(user);
+        var client = Client.Create("議約", ClientKind.External, "窗口", ClientLifecycle.Proposal);
+        await clients.AddAsync(client);
+        var created = await commands.EstablishAsync(Request(client.Id, "碼專案"));
+        Assert.True(created.Ok, created.Message);
+        var project = Assert.Single(projects.Items);
+
+        var code = await commands.SetProjectCodeAsync(project.Id, "ACME-99");
+        Assert.True(code.Ok, code.Message);
+        Assert.Equal("ACME-99", project.ProjectCode);
+
+        var paused = await commands.SetProjectStatusAsync(project.Id, ProjectStatus.Paused);
+        Assert.True(paused.Ok, paused.Message);
+        Assert.Equal(ProjectStatus.Paused, project.Status);
+    }
+
+    static (ProjectCommands Commands, MemoryClients Clients, MemoryContracts Contracts, MemoryProjects Projects) Harness(StubUser? user = null)
+    {
+        user ??= new StubUser { Role = PlatformRole.Pm, PersonId = Guid.NewGuid(), DisplayName = "周專案", UserName = "pm" };
         var clock = new MemoryClock();
         var audit = new AuditWriter(new MemoryAudit(), user, clock);
         var clients = new MemoryClients();

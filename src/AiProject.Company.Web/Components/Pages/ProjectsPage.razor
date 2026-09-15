@@ -6,6 +6,9 @@
 
 <PageTitle>專案</PageTitle>
 <h1>專案組合</h1>
+<div class="toolbar">
+    <label class="check"><input type="checkbox" @bind="_onlyActiveDelivery" @bind:after="ReloadAsync" /> 只看合約客戶進行中</label>
+</div>
 <table class="grid">
     <thead><tr><th>專案</th><th>客戶</th><th>來源</th><th>階段</th><th>目標日</th><th>狀態</th><th>健康</th></tr></thead>
     <tbody>
@@ -30,8 +33,11 @@
 
 @code {
     IReadOnlyList<Row> _rows = [];
+    bool _onlyActiveDelivery = true;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    async Task ReloadAsync()
     {
         var projects = await Directory.ProjectsAsync();
         var contracts = await Directory.ContractsAsync();
@@ -45,6 +51,10 @@
             Client? client = null;
             if (contract is not null)
                 clients.TryGetValue(contract.ClientId, out client);
+            if (_onlyActiveDelivery && client is not null && !client.CountsAsActiveDelivery)
+                continue;
+            if (_onlyActiveDelivery && p.Status is ProjectStatus.Closed or ProjectStatus.Draft)
+                continue;
             var catalog = await Docs.ReadAsync(p);
             var health = Health.Evaluate(p, today, 0, false, null, catalog.RequirementsReady);
             rows.Add(new Row(p, client?.Name ?? "—", client?.Lifecycle ?? ClientLifecycle.Active, health));

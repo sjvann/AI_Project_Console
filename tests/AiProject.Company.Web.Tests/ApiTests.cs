@@ -307,6 +307,32 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
         Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
     }
 
+    [Fact]
+    public async Task Upload_persists_contribution_types_and_issues()
+    {
+        var (personId, projectId) = await SeedInvitedWithCodeAndRepoAsync("CONTRIB-01", "acme/contrib");
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invited-token");
+        var res = await client.PostAsJsonAsync("/api/v1/timesheets/upload", new TimesheetUploadRequest
+        {
+            LocalSlotId = "slot-contrib",
+            ProjectId = projectId,
+            WorkDate = new DateOnly(2026, 9, 6),
+            Hours = 5,
+            IssueNumbers = [42, 43],
+            ContributionTypes = ["code", "issue"],
+        });
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
+
+        using var scope = _factory.Services.CreateScope();
+        var sheets = scope.ServiceProvider.GetRequiredService<ITimesheetRepository>();
+        var stored = (await sheets.ListForProjectAsync(projectId)).Single(t => t.LocalSlotId == "slot-contrib");
+        Assert.Equal(personId, stored.PersonId);
+        Assert.Equal([42, 43], stored.IssueNumbers);
+        Assert.Equal(["code", "issue"], stored.ContributionTypes);
+    }
+
     async Task SeedHrAsync()
     {
         using var scope = _factory.Services.CreateScope();

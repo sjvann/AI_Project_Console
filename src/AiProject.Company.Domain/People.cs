@@ -14,6 +14,25 @@ public enum PersonStatus
     Blacklisted = 2,
 }
 
+public static class PersonLabels
+{
+    public static string Display(this EmploymentKind kind) => kind switch
+    {
+        EmploymentKind.FullTime => "正職",
+        EmploymentKind.Freelance => "個人外包",
+        EmploymentKind.VendorStaff => "承攬派駐",
+        _ => kind.ToString(),
+    };
+
+    public static string Display(this PersonStatus status) => status switch
+    {
+        PersonStatus.Active => "在職",
+        PersonStatus.Inactive => "停用",
+        PersonStatus.Blacklisted => "黑名單",
+        _ => status.ToString(),
+    };
+}
+
 public sealed class Person : ITenantScoped
 {
     public Guid Id { get; private set; }

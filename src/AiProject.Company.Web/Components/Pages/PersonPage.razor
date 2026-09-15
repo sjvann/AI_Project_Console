@@ -12,9 +12,27 @@
 else
 {
     <h1>@_person.DisplayName</h1>
+    <p class="hint">@_person.EmploymentKind.Display() · @_person.Status.Display() @(string.IsNullOrEmpty(_vendorName) ? "" : "· " + _vendorName)</p>
     <div class="stack card">
         <label>顯示名 <input @bind="_name" /></label>
         <label>Email <input @bind="_email" /></label>
+        <label>部門 <input @bind="_department" /></label>
+        <label>直屬主管
+            <select @bind="_manager">
+                <option value="">無</option>
+                @foreach (var p in _managers)
+                {
+                    <option value="@p.Id">@p.DisplayName</option>
+                }
+            </select>
+        </label>
+        <label>狀態
+            <select @bind="_status">
+                <option value="@PersonStatus.Active">在職</option>
+                <option value="@PersonStatus.Inactive">停用</option>
+                <option value="@PersonStatus.Blacklisted">黑名單</option>
+            </select>
+        </label>
         <label>每週上限 <input type="number" @bind="_cap" /></label>
         <label>技能（逗號） <input @bind="_skills" /></label>
         <label>GitHub <input @bind="_github" /></label>
@@ -31,6 +49,46 @@ else
         <button class="btn-danger" @onclick="Deactivate">停用</button>
         <p>@_message</p>
     </div>
+    <section class="card">
+        <h2>目前派工</h2>
+        @if (_assignments.Count == 0)
+        {
+            <p class="empty">目前沒有進行中的派工。</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var a in _assignments)
+                {
+                    <li>@ProjectName(a.ProjectId) · @a.Role · @a.Start–@a.End · @a.PlannedHoursPerWeek 時/週</li>
+                }
+            </ul>
+        }
+    </section>
+    <section class="card">
+        <h2>近期工時</h2>
+        @if (_hours.Count == 0)
+        {
+            <p class="empty">還沒有上傳工時。</p>
+        }
+        else
+        {
+            <table class="grid">
+                <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th></tr></thead>
+                <tbody>
+                @foreach (var h in _hours)
+                {
+                    <tr>
+                        <td>@h.WorkDate</td>
+                        <td>@ProjectName(h.ProjectId)</td>
+                        <td>@h.Hours.ToString("0.##")</td>
+                        <td>@h.Status</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
 }
 
 @code {
@@ -38,6 +96,9 @@ else
     Person? _person;
     string _name = "";
     string _email = "";
+    string _department = "";
+    string _manager = "";
+    string _status = nameof(PersonStatus.Active);
     decimal _cap = 40;
     string _skills = "";
     string _github = "";
@@ -49,20 +110,51 @@ else
     string _hourly = "";
     string _reason = "";
     string _message = "";
+    string _vendorName = "";
     bool _showPay;
+    IReadOnlyList<Person> _managers = [];
+    IReadOnlyList<Assignment> _assignments = [];
+    IReadOnlyList<Timesheet> _hours = [];
+    Dictionary<Guid, string> _projectNames = [];
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    async Task ReloadAsync()
     {
         _person = await Directory.PersonAsync(Id);
         if (_person is null)
             return;
         _name = _person.DisplayName;
         _email = _person.Email ?? "";
+        _department = _person.Department ?? "";
+        _manager = _person.ManagerPersonId?.ToString() ?? "";
+        _status = _person.Status.ToString();
         _cap = _person.WeeklyHourCap;
         _skills = string.Join(",", _person.Skills);
         _github = _person.GitHubLogin ?? "";
         _exempt = _person.CostAllocationExempt;
+        var people = await Directory.PeopleAsync();
+        _managers = people.Where(p => p.Id != Id && p.Status == PersonStatus.Active).ToList();
+        if (_person.VendorId is Guid vid)
+        {
+            var vendors = await Directory.VendorsAsync();
+            _vendorName = vendors.FirstOrDefault(v => v.Id == vid)?.Name ?? "";
+        }
+        var projects = (await Directory.ProjectsAsync()).ToDictionary(p => p.Id, p => p.Name);
+        _projectNames = projects;
+        var today = Directory.Today();
+        _assignments = (await Directory.AssignmentsAsync())
+            .Where(a => a.PersonId == Id && a.Status != AssignmentStatus.Cancelled && a.End >= today)
+            .OrderBy(a => a.Start)
+            .ToList();
+        _hours = (await Directory.TimesheetsAsync())
+            .Where(t => t.PersonId == Id)
+            .OrderByDescending(t => t.WorkDate)
+            .Take(20)
+            .ToList();
     }
+
+    string ProjectName(Guid id) => _projectNames.TryGetValue(id, out var n) ? n : id.ToString()[..8];
 
     void Reveal()
     {
@@ -81,19 +173,27 @@ else
         var ranges = string.IsNullOrWhiteSpace(_unavailReason)
             ? _person!.Unavailable
             : _person!.Unavailable.Append(new UnavailableRange(_unavailStart, _unavailEnd, _unavailReason)).ToList();
-        var result = await Commands.UpdatePersonAsync(Id, _name, _email, _person!.Department, _person.ManagerPersonId, _cap, _skills.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), _person.Status, _exempt, ranges, salary, hourly, _reason);
+        var managerId = Guid.TryParse(_manager, out var mid) ? mid : (Guid?)null;
+        var status = Enum.TryParse<PersonStatus>(_status, out var st) ? st : _person.Status;
+        var result = await Commands.UpdatePersonAsync(Id, _name, _email, _department, managerId, _cap, _skills.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), status, _exempt, ranges, salary, hourly, _reason);
         _message = result.Ok ? "已儲存" : result.Message;
+        if (result.Ok)
+            await ReloadAsync();
     }
 
     async Task Bind()
     {
         var result = await Commands.BindGitHubAsync(Id, _github);
         _message = result.Ok ? "已綁定" : result.Message;
+        if (result.Ok)
+            await ReloadAsync();
     }
 
     async Task Deactivate()
     {
         var result = await Commands.DeactivateAsync(Id);
         _message = result.Ok ? "已停用，不能新派工；歷史工時仍可查。" : result.Message;
+        if (result.Ok)
+            await ReloadAsync();
     }
 }

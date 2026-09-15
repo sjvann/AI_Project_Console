@@ -11,11 +11,35 @@
     <button class="btn-primary" @onclick="Create">建立</button>
 </div>
 <p>@_message</p>
-@foreach (var vendor in _vendors)
+@foreach (var card in _cards)
 {
+    var vendor = card.Vendor;
     <section class="card">
         <h2>@vendor.Name</h2>
-        <p>@vendor.TaxId · @vendor.ValidFrom – @vendor.ValidTo</p>
+        <div class="stack">
+            <label>名稱 <input @bind="card.Name" /></label>
+            <label>統編 <input @bind="card.TaxId" /></label>
+            <label>有效起 <input type="date" @bind="card.From" /></label>
+            <label>有效迄 <input type="date" @bind="card.To" /></label>
+            <label>預設費率 <input type="number" @bind="card.DefaultRate" /></label>
+            <label>改費率原因 <input @bind="card.RateReason" /></label>
+            <button class="btn-sec" @onclick="() => Save(card)">儲存</button>
+        </div>
+        <h3>派駐名單</h3>
+        @if (card.Staff.Count == 0)
+        {
+            <p class="empty">尚無派駐人員。</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var p in card.Staff)
+                {
+                    <li><a href="/people/@p.Id">@p.DisplayName</a> · @p.Status.Display()</li>
+                }
+            </ul>
+        }
+        <p class="hint">本月對帳小時（非退回）：@card.MonthHours.ToString("0.##") · 有效專案授權數：@card.ProjectCount</p>
     </section>
 }
 
@@ -23,13 +47,74 @@
     string _name = "";
     string _tax = "";
     string _message = "";
-    IReadOnlyList<Vendor> _vendors = [];
-    protected override async Task OnInitializedAsync() => _vendors = await Directory.VendorsAsync();
+    List<VendorCard> _cards = [];
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    async Task ReloadAsync()
+    {
+        var vendors = await Directory.VendorsAsync();
+        var people = await Directory.PeopleAsync();
+        var contracts = await Directory.ContractsAsync();
+        var sheets = await Directory.TimesheetsAsync();
+        var today = Directory.Today();
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        _cards = vendors.Select(v =>
+        {
+            var staff = people.Where(p => p.VendorId == v.Id).ToList();
+            var staffIds = staff.Select(p => p.Id).ToHashSet();
+            var hours = sheets
+                .Where(t => staffIds.Contains(t.PersonId) && t.Status != TimesheetStatus.Returned && t.WorkDate >= monthStart && t.WorkDate <= monthEnd)
+                .Sum(t => t.Hours);
+            var projectCount = contracts.Count(c => c.AuthorizedVendorIds.Contains(v.Id));
+            return new VendorCard
+            {
+                Vendor = v,
+                Name = v.Name,
+                TaxId = v.TaxId ?? "",
+                From = v.ValidFrom,
+                To = v.ValidTo ?? today.AddYears(1),
+                Staff = staff,
+                MonthHours = hours,
+                ProjectCount = projectCount,
+            };
+        }).ToList();
+    }
+
     async Task Create()
     {
         var today = Directory.Today();
         var result = await Commands.CreateVendorAsync(_name, _tax, today, today.AddYears(1));
         _message = result.Ok ? "已建立" : result.Message;
-        _vendors = await Directory.VendorsAsync();
+        if (result.Ok)
+        {
+            _name = "";
+            _tax = "";
+            await ReloadAsync();
+        }
+    }
+
+    async Task Save(VendorCard card)
+    {
+        decimal? rate = card.DefaultRate > 0 ? card.DefaultRate : null;
+        var result = await Commands.UpdateVendorAsync(card.Vendor.Id, card.Name, card.TaxId, card.Vendor.WindowPersonId, card.From, card.To, rate, card.RateReason);
+        _message = result.Ok ? $"已更新 {card.Name}" : result.Message;
+        if (result.Ok)
+            await ReloadAsync();
+    }
+
+    sealed class VendorCard
+    {
+        public required Vendor Vendor { get; init; }
+        public string Name { get; set; } = "";
+        public string TaxId { get; set; } = "";
+        public DateOnly From { get; set; }
+        public DateOnly To { get; set; }
+        public decimal DefaultRate { get; set; }
+        public string RateReason { get; set; } = "";
+        public IReadOnlyList<Person> Staff { get; init; } = [];
+        public decimal MonthHours { get; init; }
+        public int ProjectCount { get; init; }
     }
 }

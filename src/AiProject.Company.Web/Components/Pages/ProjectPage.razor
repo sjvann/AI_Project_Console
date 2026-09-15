@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @inject ProjectCommands Commands
 @inject DirectoryQueries Directory
+@inject ContributionQueries Contributions
 @inject DispatchCommands Dispatch
 @inject BudgetCommands Budget
 @inject IAuthorizationGate Gate
@@ -85,6 +86,81 @@ else
             }
         </div>
     </section>
+    <section class="card" id="project-meta">
+        <h2>專案主檔</h2>
+        <div class="stack">
+            <label>名稱 <input @bind="_editName" /></label>
+            <label>專案碼 <input @bind="_editCode" placeholder="上傳可用 projectCode" /></label>
+            <label>開始 <input type="date" @bind="_editStart" /></label>
+            <label>目標結束 <input type="date" @bind="_editTarget" /></label>
+            <label>工作區路徑 <input @bind="_editWorkspace" /></label>
+            <label>狀態
+                <select @bind="_editStatus">
+                    <option value="@ProjectStatus.Draft">立案</option>
+                    <option value="@ProjectStatus.Active">進行</option>
+                    <option value="@ProjectStatus.Paused">暫停</option>
+                    <option value="@ProjectStatus.Acceptance">驗收</option>
+                    <option value="@ProjectStatus.Closed">結案</option>
+                </select>
+            </label>
+            <label class="check"><input type="checkbox" @bind="_editExcludeMargin" /> 不計入毛利 KPI</label>
+            <div class="toolbar">
+                <button class="btn-primary" @onclick="SaveMeta">儲存主檔</button>
+            </div>
+        </div>
+    </section>
+    <section class="card" id="contrib">
+        <h2>專案貢獻</h2>
+        @if (_contrib is null)
+        {
+            <p class="hint">載入中或無權限。</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(_contrib.EmptyHint))
+        {
+            <p class="empty">@_contrib.EmptyHint</p>
+        }
+        else
+        {
+            <p>
+                合計 @_contrib.TotalHours.ToString("0.##") 小時 · @_contrib.ContributorCount 人
+                @if (_contrib.From is DateOnly from && _contrib.To is DateOnly to)
+                {
+                    <span class="hint">· @from – @to</span>
+                }
+            </p>
+            @if (_contrib.TypeTotals.Count > 0)
+            {
+                <p class="hint">類型：@string.Join("、", _contrib.TypeTotals.Select(t => $"{t.Type}×{t.Count}"))</p>
+            }
+            <table class="grid">
+                <thead>
+                    <tr>
+                        <th>誰</th>
+                        <th>工時</th>
+                        <th>Issue</th>
+                        <th>類型</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _contrib.Contributors)
+                    {
+                        <tr>
+                            <td>
+                                @row.DisplayName
+                                @if (!string.IsNullOrWhiteSpace(row.GitHubKey))
+                                {
+                                    <span class="hint"> @row.GitHubKey</span>
+                                }
+                            </td>
+                            <td>@row.Hours.ToString("0.##")（@row.SlotCount 筆）</td>
+                            <td>@(row.IssueNumbers.Count == 0 ? "—" : string.Join(", ", row.IssueNumbers.Select(n => "#" + n)))</td>
+                            <td>@(row.Types.Count == 0 ? "—" : string.Join("、", row.Types.Select(t => $"{t.Type}×{t.Count}")))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
     <div class="split">
         <section>
             <h2>甘特</h2>
@@ -114,6 +190,18 @@ else
                             }
                         </div>
                         <span>計劃 @bar.Start – @bar.End @(bar.ActualStart is DateOnly a ? $"實際 {a}" : "尚未進入") @(bar.ActualEnd is DateOnly z ? $"～ {z}" : "") @(string.IsNullOrWhiteSpace(bar.DependsOnName) ? "" : $"完成才開始：{bar.DependsOnName}") @(bar.Overdue ? "逾期" : "")</span>
+                    </div>
+                }
+                @foreach (var a in _gantt?.Assignments ?? [])
+                {
+                    var plan = BarPct(a.Start, a.End);
+                    <div class="gantt-row">
+                        <span>@PersonName(a.PersonId) · @a.Role</span>
+                        <div class="gantt-track">
+                            <span class="gantt-today" style="left: @TodayPct()%"></span>
+                            <span class="gantt-bar is-actual" style="left: @plan.Left%; width: @plan.Width%"></span>
+                        </div>
+                        <span>@a.Start – @a.End · @a.PlannedHoursPerWeek 時/週</span>
                     </div>
                 }
             </div>
@@ -199,6 +287,7 @@ else
     GanttView? _gantt;
     ProjectPnl? _pnl;
     ProjectDocsCatalog? _docs;
+    ProjectContributionView? _contrib;
     IReadOnlyList<string> _repos = [];
     string _repo = "";
     string _msName = "";
@@ -206,6 +295,13 @@ else
     decimal _msAmount;
     string _msDepends = "";
     string _note = "";
+    string _editName = "";
+    string _editCode = "";
+    DateOnly _editStart = DateOnly.FromDateTime(DateTime.Today);
+    DateOnly _editTarget = DateOnly.FromDateTime(DateTime.Today.AddMonths(3));
+    string _editWorkspace = "";
+    string _editStatus = nameof(ProjectStatus.Active);
+    bool _editExcludeMargin;
     IReadOnlyList<Person> _people = [];
     string _message = "";
 
@@ -214,13 +310,57 @@ else
         _project = await Directory.ProjectAsync(Id);
         if (_project is null)
             return;
+        BindMeta(_project);
         _gantt = await Commands.GanttAsync(Id);
         _repos = await Commands.ListGithubReposAsync();
         _repo = _repos.FirstOrDefault() ?? "";
         _docs = await Commands.DocsCatalogAsync(Id);
         _people = await Directory.PeopleAsync();
+        _contrib = await Contributions.ForProjectAsync(Id);
         try { _pnl = await Budget.PnlAsync(Id); }
         catch (DomainException) { _pnl = null; }
+    }
+
+    void BindMeta(Project project)
+    {
+        _editName = project.Name;
+        _editCode = project.ProjectCode ?? "";
+        _editStart = project.Start;
+        _editTarget = project.TargetEnd;
+        _editWorkspace = project.WorkspacePath ?? "";
+        _editStatus = project.Status.ToString();
+        _editExcludeMargin = project.ExcludeFromMarginKpi;
+    }
+
+    async Task SaveMeta()
+    {
+        var method = _project!.RevenueMethod;
+        var meta = await Commands.UpdateProjectAsync(Id, _editName, _editStart, _editTarget, method, _editWorkspace, _editExcludeMargin, null);
+        if (!meta.Ok)
+        {
+            _message = meta.Message;
+            return;
+        }
+        var code = await Commands.SetProjectCodeAsync(Id, _editCode);
+        if (!code.Ok)
+        {
+            _message = code.Message;
+            return;
+        }
+        if (Enum.TryParse<ProjectStatus>(_editStatus, out var status) && status != _project.Status)
+        {
+            var st = await Commands.SetProjectStatusAsync(Id, status);
+            if (!st.Ok)
+            {
+                _message = st.Message;
+                return;
+            }
+        }
+        _message = "已儲存主檔";
+        _project = await Directory.ProjectAsync(Id);
+        if (_project is not null)
+            BindMeta(_project);
+        _gantt = await Commands.GanttAsync(Id);
     }
 
     async Task AddMilestone()
@@ -281,7 +421,10 @@ else
     (DateOnly Min, int Span) GanttRange()
     {
         var today = _gantt?.Today ?? DateOnly.FromDateTime(DateTime.Today);
-        var dates = (_gantt?.Bars ?? []).SelectMany(b => new[] { b.Start, b.End }).DefaultIfEmpty(today).ToList();
+        var dates = (_gantt?.Bars ?? []).SelectMany(b => new[] { b.Start, b.End }).ToList();
+        dates.AddRange((_gantt?.Assignments ?? []).SelectMany(a => new[] { a.Start, a.End }));
+        if (dates.Count == 0)
+            dates.Add(today);
         dates.Add(today);
         var min = dates.Min();
         var max = dates.Max();

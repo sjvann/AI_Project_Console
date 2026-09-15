@@ -338,12 +338,15 @@ public sealed partial class ConsoleSession
                     .Where(c => string.Equals(c.ProjectKey, session.ProjectKey, StringComparison.OrdinalIgnoreCase))
                     .Select(c => new StatusChartCellDto { ProjectId = projectId.Value, Date = c.Date, Intensity = c.Intensity, Note = c.Note })
                     .ToList();
+                var (issueNumbers, contributionTypes) = ContributionPayloadFor(session.ProjectKey);
                 var request = new TimesheetUploadRequest
                 {
                     LocalSlotId = session.Id,
                     ProjectId = projectId.Value,
                     WorkDate = date,
                     Hours = decimal.Round(hours, 2),
+                    IssueNumbers = issueNumbers,
+                    ContributionTypes = contributionTypes,
                     Chart = chart,
                 };
                 await _company.UploadAsync(dest.BaseUrl, request, token);
@@ -376,6 +379,22 @@ public sealed partial class ConsoleSession
     {
         var (code, output, _) = await GhCli.RunCaptureAsync(["auth", "token"], timeoutMs: 15_000);
         return code == 0 ? output.Trim() : "";
+    }
+
+    (List<int> Issues, List<string> Types) ContributionPayloadFor(string projectKey)
+    {
+        var issues = new List<int>();
+        var types = new List<string>();
+        var project = WorkTimesheet?.Projects.FirstOrDefault(p =>
+            string.Equals(p.Key, projectKey, StringComparison.OrdinalIgnoreCase));
+        if (project is null)
+            return (issues, types);
+        issues.AddRange(project.Issues.Concat(project.PullRequests).Select(i => i.Number).Where(n => n > 0).Distinct());
+        if (project.Issues.Count > 0)
+            types.Add("issue");
+        if (project.PullRequests.Count > 0)
+            types.Add("code");
+        return (issues, types);
     }
 
     static ReportingDestination CloneDest(ReportingDestination d) => new()
