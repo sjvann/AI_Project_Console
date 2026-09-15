@@ -1,0 +1,227 @@
+@page "/cases/{Id:guid}"
+@rendermode InteractiveServer
+@inject AnalysisCaseCommands Cases
+
+<PageTitle>分析案</PageTitle>
+@if (_case is null)
+{
+    <p>找不到這則分析案。</p>
+}
+else
+{
+    <h1>@_case.Title</h1>
+    <p class="hint">狀態：@_case.StatusLabel · 建立 @_case.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</p>
+    <section class="card">
+        <h2>概念</h2>
+        <pre class="concept">@_case.ConceptText</pre>
+    </section>
+    <section class="card">
+        <h2>假設（必須可見）</h2>
+        <ul>
+            @foreach (var a in _case.Assumptions)
+            {
+                <li>@a</li>
+            }
+        </ul>
+    </section>
+    <section class="card">
+        <h2>待決問題</h2>
+        @if (_case.OpenQuestions.Count == 0)
+        {
+            <p class="empty">尚未列出待決。</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var q in _case.OpenQuestions)
+                {
+                    <li>@q</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card">
+        <h2>產出需求文件（B2）</h2>
+        <p class="hint">可先補干係人／範圍（一行一條）；空白則用預設模板。假設與待決會寫進產物。</p>
+        <div class="stack">
+            <label>干係人
+                <textarea rows="2" @bind="_stakeholders" placeholder="需求窗口&#10;PM"></textarea>
+            </label>
+            <label>範圍
+                <textarea rows="2" @bind="_inScope"></textarea>
+            </label>
+            <label>非範圍
+                <textarea rows="2" @bind="_outScope"></textarea>
+            </label>
+            <label>驗收條件
+                <textarea rows="2" @bind="_acceptance"></textarea>
+            </label>
+            <button class="btn-primary" @onclick="ProduceReq" disabled="@(_case.Status == AnalysisCaseStatus.Issues)">產出需求文件</button>
+        </div>
+        @if (_case.Requirements is not null)
+        {
+            <p class="hint" style="margin-top:10px">
+                已產出 ·
+                <a href="/api/cases/@Id/requirements.md" target="_blank">Markdown</a> ·
+                <a href="/api/cases/@Id/requirements.json" target="_blank">JSON</a>
+            </p>
+            <details>
+                <summary>預覽需求 Markdown</summary>
+                <pre class="concept">@_case.Requirements.ToMarkdown()</pre>
+            </details>
+        }
+    </section>
+
+    <section class="card">
+        <h2>產出規格摘要（B2）</h2>
+        <p class="hint">須先有需求文件。每條規格追溯需求 ID。</p>
+        <button class="btn-primary" @onclick="ProduceSpec" disabled="@(_case.Requirements is null || _case.Status == AnalysisCaseStatus.Issues)">產出規格</button>
+        @if (_case.Spec is not null)
+        {
+            <p class="hint" style="margin-top:10px">
+                已產出 ·
+                <a href="/api/cases/@Id/spec.md" target="_blank">Markdown</a> ·
+                <a href="/api/cases/@Id/spec.json" target="_blank">JSON</a>
+            </p>
+            <details>
+                <summary>預覽規格 Markdown</summary>
+                <pre class="concept">@_case.Spec.ToMarkdown()</pre>
+            </details>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Issue 包與指派（B3）</h2>
+        <p class="hint">
+            須先有規格。預設 @(Cases.GitHubDryRun ? "dry-run（不打真實 GitHub）" : "真實寫入 GitHub")。
+            工程師在控制台經 GitHub 任務面看得到指派（既有 Issue／assignee 路徑）。
+        </p>
+        <div class="stack">
+            <label>目標倉 owner/repo
+                <input @bind="_repo" placeholder="@(string.IsNullOrWhiteSpace(Cases.DefaultGitHubRepo) ? "org/repo" : Cases.DefaultGitHubRepo)" />
+            </label>
+            <label>指派 GitHub login（功能／追蹤類 Issue）
+                <input @bind="_assignee" placeholder="octocat" />
+            </label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn-sec" @onclick="PrepareIssues" disabled="@(_case.Spec is null || _case.Status == AnalysisCaseStatus.Issues)">組 Issue 包</button>
+                <button class="btn-primary" @onclick="PublishIssues" disabled="@(_case.Spec is null || _case.Status == AnalysisCaseStatus.Issues)">發布 Issue</button>
+            </div>
+        </div>
+        @if (_case.Issues is not null)
+        {
+            <p class="hint" style="margin-top:10px">
+                草稿 @_case.Issues.Drafts.Count 則 ·
+                <a href="/api/cases/@Id/issues.md" target="_blank">Markdown</a> ·
+                <a href="/api/cases/@Id/issues.json" target="_blank">JSON</a>
+            </p>
+            @if (_case.Issues.Published.Count > 0)
+            {
+                <ul>
+                    @foreach (var p in _case.Issues.Published)
+                    {
+                        <li>
+                            <strong>@p.LocalId</strong>
+                            @(p.Number is { } n ? $"#{n}" : "")
+                            · @(string.IsNullOrWhiteSpace(p.Assignee) ? "未指派" : p.Assignee)
+                            @(p.DryRun ? " · dry-run" : "")
+                            @if (!string.IsNullOrWhiteSpace(p.HtmlUrl))
+                            {
+                                <text> · </text><a href="@p.HtmlUrl" target="_blank">開啟</a>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <details>
+                    <summary>預覽 Issue 草稿</summary>
+                    <pre class="concept">@_case.Issues.ToMarkdown()</pre>
+                </details>
+            }
+        }
+    </section>
+
+    <p class="hint">@_message</p>
+    <p><a href="/cases">回列表</a></p>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    AnalysisCase? _case;
+    string _stakeholders = "";
+    string _inScope = "";
+    string _outScope = "";
+    string _acceptance = "";
+    string _repo = "";
+    string _assignee = "";
+    string _message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _case = await Cases.GetAsync(Id);
+        _repo = Cases.DefaultGitHubRepo;
+    }
+
+    async Task ProduceReq()
+    {
+        try
+        {
+            await Cases.ProduceRequirementsAsync(Id, Lines(_stakeholders), Lines(_inScope), Lines(_outScope), Lines(_acceptance));
+            _case = await Cases.GetAsync(Id);
+            _message = "需求文件已產出。";
+        }
+        catch (AnalysisException ex)
+        {
+            _message = ex.Message;
+        }
+    }
+
+    async Task ProduceSpec()
+    {
+        try
+        {
+            await Cases.ProduceSpecAsync(Id);
+            _case = await Cases.GetAsync(Id);
+            _message = "規格摘要已產出。";
+        }
+        catch (AnalysisException ex)
+        {
+            _message = ex.Message;
+        }
+    }
+
+    async Task PrepareIssues()
+    {
+        try
+        {
+            await Cases.PrepareIssuesAsync(Id, string.IsNullOrWhiteSpace(_repo) ? null : _repo);
+            _case = await Cases.GetAsync(Id);
+            _message = $"Issue 包已組好（{_case!.Issues!.Drafts.Count} 則草稿）。";
+        }
+        catch (AnalysisException ex)
+        {
+            _message = ex.Message;
+        }
+    }
+
+    async Task PublishIssues()
+    {
+        try
+        {
+            await Cases.PublishIssuesAsync(Id, string.IsNullOrWhiteSpace(_assignee) ? null : _assignee, string.IsNullOrWhiteSpace(_repo) ? null : _repo);
+            _case = await Cases.GetAsync(Id);
+            var dry = _case!.Issues!.Published.Any(p => p.DryRun) ? "（dry-run）" : "";
+            _message = $"已發布 {_case.Issues.Published.Count} 則 Issue{dry}。工程師可在 GitHub／控制台任務面看到指派。";
+        }
+        catch (AnalysisException ex)
+        {
+            _message = ex.Message;
+        }
+    }
+
+    static IEnumerable<string> Lines(string raw) =>
+        raw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}

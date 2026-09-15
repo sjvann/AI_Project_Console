@@ -1,0 +1,21 @@
+# 系統分析輔助自架（記憶體開案／產物；可選 GitHub Issue）
+# 用法（倉庫根）：
+#   cd deploy/analysis
+#   copy .env.example .env
+#   docker compose up -d --build
+# 健康檢查：http://localhost:5200/health
+
+services:
+  analysis:
+    build:
+      context: ../..
+      dockerfile: deploy/analysis/Dockerfile
+    image: ${ANALYSIS_IMAGE:-aiproject-analysis:local}
+    ports:
+      - "${ANALYSIS_PORT:-5200}:8080"
+    environment:
+      Hosting__Mode: ${HOSTING_MODE:-SelfHosted}
+      ASPNETCORE_ENVIRONMENT: Production
+      Analysis__GitHub__Repo: ${ANALYSIS_GITHUB_REPO:-}
+      Analysis__GitHub__Token: ${ANALYSIS_GITHUB_TOKEN:-}
+      Analysis__GitHub__DryRun: ${ANALYSIS_GITHUB_DRY_RUN:-true}

@@ -13,6 +13,9 @@
     <Project Path="src/AiProject.Company.Infrastructure/AiProject.Company.Infrastructure.csproj" />
     <Project Path="src/AiProject.Company.Contracts/AiProject.Company.Contracts.csproj" />
     <Project Path="src/AiProject.Company.Web/AiProject.Company.Web.csproj" />
+    <Project Path="src/AiProject.Analysis.Domain/AiProject.Analysis.Domain.csproj" />
+    <Project Path="src/AiProject.Analysis.Application/AiProject.Analysis.Application.csproj" />
+    <Project Path="src/AiProject.Analysis.Web/AiProject.Analysis.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AiProject.Console.Core.Tests/AiProject.Console.Core.Tests.csproj" />
@@ -21,5 +24,8 @@
     <Project Path="tests/AiProject.Company.Web.Tests/AiProject.Company.Web.Tests.csproj" />
     <Project Path="tests/AiProject.Console.CompanyClient.Tests/AiProject.Console.CompanyClient.Tests.csproj" />
     <Project Path="tests/AiProject.Shared.ContractTests/AiProject.Shared.ContractTests.csproj" />
+    <Project Path="tests/AiProject.Analysis.Domain.Tests/AiProject.Analysis.Domain.Tests.csproj" />
+    <Project Path="tests/AiProject.Analysis.Application.Tests/AiProject.Analysis.Application.Tests.csproj" />
+    <Project Path="tests/AiProject.Analysis.Web.Tests/AiProject.Analysis.Web.Tests.csproj" />
   </Folder>
 </Solution>

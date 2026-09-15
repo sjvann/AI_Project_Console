@@ -10,10 +10,10 @@ title: 系統執行計劃書
 
 | 欄 | 值 |
 |----|-----|
-| 狀態 | **規劃**。Company.* 工作區畫面與上傳 API **已存在**，缺租戶切分、`GET /api/v1/me`、公開契約文件化。仲介與系統分析**尚未**建專案。Shared.* **尚未**抽出 |
-| 下一上線 | 波次 A：公司工作區可營運＋公開回報契約＋控制台第一筆上傳（KPI-01～08）＋可安裝產物 |
-| 可並行 | **K0** 共用核心（不改可見行為）。**K1** Avalonia spike（通過才切 P1 正式宿主）。**O** P1 佔用條／建置加速（治「以為當機」；不進 A 的 DoD） |
-| 之後才做 | 波次 B：系統分析輔助（KPI-SA\*）。波次 C：仲介（**僅 G-01～G-04 通過後**） |
+| 狀態 | **波次 A 已發布／合進 main**。波次 B：B1／B2 已落地，**B3 Issue 指派**進行中。仲介仍門檻後。 |
+| 下一上線 | 波次 B 關門：KPI-SA\*（含 Issue 指派閉環） |
+| 可並行 | **K1** Avalonia spike（不擋 B）。**O** 已大致完成 |
+| 之後才做 | 波次 C：仲介（**僅 G-01～G-04 通過後**） |
 | 本文件不保證 | 日曆交貨日、人月、營收 |
 
 銷售必須標「規劃」。把本計劃講成已安裝，等於對買家說謊。
@@ -325,6 +325,42 @@ A3 人員／專案 → A4 派工 → A5 工時確認與薪資 CSV → A6 預算 
 
 B1 空站可部署（吃 Shared DesignSystem／Update／Contracts）→ B2 需求／規格產物 → B3 Issue＋指派＋控制台開工。出口：KPI-SA\* 與 G-01～G-04 紀錄。
 
+#### 階段 B1 — 分析站空站骨架
+
+**對應：** PRD-SA-01（開案入口）、PRD-SA-06（假設可見）、AD-8／AD-11（獨立宿主；不碰 Company.Infrastructure）。
+
+| 工作包 | 做什麼 | 演示 |
+|--------|--------|------|
+| B1-1 | 新建 `Analysis.Domain`／`Application`／`Web`；記憶體 `IAnalysisCaseStore`；開案必有可見假設 | `dotnet test` 綠；首頁可開案並進詳情 |
+| B1-2 | `/health`；吃 DesignSystem token 與 Update 產品身份；**零** Company.Infrastructure 引用 | `GET /health` 回 `product=analysis` |
+| B1-3 | `deploy/analysis` Dockerfile＋compose；文件 [deploy-analysis.md](deploy-analysis.md)／[analysis.md](analysis.md) | compose 起站；瀏覽開案 |
+
+**不做：** 需求／規格 Markdown 匯出（B2）、GitHub Issue／指派（B3）、持久化 DB、仲介、控制台雲端進件。
+
+#### 階段 B2 — 需求／規格產物
+
+**對應：** PRD-SA-02／03／06、KPI-SA01／SA02。
+
+| 工作包 | 做什麼 | 演示 |
+|--------|--------|------|
+| B2-1 | 規則模板產出需求文件（範圍／非範圍／驗收／REQ-ID）；假設／待決寫進產物 | 案詳情按「產出需求」；Markdown／JSON 可下載 |
+| B2-2 | 依需求產出規格摘要（SPEC-ID 追溯 REQ-ID） | 「產出規格」；產物含追溯 |
+| B2-3 | `GET /api/cases/{id}/requirements|spec.(md|json)` | curl／瀏覽器可取 |
+
+**不做：** 外部 LLM 呼叫、ReqIF 伺服器、GitHub Issue（B3）、持久化 DB。
+
+#### 階段 B3 — Issue 指派閉環
+
+**對應：** PRD-SA-04／05、KPI-SA03／SA04。
+
+| 工作包 | 做什麼 | 演示 |
+|--------|--------|------|
+| B3-1 | 依需求＋規格組 Issue 包（feature／test／acceptance／debug；含 checklist、追溯、假設） | 案詳情「組 Issue 包」 |
+| B3-2 | 發布至 GitHub（`Analysis:GitHub`）；無 Token 或 `DryRun=true` 走 dry-run URL | 「發布 Issue」；列表有連結 |
+| B3-3 | 功能／追蹤類可帶 assignee；工程師經 GitHub／控制台既有任務面可見 | 指派 login 後發布 |
+
+**不做：** 控制台新 UI、仲介、持久化 DB、自動媒合。
+
 ### 波次 C — 仲介（門檻後）
 
 C0 起比照舊「仲介骨架」計劃：會員、認證、刊登、成交、合同、應收、成交事件寫入。**未過 Gate 禁止合併 C 業務 PR。** 只依 Contracts／DesignSystem／Update，不碰 Company.Infrastructure。
@@ -392,33 +428,19 @@ K0 對控制台只准**抽出與改吃套件**，不准借機做上述以外的�
 | O 與 K0-3 同時改 `ConsoleSession` | 檔案邊界：F 只改吃 Update；O 只改 JobBusy→Occupancy。K0-3 先合併，O rebase |
 | 自架又做成第二套安裝器 | A8 與我們主機同一 Dockerfile |
 
-## 12. 下一個 PR（三條平行軌道）
+## 12. 下一個 PR
 
-**軌道 F（家族）— 進行中：K0 Shared。** 另一會話負責抽出；本軌道擁有 `AiProject.Shared.*`。
+**軌道 P（產品）— 進行中：B3 Issue 指派（B1／B2 已落地）。**
 
-1. `AiProject.Shared.Hosting`＋Photino 適配；Core／Razor 去掉宿主套件引用。
-2. 接著 K0-2 token、K0-3 Update、K0-4 契約測試骨架（可各一 PR）。
-3. **不要**開 Avalonia 專案直到 K0-1 合併。
-4. **不要**在 K0 PR 裡改佔用條或 `BuildRunner` 批次策略。
+1. 合併 Issue 包＋dry-run／真實 GitHub 發布＋assignee。
+2. 演示：開案 → 需求 → 規格 → 發布 Issue（可 dry-run）→ 工程師在 GitHub／控制台任務面看到。
+3. 累積 G-01～G-04 證據後才開仲介。
 
-**軌道 P（產品）— 第一個產品程式 PR = A0／A1：**
-
-1. 關閉 D-13／D-RPT 文字——產品在 issue 打勾即可開工 A0。
-2. Company `tenantId`、查詢邊界、越權測試、`/health`。
-3. 並行：依 [reporting.md](reporting.md) 起草 OpenAPI（建議路徑 `docs/contracts/reporting-v1.yaml`）；列出 upload DTO 要擴的專案識別欄位。
-
-**軌道 O（P1 體感）— 第一個佔用 PR = O1：**
-
-1. Occupancy 取代 `JobBusy`；頂欄條；建置／編譯按鈕事前停用＋原因；`SetTitle`。
-2. 接著 O2 工作區鎖、O3 輸出節流、O4 solution 建置（可各一 PR）。
-3. **不要**改 Shared.Update／token CSS；**不要**當 A 的 DoD。
-4. 若與 F 同時動 `ConsoleSession`：等 K0-3 合併後 rebase，或 O1 只動 Razor＋新 `Occupancy` 型別、暫留 `JobBusy` 當轉接。
-
-**三條都不要：**
+**不要：**
 
 - 建 Marketplace 專案骨架，直到 G-01～G-04 關閉。
-- 把戰情室當首頁大改。
+- Analysis 參考 `Company.Infrastructure`。
+- 把分析站塞進控制台當唯一發案站。
 - 把 P1 正式安裝包切到 Avalonia。
-- 專案級平行 `dotnet build` 當第一刀。
 
-產品走讀用第 6 節追蹤表對 [PRD](prd.md)。工程拆 sprint 用第 7 節。契約以 [reporting.md](reporting.md)、模組篇、[UX](ux.md)、[架構 AD](architecture.md) 為準。
+產品走讀用第 6 節追蹤表對 [PRD](prd.md)。工程拆 sprint 用第 7 節。契約以 [reporting.md](reporting.md)、[analysis.md](analysis.md)、[UX](ux.md)、[架構 AD](architecture.md) 為準。

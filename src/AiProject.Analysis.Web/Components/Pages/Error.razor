@@ -1,0 +1,19 @@
+@page "/Error"
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Diagnostics
+
+<PageTitle>錯誤</PageTitle>
+<h1>出錯了</h1>
+<p class="hint">請稍後再試，或回<a href="/">首頁</a>。</p>
+@if (ShowRequestId)
+{
+    <p class="hint">Request ID：@RequestId</p>
+}
+
+@code {
+    [CascadingParameter] HttpContext? HttpContext { get; set; }
+    string? RequestId { get; set; }
+    bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

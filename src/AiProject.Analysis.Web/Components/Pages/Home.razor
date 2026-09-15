@@ -1,0 +1,55 @@
+@page "/"
+@rendermode InteractiveServer
+@inject AnalysisCaseCommands Cases
+@inject NavigationManager Nav
+
+<PageTitle>系統分析輔助</PageTitle>
+<h1>系統分析輔助</h1>
+<p class="hint">把口語概念變成需求文件 → 規格 → 可指派 Issue。本站<strong>不是</strong>仲介，也<strong>不是</strong>公司工作區。</p>
+<p class="hint">B3：開案 → 需求／規格 → Issue 包與指派（預設 dry-run）。</p>
+
+<section class="card">
+    <h2>開一則分析案</h2>
+    <div class="stack">
+        <label>標題 <input @bind="_title" placeholder="例如：門市庫存查詢太慢" /></label>
+        <label>概念／痛點
+            <textarea rows="5" @bind="_concept" placeholder="用口語描述問題、干係人、期望結果…"></textarea>
+        </label>
+        <label>已知假設（一行一條，可空）
+            <textarea rows="2" @bind="_assumptions" placeholder="例如：假設只做 Web，不做 App"></textarea>
+        </label>
+        <label>待決問題（一行一條，可空）
+            <textarea rows="2" @bind="_questions" placeholder="例如：是否要離線可用？"></textarea>
+        </label>
+        <button class="btn-primary" @onclick="Start">開始分析</button>
+        <p class="hint">@_message</p>
+    </div>
+</section>
+
+@code {
+    string _title = "";
+    string _concept = "";
+    string _assumptions = "";
+    string _questions = "";
+    string _message = "";
+
+    async Task Start()
+    {
+        try
+        {
+            var created = await Cases.StartAsync(
+                _title,
+                _concept,
+                Lines(_assumptions),
+                Lines(_questions));
+            Nav.NavigateTo($"/cases/{created.Id}");
+        }
+        catch (AnalysisException ex)
+        {
+            _message = ex.Message;
+        }
+    }
+
+    static IEnumerable<string> Lines(string raw) =>
+        raw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}

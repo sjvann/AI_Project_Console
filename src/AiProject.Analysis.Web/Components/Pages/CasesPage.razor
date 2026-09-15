@@ -1,0 +1,32 @@
+@page "/cases"
+@rendermode InteractiveServer
+@inject AnalysisCaseCommands Cases
+
+<PageTitle>分析案</PageTitle>
+<h1>分析案</h1>
+<p class="hint"><a href="/">開新案</a></p>
+@if (_items.Count == 0)
+{
+    <p class="empty">還沒有分析案。</p>
+}
+else
+{
+    <table class="grid">
+        <thead><tr><th>標題</th><th>狀態</th><th>建立</th></tr></thead>
+        <tbody>
+        @foreach (var item in _items)
+        {
+            <tr>
+                <td><a href="/cases/@item.Id">@item.Title</a></td>
+                <td>@item.StatusLabel</td>
+                <td>@item.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    IReadOnlyList<AnalysisCase> _items = [];
+    protected override async Task OnInitializedAsync() => _items = await Cases.ListAsync();
+}
