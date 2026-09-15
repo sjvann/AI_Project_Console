@@ -21,6 +21,8 @@ public sealed class TimesheetUploadRequest
     public DateOnly WorkDate { get; set; }
     public decimal Hours { get; set; }
     public List<int> IssueNumbers { get; set; } = [];
+    /// <summary>CHAOSS 貢獻類型，如 code／issue／docs。</summary>
+    public List<string> ContributionTypes { get; set; } = [];
     public List<StatusChartCellDto> Chart { get; set; } = [];
     public bool IsCorrection { get; set; }
     public string? CorrectsLocalSlotId { get; set; }

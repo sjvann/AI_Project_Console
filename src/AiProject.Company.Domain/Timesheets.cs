@@ -20,6 +20,8 @@ public sealed class Timesheet : ITenantScoped
     public TimesheetStatus Status { get; private set; }
     public string? ReturnReason { get; private set; }
     public List<int> IssueNumbers { get; private set; } = [];
+    /// <summary>CHAOSS 貢獻類型，如 code／issue／docs。</summary>
+    public List<string> ContributionTypes { get; private set; } = [];
     public List<StatusChartCell> Chart { get; private set; } = [];
     public bool IsCorrection { get; private set; }
     public string? CorrectsLocalSlotId { get; private set; }
@@ -36,7 +38,8 @@ public sealed class Timesheet : ITenantScoped
         IEnumerable<StatusChartCell> chart,
         bool isCorrection,
         string? correctsLocalSlotId,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        IEnumerable<string>? contributionTypes = null)
     {
         if (string.IsNullOrWhiteSpace(localSlotId))
             throw new DomainException(ErrorCodes.Required, Messages.Required("本機時段 ID"));
@@ -52,6 +55,7 @@ public sealed class Timesheet : ITenantScoped
             Hours = hours,
             Status = TimesheetStatus.PendingPm,
             IssueNumbers = issues.Where(n => n > 0).Distinct().ToList(),
+            ContributionTypes = NormalizeTypes(contributionTypes),
             Chart = chart.ToList(),
             IsCorrection = isCorrection,
             CorrectsLocalSlotId = string.IsNullOrWhiteSpace(correctsLocalSlotId) ? null : correctsLocalSlotId.Trim(),
@@ -59,7 +63,7 @@ public sealed class Timesheet : ITenantScoped
         };
     }
 
-    public void ReplacePending(Guid projectId, DateOnly workDate, decimal hours, IEnumerable<int> issues, IEnumerable<StatusChartCell> chart, DateTimeOffset now)
+    public void ReplacePending(Guid projectId, DateOnly workDate, decimal hours, IEnumerable<int> issues, IEnumerable<StatusChartCell> chart, DateTimeOffset now, IEnumerable<string>? contributionTypes = null)
     {
         if (Status == TimesheetStatus.Approved)
             throw new DomainException(ErrorCodes.TimesheetApprovedImmutable, Messages.TimesheetApprovedImmutable);
@@ -67,12 +71,21 @@ public sealed class Timesheet : ITenantScoped
         WorkDate = workDate;
         Hours = hours;
         IssueNumbers = issues.Where(n => n > 0).Distinct().ToList();
+        ContributionTypes = NormalizeTypes(contributionTypes);
         Chart = chart.ToList();
         Status = TimesheetStatus.PendingPm;
         ReturnReason = null;
         UploadedAt = now;
         ConfirmedAt = null;
     }
+
+    static List<string> NormalizeTypes(IEnumerable<string>? types) =>
+        (types ?? [])
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .Take(16)
+            .ToList();
 
     public void Confirm(DateTimeOffset now)
     {

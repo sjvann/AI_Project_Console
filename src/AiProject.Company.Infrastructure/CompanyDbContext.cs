@@ -139,6 +139,7 @@ public sealed class CompanyDbContext : DbContext
             e.HasIndex(x => x.LocalSlotId).IsUnique();
             e.HasIndex(x => x.TenantId);
             e.PrimitiveCollection(x => x.IssueNumbers);
+            e.PrimitiveCollection(x => x.ContributionTypes);
             e.OwnsMany(x => x.Chart, r =>
             {
                 r.ToTable("timesheet_chart");

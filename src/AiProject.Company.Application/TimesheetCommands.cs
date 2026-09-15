@@ -87,14 +87,14 @@ public sealed class TimesheetCommands
             c.Note));
         if (existing is null || (existing.Status == TimesheetStatus.Approved && request.IsCorrection))
         {
-            var sheet = Timesheet.Upload(request.LocalSlotId, person.Id, projectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, request.IsCorrection, request.CorrectsLocalSlotId, _clock.UtcNow);
+            var sheet = Timesheet.Upload(request.LocalSlotId, person.Id, projectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, request.IsCorrection, request.CorrectsLocalSlotId, _clock.UtcNow, request.ContributionTypes);
             await _timesheets.AddAsync(sheet, ct);
             await _uow.SaveChangesAsync(ct);
             if (request.IsCorrection)
                 await _audit.SensitiveChange(AuditActions.CorrectTimesheet, "Timesheet", sheet.Id, "更正時段", existing?.Id, sheet.Id, ct);
             return Outcome<Guid>.Success(sheet.Id);
         }
-        existing.ReplacePending(projectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, _clock.UtcNow);
+        existing.ReplacePending(projectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, _clock.UtcNow, request.ContributionTypes);
         await _uow.SaveChangesAsync(ct);
         return Outcome<Guid>.Success(existing.Id);
     }

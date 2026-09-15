@@ -72,6 +72,7 @@ public interface ITimesheetRepository
     Task<Timesheet?> GetAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<Timesheet>> ListAsync(CancellationToken ct = default);
     Task<IReadOnlyList<Timesheet>> ListForPersonAsync(Guid personId, CancellationToken ct = default);
+    Task<IReadOnlyList<Timesheet>> ListForProjectAsync(Guid projectId, CancellationToken ct = default);
     Task<IReadOnlyList<Timesheet>> ListForPeriodAsync(DateOnly start, DateOnly end, CancellationToken ct = default);
     Task AddAsync(Timesheet timesheet, CancellationToken ct = default);
 }

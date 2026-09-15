@@ -388,6 +388,10 @@ public sealed class TimesheetRepository : ITimesheetRepository
         await _db.Timesheets.Include(t => t.Chart)
             .Where(t => t.TenantId == _tenant.TenantId && t.PersonId == personId).ToListAsync(ct);
 
+    public async Task<IReadOnlyList<Timesheet>> ListForProjectAsync(Guid projectId, CancellationToken ct = default) =>
+        await _db.Timesheets.Include(t => t.Chart)
+            .Where(t => t.TenantId == _tenant.TenantId && t.ProjectId == projectId).ToListAsync(ct);
+
     public async Task<IReadOnlyList<Timesheet>> ListForPeriodAsync(DateOnly start, DateOnly end, CancellationToken ct = default) =>
         await _db.Timesheets.Include(t => t.Chart)
             .Where(t => t.TenantId == _tenant.TenantId && t.WorkDate >= start && t.WorkDate <= end).ToListAsync(ct);
