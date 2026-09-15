@@ -37,10 +37,29 @@ public class CompanyClientTests
             },
         };
         var client = new CompanyPlatformClient(new HttpClient(handler) { BaseAddress = new Uri("https://company.test/") });
-        var result = await client.UploadAsync(new TimesheetUploadRequest { LocalSlotId = "old-client-slot", Hours = 2, WorkDate = new DateOnly(2026, 1, 1), ProjectId = Guid.NewGuid() }, "tok");
+        var result = await client.UploadAsync("https://company.test/", new TimesheetUploadRequest { LocalSlotId = "old-client-slot", Hours = 2, WorkDate = new DateOnly(2026, 1, 1), ProjectId = Guid.NewGuid() }, "tok");
         Assert.Equal("pending_pm", result.Status);
         Assert.Equal(3, n);
         Assert.Contains(handler.Requests, r => r.Headers.Contains(CompanyApiVersions.Header));
+    }
+
+    [Fact]
+    public async Task Me_uses_absolute_base_url()
+    {
+        var handler = new StubHandler
+        {
+            Respond = req =>
+            {
+                Assert.Equal("https://acme.test/api/v1/me", req.RequestUri!.ToString());
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new MeDto { Matched = true, Message = "已對到人員，可以申報工時。", GitHubLogin = "alice" }),
+                };
+            },
+        };
+        var client = new CompanyPlatformClient(new HttpClient(handler));
+        var me = await client.MeAsync("https://acme.test", "tok");
+        Assert.True(me.Matched);
     }
 
     [Fact]

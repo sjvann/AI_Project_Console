@@ -368,7 +368,16 @@
         <div class="dialog-actions hours-actions">
             <span class="hint grow">可報帳時數寫在本機 work-hours.json；匯出 Markdown 與 CSV 給負責人汇整。</span>
             <button class="btn-sec" disabled="@(S.WorkHoursExporting || sheet is null)" @onclick="S.ExportWorkTimesheetAsync">匯出工時單</button>
-            <button class="btn-primary" disabled="@S.CompanyUploadBusy" @onclick="S.SendTimesheetToCompanyAsync">送到公司</button>
+            @if (S.EnabledReportingDestinations.Count > 0)
+            {
+                <select class="hours-dest" value="@S.SelectedReportingDestinationId" @onchange="OnDest">
+                    @foreach (var d in S.EnabledReportingDestinations)
+                    {
+                        <option value="@d.Id">@d.DisplayName</option>
+                    }
+                </select>
+            }
+            <button class="btn-primary" disabled="@(S.CompanyUploadBusy || S.EnabledReportingDestinations.Count == 0)" title="@(S.EnabledReportingDestinations.Count == 0 ? "請先在設定加入目的地、測試連線並啟用" : "")" @onclick="S.SendTimesheetToCompanyAsync">@S.SendToCompanyLabel</button>
             <button class="btn-primary" @onclick="S.CloseDialog">關閉</button>
         </div>
     </div>
@@ -377,6 +386,8 @@
 @code {
     [Parameter, EditorRequired]
     public ConsoleSession S { get; set; } = default!;
+
+    void OnDest(ChangeEventArgs e) => S.SetSelectedReportingDestination(e.Value?.ToString() ?? "");
 
     static string PrevLabel(WorkHoursView view) => view switch
     {

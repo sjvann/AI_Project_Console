@@ -40,9 +40,7 @@ internal static class Program
 
         var builder = PhotinoBlazorAppBuilder.CreateDefault(args);
         builder.Services.AddLogging();
-        builder.Services.AddTransient<CompanyBaseAddressHandler>();
-        builder.Services.AddHttpClient<ICompanyPlatformClient, CompanyPlatformClient>()
-            .AddHttpMessageHandler<CompanyBaseAddressHandler>();
+        builder.Services.AddHttpClient<ICompanyPlatformClient, CompanyPlatformClient>();
         builder.Services.AddSingleton<NativeUi>();
         builder.Services.AddSingleton<IWindowHost>(sp => sp.GetRequiredService<NativeUi>());
         builder.Services.AddSingleton<ConsoleSession>();

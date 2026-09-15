@@ -984,12 +984,41 @@
                             }
                         </datalist>
                         <p class="hint">大型公司可填自建 Git 主機。GitHub 相容主機用 gh；其他種類先可設，任務功能尚未接時會明白停用。</p>
-                        <h3 class="prefs-sub">公司平台</h3>
-                        <p class="hint">送到公司與讀取派工條用的自架網址，例如 https://company.example.com。不含原始碼，只傳時段與狀態圖。</p>
+                        <h3 class="prefs-sub">申報目的地（公司工作區）</h3>
+                        <p class="hint">可加多家公司。每筆預設關閉；「測試連線」通過後才能啟用。零目的地時本機工時照常。</p>
+                        @if (!string.IsNullOrEmpty(S.DestinationHint))
+                        {
+                            <p class="hint">@S.DestinationHint</p>
+                        }
+                        @foreach (var dest in S.ReportingDestinations)
+                        {
+                            <div class="field" style="border-top:1px solid var(--color-border, #ddd); padding-top:0.5rem; margin-top:0.5rem;">
+                                <span>@dest.DisplayName</span>
+                                <input value="@dest.BaseUrl" @oninput="e => OnDestUrl(dest, e)" placeholder="https://company.example.com" />
+                                <p class="hint">@DestStatus(dest)</p>
+                                <div class="row">
+                                    <button class="btn-sec" type="button" disabled="@S.DestinationTestBusy" @onclick="() => S.TestReportingDestinationAsync(dest.Id)">測試連線</button>
+                                    @if (dest.Enabled)
+                                    {
+                                        <button class="btn-sec" type="button" @onclick="() => S.DisableReportingDestination(dest.Id)">停用</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn-sec" type="button" disabled="@(dest.LastTestOk != true)" @onclick="() => S.EnableReportingDestination(dest.Id)">啟用這家公司</button>
+                                    }
+                                    <button class="btn-sec" type="button" @onclick="() => S.RemoveReportingDestination(dest.Id)">刪除</button>
+                                </div>
+                            </div>
+                        }
                         <div class="field">
-                            <span>公司平台網址</span>
-                            <input @bind="S.CompanyBaseUrl" placeholder="https://company.example.com" />
+                            <span>顯示名</span>
+                            <input @bind="S.NewDestinationName" placeholder="例如 Acme 工作區" />
                         </div>
+                        <div class="field">
+                            <span>Base URL</span>
+                            <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
+                        </div>
+                        <button class="btn-sec" type="button" @onclick="S.AddReportingDestinationDraft">加入目的地</button>
                         <h3 class="prefs-sub">控制台更新</h3>
                         <p class="hint">目前版本 v@(AppInfo.Version)。檢查時會詢問是否包含 RC／預發行。也可選本機安裝程式或 zip 直接套用。</p>
                         <div class="row">
@@ -1202,6 +1231,12 @@
     void OnNewDocPath(ChangeEventArgs e) => S.SetNewDocPath(e.Value?.ToString() ?? "");
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
+
+    static void OnDestUrl(ReportingDestination dest, ChangeEventArgs e) =>
+        dest.BaseUrl = (e.Value?.ToString() ?? string.Empty).Trim().TrimEnd('/');
+
+    static string DestStatus(ReportingDestination dest) =>
+        string.IsNullOrEmpty(dest.LastTestMessage) ? dest.StatusLabel : dest.StatusLabel + " · " + dest.LastTestMessage;
 
     void OnAgentCli(ChangeEventArgs e)
     {

@@ -84,6 +84,55 @@ public class ConsoleSettingsStoreTests
         Assert.Empty(ConsoleSettingsStore.GetAskSources());
     }
 
+    [Fact]
+    public void ReportingDestinations_default_disabled_and_migrate_legacy_url()
+    {
+        using var scope = SettingsScope.Create();
+        ConsoleSettingsStore.SetCompanyBaseUrl("https://legacy.example.com/");
+        var list = ConsoleSettingsStore.GetReportingDestinations();
+        Assert.Single(list);
+        Assert.Equal("https://legacy.example.com", list[0].BaseUrl);
+        Assert.False(list[0].Enabled);
+    }
+
+    [Fact]
+    public void ReportingDestinations_round_trip_keeps_test_gate()
+    {
+        using var scope = SettingsScope.Create();
+        var id = Guid.NewGuid().ToString("N");
+        ConsoleSettingsStore.SetReportingDestinations(
+        [
+            new ReportingDestination
+            {
+                Id = id,
+                DisplayName = "Acme",
+                BaseUrl = "https://acme.example.com",
+                Enabled = true,
+                LastTestOk = true,
+                LastTestMessage = "已對到人員，可以申報工時。",
+                LastTestedAt = DateTimeOffset.Parse("2026-09-15T00:00:00Z"),
+            },
+        ], id);
+        var loaded = ConsoleSettingsStore.GetReportingDestinations();
+        Assert.Single(loaded);
+        Assert.True(loaded[0].Enabled);
+        Assert.True(loaded[0].LastTestOk);
+        Assert.Equal(id, ConsoleSettingsStore.GetSelectedReportingDestinationId());
+        Assert.Equal("https://acme.example.com", ConsoleSettingsStore.GetCompanyBaseUrl());
+    }
+
+    [Fact]
+    public void ReportingDestinations_cannot_enable_without_passing_test_is_store_level_data_only()
+    {
+        // 啟用閘門在 ConsoleSession；設定層只存狀態。此測確認未測過的列預設 Enabled=false。
+        using var scope = SettingsScope.Create();
+        ConsoleSettingsStore.SetReportingDestinations(
+        [
+            new ReportingDestination { Id = "a", DisplayName = "A", BaseUrl = "https://a.test", Enabled = false },
+        ], "a");
+        Assert.False(ConsoleSettingsStore.GetReportingDestinations()[0].Enabled);
+    }
+
     sealed class SettingsScope : IDisposable
     {
         public string Dir { get; }

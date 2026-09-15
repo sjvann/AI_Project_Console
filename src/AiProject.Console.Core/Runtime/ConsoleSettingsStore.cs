@@ -434,6 +434,24 @@ public static class ConsoleSettingsStore
 
     public static void SetCompanyBaseUrl(string? value) => SetOptionalString("companyBaseUrl", value);
 
+    public static IReadOnlyList<ReportingDestination> GetReportingDestinations()
+    {
+        IReadOnlyList<ReportingDestination>? result = null;
+        Mutate(data =>
+        {
+            result = ReportingDestinationsStore.LoadAndMigrate(data);
+        });
+        return result ?? [];
+    }
+
+    public static string? GetSelectedReportingDestinationId() =>
+        ReportingDestinationsStore.SelectedId(Load());
+
+    public static void SetReportingDestinations(IReadOnlyList<ReportingDestination> destinations, string? selectedId)
+    {
+        Mutate(data => ReportingDestinationsStore.Save(data, destinations, selectedId));
+    }
+
     public static IReadOnlyDictionary<string, Guid> GetCompanyProjectMap()
     {
         var map = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);

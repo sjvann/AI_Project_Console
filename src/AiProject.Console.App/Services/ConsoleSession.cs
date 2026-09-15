@@ -65,7 +65,7 @@ public sealed partial class ConsoleSession : IDisposable
         Workbench = ConsoleSettingsStore.GetWorkbench();
         GitHostName = ConsoleSettingsStore.GetGitHost();
         GitKind = ConsoleSettingsStore.GetGitKind();
-        CompanyBaseUrl = ConsoleSettingsStore.GetCompanyBaseUrl();
+        LoadReportingDestinationsFromStore();
         RefreshAgentDetect();
         _ = PollLoopAsync();
         _ = CheckUpdateOnStartAsync();
@@ -154,7 +154,6 @@ public sealed partial class ConsoleSession : IDisposable
     public bool IsReqWorkbench => Workbench == "req";
     public string GitHostName { get; set; } = GitHost.PublicHostname;
     public string GitKind { get; set; } = GitHost.KindGithub;
-    public string CompanyBaseUrl { get; set; } = "";
     public IReadOnlyList<string> RecentGitHosts => ConsoleSettingsStore.RecentGitHosts();
     public string ActiveGitHost =>
         !string.IsNullOrWhiteSpace(GithubDraft.Host) ? GitHost.Normalize(GithubDraft.Host)
@@ -631,6 +630,8 @@ public sealed partial class ConsoleSession : IDisposable
         OpenWithCursor = ConsoleSettingsStore.GetOpenIdeOnLoad();
         GitHostName = ConsoleSettingsStore.GetGitHost();
         GitKind = ConsoleSettingsStore.GetGitKind();
+        LoadReportingDestinationsFromStore();
+        DestinationHint = "";
         McpReadOnly = ConsoleSettingsStore.GetMcpReadOnly();
         McpAllow = ConsoleSettingsStore.GetMcpAllow();
         McpDeny = ConsoleSettingsStore.GetMcpDeny();
@@ -845,7 +846,7 @@ public sealed partial class ConsoleSession : IDisposable
         ConsoleSettingsStore.SetOpenIdeOnLoad(OpenWithCursor);
         ConsoleSettingsStore.SetGitHost(GitHostName);
         ConsoleSettingsStore.SetGitKind(GitKind);
-        ConsoleSettingsStore.SetCompanyBaseUrl(CompanyBaseUrl);
+        PersistReportingDestinations();
         ConsoleSettingsStore.SetMcpReadOnly(McpReadOnly);
         ConsoleSettingsStore.SetMcpAllow(McpAllow);
         ConsoleSettingsStore.SetMcpDeny(McpDeny);
