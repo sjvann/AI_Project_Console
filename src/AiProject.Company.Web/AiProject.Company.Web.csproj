@@ -13,6 +13,7 @@
     <ProjectReference Include="..\AiProject.Company.Contracts\AiProject.Company.Contracts.csproj" />
     <ProjectReference Include="..\AiProject.Company.Infrastructure\AiProject.Company.Infrastructure.csproj" />
     <ProjectReference Include="..\AiProject.Company.Domain\AiProject.Company.Domain.csproj" />
+    <ProjectReference Include="..\AiProject.Shared.DesignSystem\AiProject.Shared.DesignSystem.csproj" />
   </ItemGroup>
 
   <ItemGroup>

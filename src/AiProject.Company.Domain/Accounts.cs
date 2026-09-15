@@ -6,9 +6,11 @@ public interface IPasswordHasher
     bool Verify(string hash, string password);
 }
 
-public sealed class StaffAccount
+public sealed class StaffAccount : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public Guid PersonId { get; private set; }
     public string UserName { get; private set; } = "";
     public string PasswordHash { get; private set; } = "";

@@ -35,6 +35,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<WarRoomQueries>();
         services.AddScoped<MeQueries>();
         services.AddScoped<DirectoryQueries>();
+        services.AddScoped<ApiKeyCommands>();
         return services;
     }
 }

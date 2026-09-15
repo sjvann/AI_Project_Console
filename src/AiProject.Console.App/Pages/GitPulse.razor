@@ -8,7 +8,7 @@
             <button type="button"
                     class="branch-chip @(brief.IsClearToLeave ? "is-ok" : "is-warn")"
                     disabled="@S.JobBusy"
-                    title="目前分支，點擊切換"
+                    title="@(S.JobBusy ? S.BusyReason : "目前分支，點擊切換")"
                     @onclick="S.OpenBranchDialogAsync">
                 <span class="branch-chip-label">分支</span>
                 <span class="branch-chip-name">@brief.Branch</span>
@@ -28,7 +28,7 @@
         }
         else
         {
-            <button type="button" class="btn-primary" disabled="@S.JobBusy" title="@(S.JobBusy ? $"忙碌中：{S.JobText}" : S.GithubNext.Hint)" @onclick="S.RunGithubNextAsync">@S.GithubNext.Label</button>
+            <button type="button" class="btn-primary" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : S.GithubNext.Hint)" @onclick="S.RunGithubNextAsync">@S.GithubNext.Label</button>
             <button type="button" class="btn-sec" @onclick="S.ToggleGithubHub">全部動作</button>
         }
         @if (S.ShowCiChip)

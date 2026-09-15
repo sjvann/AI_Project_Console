@@ -14,9 +14,11 @@ public enum PersonStatus
     Blacklisted = 2,
 }
 
-public sealed class Person
+public sealed class Person : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string DisplayName { get; private set; } = "";
     public EmploymentKind EmploymentKind { get; private set; }
     public PersonStatus Status { get; private set; }
@@ -134,9 +136,11 @@ public sealed class UnavailableRange
     }
 }
 
-public sealed class Vendor
+public sealed class Vendor : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string Name { get; private set; } = "";
     public string? TaxId { get; private set; }
     public Guid? WindowPersonId { get; private set; }
@@ -174,9 +178,11 @@ public sealed class Vendor
     public void SoftDelete() => IsDeleted = true;
 }
 
-public sealed class Invitation
+public sealed class Invitation : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string GitHubLogin { get; private set; } = "";
     public PlatformRole Role { get; private set; }
     public Guid? VendorId { get; private set; }
@@ -215,9 +221,11 @@ public sealed class Invitation
     public void Revoke() => Revoked = true;
 }
 
-public sealed class UnmatchedUpload
+public sealed class UnmatchedUpload : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string GitHubLogin { get; private set; } = "";
     public string LocalSlotId { get; private set; } = "";
     public string PayloadJson { get; private set; } = "";

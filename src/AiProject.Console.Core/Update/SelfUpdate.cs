@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Util;
+using AiProject.Shared.Update;
 
 namespace AiProject.Console.Core.Update;
 
@@ -170,6 +171,7 @@ public static class SelfUpdate
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
                     ? (string.IsNullOrWhiteSpace(stdout) ? "gh 下載 Release 失敗。" : stdout)
                     : stderr);
+            await EnsureChecksumOrWarnAsync(dest, progress, ct).ConfigureAwait(false);
             return dest;
         }
 
@@ -201,7 +203,17 @@ public static class SelfUpdate
             }
             await dst.FlushAsync(ct).ConfigureAwait(false);
         }
+        await EnsureChecksumOrWarnAsync(dest, progress, ct).ConfigureAwait(false);
         return dest;
+    }
+
+    static async Task EnsureChecksumOrWarnAsync(string dest, IProgress<string>? progress, CancellationToken ct)
+    {
+        var ok = await Checksum.TryVerifySidecarAsync(dest, ct).ConfigureAwait(false);
+        if (ok is false)
+            throw new InvalidOperationException("安裝包 SHA256 與旁檔不符，已中止套用。請改從 GitHub Releases 重新下載。");
+        if (ok is true)
+            progress?.Report("已核對 SHA256。");
     }
 
     public static string LaunchApply(string downloadedPath, UpdateApplyMode mode, string? installDir = null, bool silent = true)

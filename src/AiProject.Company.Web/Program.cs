@@ -99,20 +99,31 @@ public static class CompanyApi
         api.MapPost("/timesheets/upload", async (TimesheetUploadRequest body, HttpContext http, TimesheetCommands commands, IGitHubDirectory github, ICurrentUser user) =>
         {
             var login = user.GitHubLogin;
-            if (string.IsNullOrWhiteSpace(login) && !string.IsNullOrWhiteSpace(body.OnBehalfOfGitHubLogin))
+            if (user.Role == PlatformRole.VendorAdmin && !string.IsNullOrWhiteSpace(body.OnBehalfOfGitHubLogin))
                 login = body.OnBehalfOfGitHubLogin.Trim();
-            if (string.IsNullOrEmpty(login))
+            else if (string.IsNullOrWhiteSpace(login) && !string.IsNullOrWhiteSpace(body.OnBehalfOfGitHubLogin))
+                login = body.OnBehalfOfGitHubLogin.Trim();
+            if (string.IsNullOrEmpty(login) && !user.IsAuthenticated)
             {
                 var bearer = http.Request.Headers.Authorization.ToString();
                 if (bearer.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                     login = await github.ResolveLoginAsync(bearer["Bearer ".Length..].Trim()) ?? "";
             }
-            if (user.Role == PlatformRole.VendorAdmin && !string.IsNullOrWhiteSpace(body.OnBehalfOfGitHubLogin))
-                login = body.OnBehalfOfGitHubLogin.Trim();
-            if (string.IsNullOrEmpty(login))
+            if (string.IsNullOrEmpty(login) && user.PersonId is not null)
+                login = string.IsNullOrWhiteSpace(user.UserName) ? "api-key" : user.UserName;
+            if (string.IsNullOrEmpty(login) && user.PersonId is null)
                 return Results.Json(new ApiError { Code = ErrorCodes.Unauthenticated, Message = Messages.Unauthenticated }, statusCode: 401);
             var vendorSubmit = user.Role == PlatformRole.VendorAdmin;
-            var result = await commands.UploadAsync(body, login, vendorSubmit ? null : user.PersonId, user.VendorId, vendorSubmit);
+            Outcome<Guid> result;
+            try
+            {
+                result = await commands.UploadAsync(body, login, vendorSubmit ? null : user.PersonId, user.VendorId, vendorSubmit);
+            }
+            catch (DomainException ex)
+            {
+                var status = ex.Code is ErrorCodes.Forbidden or ErrorCodes.RateHidden ? 403 : 400;
+                return Results.Json(new ApiError { Code = ex.Code, Message = ex.Message }, statusCode: status);
+            }
             if (!result.Ok)
             {
                 var status = result.Code is ErrorCodes.Forbidden or ErrorCodes.RateHidden ? 403
@@ -125,11 +136,38 @@ public static class CompanyApi
             return Results.Json(new TimesheetUploadResponse { TimesheetId = result.Value, Status = "pending_pm", Message = "待 PM 確認" });
         });
 
+        api.MapGet("/me", async (ICurrentUser user, MeQueries me) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Json(new ApiError { Code = ErrorCodes.Unauthenticated, Message = "請先用 GitHub 權杖登入後再測試連線。" }, statusCode: 401);
+            var dto = await me.HandshakeAsync();
+            // 握手本身回 200，用 Matched 表達能否申報；人話在 Message
+            return Results.Json(dto);
+        });
+
         api.MapGet("/me/assignments", async (ICurrentUser user, MeQueries me) =>
         {
             if (!user.IsAuthenticated)
                 return Results.Json(new ApiError { Code = ErrorCodes.Unauthenticated, Message = Messages.Unauthenticated }, statusCode: 401);
             return Results.Json(await me.MyAssignmentsAsync());
+        });
+
+        api.MapGet("/projects/{id:guid}", async (Guid id, ICurrentUser user, IProjectRepository projects) =>
+        {
+            if (!user.IsAuthenticated)
+                return Results.Json(new ApiError { Code = ErrorCodes.Unauthenticated, Message = Messages.Unauthenticated }, statusCode: 401);
+            try
+            {
+                var project = await projects.GetAsync(id);
+                return project is null
+                    ? Results.Json(new ApiError { Code = ErrorCodes.NotFound, Message = Messages.NotFound("專案") }, statusCode: 404)
+                    : Results.Json(new { id = project.Id, name = project.Name, tenantId = project.TenantId });
+            }
+            catch (DomainException ex)
+            {
+                var status = ex.Code is ErrorCodes.Forbidden or ErrorCodes.RateHidden ? 403 : 400;
+                return Results.Json(new ApiError { Code = ex.Code, Message = ex.Message }, statusCode: status);
+            }
         });
 
         api.MapGet("/me/payslip", async (ICurrentUser user, MeQueries me) =>

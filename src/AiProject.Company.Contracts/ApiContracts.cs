@@ -1,17 +1,23 @@
 using System.Text.Json.Serialization;
+using AiProject.Shared.Contracts;
 
 namespace AiProject.Company.Contracts;
 
 public static class CompanyApiVersions
 {
-    public const string Current = "1";
-    public const string Header = "X-Company-Api-Version";
+    public const string Current = ReportingContract.CurrentVersion;
+    public const string Header = ReportingContract.ApiVersionHeader;
 }
 
 public sealed class TimesheetUploadRequest
 {
     public string LocalSlotId { get; set; } = "";
-    public Guid ProjectId { get; set; }
+    /// <summary>內部專案 Guid；可與 ProjectCode／Repos 擇一。</summary>
+    public Guid? ProjectId { get; set; }
+    /// <summary>公司對外專案碼。</summary>
+    public string? ProjectCode { get; set; }
+    /// <summary>GitHub owner/repo 列表（對應工作區專案已綁倉）。</summary>
+    public List<string> Repos { get; set; } = [];
     public DateOnly WorkDate { get; set; }
     public decimal Hours { get; set; }
     public List<int> IssueNumbers { get; set; } = [];
@@ -24,21 +30,8 @@ public sealed class TimesheetUploadRequest
     [JsonExtensionData]
     public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
 
-    public bool HasForbiddenFields()
-    {
-        if (Extra is null || Extra.Count == 0)
-            return false;
-        foreach (var key in Extra.Keys)
-        {
-            if (key.Contains("path", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("blob", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("source", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("file", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("code", StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
+    public bool HasForbiddenFields() =>
+        ReportingContract.HasForbiddenExtensionKeys(Extra?.Keys);
 }
 
 public sealed class StatusChartCellDto
@@ -85,6 +78,18 @@ public sealed class PayslipLineDto
     public decimal Hours { get; set; }
     public string Note { get; set; } = "";
     public Guid? ProjectId { get; set; }
+}
+
+public sealed class MeDto
+{
+    public Guid? PersonId { get; set; }
+    public Guid TenantId { get; set; }
+    public string GitHubLogin { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Role { get; set; } = "";
+    /// <summary>是否已對到本租戶人員／邀請（可申報）。</summary>
+    public bool Matched { get; set; }
+    public string Message { get; set; } = "";
 }
 
 public sealed class ApiError

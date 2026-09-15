@@ -75,6 +75,7 @@ public static class ErrorCodes
     public const string LastOwner = "last_owner";
     public const string ClientNotActive = "client_not_active";
     public const string ClientCannotEstablish = "client_cannot_establish";
+    public const string ProjectUnresolved = "project_unresolved";
 }
 
 public static class Messages
@@ -105,6 +106,7 @@ public static class Messages
     public static string InvalidState => "目前狀態不能做這個動作。";
     public static string ClientNotActive => "潛在或未成交的客戶不能派工，也不列入戰情室進行中。";
     public static string ClientCannotEstablish => "要先進入議約或已是合約客戶，才能成立專案。";
+    public static string ProjectUnresolved => "請提供專案 Guid、專案碼或已綁定的 GitHub 倉（owner/repo）至少一種。";
 }
 
 public static class Currencies

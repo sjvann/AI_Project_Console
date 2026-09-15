@@ -26,6 +26,8 @@ public static class AuditActions
     public const string Invite = "invite";
     public const string BindGitHub = "bind_github";
     public const string EstablishProject = "establish_project";
+    public const string IssueApiKey = "issue_api_key";
+    public const string RevokeApiKey = "revoke_api_key";
 }
 
 public sealed class AuditWriter

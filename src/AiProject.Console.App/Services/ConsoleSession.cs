@@ -17,14 +17,14 @@ using AiProject.Console.Core.Update;
 using AiProject.Console.Core.Util;
 using AiProject.Console.Core.WorkHours;
 using AiProject.Console.CompanyClient;
+using AiProject.Shared.Hosting;
 using Microsoft.JSInterop;
-using Photino.NET;
 
 namespace AiProject.Console.App.Services;
 
 public sealed partial class ConsoleSession : IDisposable
 {
-    private readonly NativeUi _native;
+    private readonly IWindowHost _native;
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenSource? _askCts;
     private CancellationTokenSource? _askProbeCts;
@@ -46,7 +46,7 @@ public sealed partial class ConsoleSession : IDisposable
     private TaskCompletionSource<bool>? _leaveGateTcs;
     private string? _releaseReturnDialog;
 
-    public ConsoleSession(NativeUi native, ICompanyPlatformClient? company = null)
+    public ConsoleSession(IWindowHost native, ICompanyPlatformClient? company = null)
     {
         _native = native;
         _company = company;
@@ -139,7 +139,7 @@ public sealed partial class ConsoleSession : IDisposable
     public string LogFilter { get; private set; } = "";
     public Dictionary<string, string> StartErrors { get; } = new();
     public Dictionary<string, string> ServiceActivities { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public bool JobBusy { get; private set; }
+    public bool JobBusy => Occupancy.IsActive;
     public string LeftTab { get; set; } = "svc";
     public string RightTab => LeftTab switch
     {
@@ -1257,7 +1257,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (JobBusy)
         {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+            WarnBusy();
             return Task.CompletedTask;
         }
         return CloseProjectCoreAsync();
@@ -1386,34 +1386,36 @@ public sealed partial class ConsoleSession : IDisposable
             _native.Info("尚未選擇專案", "請先選擇專案目錄。");
             return;
         }
-        if (JobBusy)
-        {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+        if (!TryBeginOccupancy("正在重新掃描專案目錄…", OccupancyKind.Scan))
             return;
-        }
 
         var previous = Catalog;
         var root = previous.Root;
-        JobBusy = true;
-        JobText = "正在重新掃描專案目錄…";
-        Notify();
         try
         {
-            var next = await Task.Run(() => ServiceCatalogBuilder.Build(root)).ConfigureAwait(false);
+            var next = await Task.Run(() => ServiceCatalogBuilder.Build(root), JobToken).ConfigureAwait(false);
             var diff = CatalogRefresh.Diff(previous, next);
             ApplyRefreshedCatalog(next);
-            JobBusy = false;
             JobText = diff.Format();
             UpdateReady();
             Notify();
             await RefreshBuildStatesAsync(clearActivity: false).ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+            JobText = "已取消";
+            Notify();
+        }
         catch (Exception ex)
         {
-            JobBusy = false;
             JobText = "重新掃描失敗";
             Notify();
             _native.Error("重新掃描失敗", ex.Message);
+        }
+        finally
+        {
+            EndOccupancy();
+            Notify();
         }
     }
 
@@ -1528,9 +1530,8 @@ public sealed partial class ConsoleSession : IDisposable
         if (!await GitHubService.HasRemoteAsync(Catalog.Root).ConfigureAwait(false))
             return;
 
-        JobBusy = true;
-        JobText = "正在從遠端同步…";
-        Notify();
+        if (!TryBeginOccupancy("正在從遠端同步…", OccupancyKind.Git))
+            return;
         try
         {
             await RefreshGitStatusAsync().ConfigureAwait(false);
@@ -1555,7 +1556,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         finally
         {
-            JobBusy = false;
+            EndOccupancy();
             await RefreshGitStatusAsync().ConfigureAwait(false);
             Notify();
         }
@@ -2759,11 +2760,8 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         if (confirm && !_native.Confirm("安裝 " + spec.DisplayName, spec.HowTo + "\n\n現在安裝？"))
             return;
-        if (JobBusy)
+        if (!TryBeginOccupancy("安裝 " + spec.DisplayName + "…"))
             return;
-        JobBusy = true;
-        JobText = "安裝 " + spec.DisplayName + "…";
-        Notify();
         try
         {
             var progress = new Progress<string>(line =>
@@ -2771,10 +2769,14 @@ public sealed partial class ConsoleSession : IDisposable
                 JobText = spec.DisplayName + "：" + Truncate(line, 80);
                 Notify();
             });
-            var (code, output) = await ToolchainBootstrap.InstallAsync(spec.Id, progress, _cts.Token).ConfigureAwait(false);
+            var (code, output) = await ToolchainBootstrap.InstallAsync(spec.Id, progress, JobToken).ConfigureAwait(false);
             JobText = code == 0 ? spec.DisplayName + " 已就緒" : "安裝未完成";
             if (code != 0)
                 _native.Warn("安裝 " + spec.DisplayName, FirstLine(output));
+        }
+        catch (OperationCanceledException)
+        {
+            JobText = "已取消";
         }
         catch (Exception ex)
         {
@@ -2783,7 +2785,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         finally
         {
-            JobBusy = false;
+            EndOccupancy();
             if (Dialog == "doctor")
                 DoctorView = DoctorSnapshot.Build(Catalog);
             Notify();
@@ -2792,12 +2794,11 @@ public sealed partial class ConsoleSession : IDisposable
 
     public async Task RestorePackagesAsync(string relDir)
     {
-        if (Catalog is null || JobBusy)
+        if (Catalog is null)
+            return;
+        if (!TryBeginOccupancy("還原套件…"))
             return;
         var target = Path.Combine(Catalog.Root, relDir.Replace('/', Path.DirectorySeparatorChar));
-        JobBusy = true;
-        JobText = "還原套件…";
-        Notify();
         try
         {
             var plan = StackCommands.PlanRestore(Catalog.Root, target);
@@ -2806,10 +2807,14 @@ public sealed partial class ConsoleSession : IDisposable
                 JobText = Truncate(line, 80);
                 Notify();
             });
-            var (code, log) = await StackCommands.RunAsync(plan, progress, _cts.Token).ConfigureAwait(false);
+            var (code, log) = await StackCommands.RunAsync(plan, progress, JobToken).ConfigureAwait(false);
             JobText = code == 0 ? "套件已還原" : "還原失敗";
             if (code != 0)
                 _native.Warn("還原套件", FirstLine(log));
+        }
+        catch (OperationCanceledException)
+        {
+            JobText = "已取消";
         }
         catch (Exception ex)
         {
@@ -2818,7 +2823,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         finally
         {
-            JobBusy = false;
+            EndOccupancy();
             if (Dialog == "doctor")
                 DoctorView = DoctorSnapshot.Build(Catalog);
             Notify();
@@ -2833,11 +2838,10 @@ public sealed partial class ConsoleSession : IDisposable
 
     public async Task InstallDocfxFromDoctorAsync()
     {
-        if (Catalog is null || JobBusy)
+        if (Catalog is null)
             return;
-        JobBusy = true;
-        JobText = "安裝 DocFX…";
-        Notify();
+        if (!TryBeginOccupancy("安裝 DocFX…"))
+            return;
         try
         {
             var msg = await DocsService.InstallDocfxAsync(Catalog.Root).ConfigureAwait(false);
@@ -2850,7 +2854,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         finally
         {
-            JobBusy = false;
+            EndOccupancy();
             if (Dialog == "doctor")
                 DoctorView = DoctorSnapshot.Build(Catalog);
             Notify();
@@ -2862,9 +2866,9 @@ public sealed partial class ConsoleSession : IDisposable
         var ans = _native.YesNoCancel(
             "檢查更新",
             "是否包含 RC／預發行版本？\n\n「是」＝正式版與 RC 都看，取較新者\n「否」＝只看正式版\n「取消」＝不檢查");
-        if (ans == PhotinoDialogResult.Cancel)
+        if (ans == HostDialogResult.Cancel)
             return;
-        var includeRc = ans == PhotinoDialogResult.Yes;
+        var includeRc = ans == HostDialogResult.Yes;
         if (Dialog == "prefs")
             CloseDialog();
         await RunJobAsync("檢查更新…", async () =>
@@ -2934,23 +2938,17 @@ public sealed partial class ConsoleSession : IDisposable
             $"將用本機檔案安裝：\n{path}\n\n會開啟安裝程式。安裝時控制台可能會關閉並在完成後重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
             return;
 
-        if (JobBusy)
-        {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+        if (!TryBeginOccupancy("套用更新…", OccupancyKind.Update))
             return;
-        }
 
-        JobBusy = true;
-        JobText = "套用更新…";
-        Notify();
         try
         {
             var fromInstaller = mode == UpdateApplyMode.Installer;
             SelfUpdate.LaunchApply(path, mode, silent: !fromInstaller);
             if (fromInstaller)
             {
-                JobBusy = false;
                 JobText = "安裝程式已開啟";
+                EndOccupancy();
                 Notify();
                 return;
             }
@@ -2958,7 +2956,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         catch (Exception ex)
         {
-            JobBusy = false;
+            EndOccupancy();
             JobText = "錯誤";
             Notify();
             _native.Error("更新失敗", ex.Message);
@@ -3013,15 +3011,9 @@ public sealed partial class ConsoleSession : IDisposable
             $"將下載並安裝 {update.Tag}{(update.Prerelease ? "（RC／預發行）" : "")}（目前 v{AppInfo.Version}）。\n控制台會先關閉以便覆蓋檔案，安裝完成後會自動重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
             return;
 
-        if (JobBusy)
-        {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+        if (!TryBeginOccupancy("下載更新…", OccupancyKind.Update))
             return;
-        }
 
-        JobBusy = true;
-        JobText = "下載更新…";
-        Notify();
         try
         {
             var progress = new Progress<string>(text =>
@@ -3029,15 +3021,21 @@ public sealed partial class ConsoleSession : IDisposable
                 JobText = text;
                 Notify();
             });
-            var downloaded = await SelfUpdate.DownloadAssetAsync(update, asset, progress, _cts.Token).ConfigureAwait(false);
+            var downloaded = await SelfUpdate.DownloadAssetAsync(update, asset, progress, JobToken).ConfigureAwait(false);
             JobText = "套用更新…";
             Notify();
             SelfUpdate.LaunchApply(downloaded, mode);
             _native.Close();
         }
+        catch (OperationCanceledException)
+        {
+            EndOccupancy();
+            JobText = "已取消";
+            Notify();
+        }
         catch (Exception ex)
         {
-            JobBusy = false;
+            EndOccupancy();
             JobText = "錯誤";
             Notify();
             _native.Error("更新失敗", ex.Message);
@@ -3214,14 +3212,16 @@ public sealed partial class ConsoleSession : IDisposable
         LeftTab = "prj";
         LastBuildFailure = null;
         CompileHelpEnabled = false;
+        ClearBuildLog();
         Notify();
         await RunJobAsync($"編譯 {Path.GetFileName(relPath)}…", async () =>
         {
             await BeginBuildBatchAsync([target]).ConfigureAwait(false);
             MarkBuildActivity(target, "building");
+            PublishOccupancyProgress();
             AppendBuild($"=== build {relPath} ===");
             var progress = new Progress<string>(AppendBuild);
-            var (code, log) = await BuildRunner.BuildAsync(catalog.Root, target, progress).ConfigureAwait(false);
+            var (code, log) = await BuildRunner.BuildAsync(catalog.Root, target, progress, JobToken).ConfigureAwait(false);
             AppendBuild($"exit {code}");
             FinishOneBuild(target, code);
             if (code != 0)
@@ -3240,7 +3240,7 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         if (JobBusy)
         {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+            WarnBusy();
             return;
         }
         NewBranchName = (suggestedName ?? "").Trim();
@@ -4491,9 +4491,9 @@ public sealed partial class ConsoleSession : IDisposable
             var ans = _native.YesNoCancel(
                 "離開",
                 $"警告：目前仍有 {running.Count} 個服務在執行中：\n{listed}{more}\n\n離開前要一併停止這些服務嗎？\n\n「是」＝停止服務後離開\n「否」＝保留服務繼續執行，仍離開\n「取消」＝不離開");
-            if (ans == PhotinoDialogResult.Cancel)
+            if (ans == HostDialogResult.Cancel)
                 return;
-            stopServices = ans == PhotinoDialogResult.Yes;
+            stopServices = ans == HostDialogResult.Yes;
         }
         else if (!_native.Confirm("離開", "確定離開控制台？"))
             return;
@@ -4565,6 +4565,7 @@ public sealed partial class ConsoleSession : IDisposable
         _askPullCts?.Dispose();
         _githubLoginCts?.Cancel();
         _githubLoginCts?.Dispose();
+        EndOccupancy();
         _cts.Cancel();
         _cts.Dispose();
     }
@@ -4624,7 +4625,9 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (JobBusy)
         {
-            _native.Info("忙碌中", $"請等待目前工作完成（{JobText}），再發行 Release。");
+            _native.Info("忙碌中", Occupancy.IsActive
+                ? Occupancy.BusyDialogBody + "再發行 Release。"
+                : $"請等待目前工作完成（{JobText}），再發行 Release。");
             return;
         }
         ReleaseHint = "正在讀取 GitHub 上的發行紀錄…";
@@ -4942,7 +4945,7 @@ public sealed partial class ConsoleSession : IDisposable
             return false;
 
         LeftTab = "prj";
-        BuildText = "";
+        ClearBuildLog();
         LastBuildFailure = null;
         CompileHelpEnabled = false;
         var passed = true;
@@ -4955,8 +4958,10 @@ public sealed partial class ConsoleSession : IDisposable
             var failedCode = 0;
             foreach (var target in targets)
             {
+                JobToken.ThrowIfCancellationRequested();
                 MarkBuildActivity(target, "building");
                 BuildCurrentName = Path.GetFileName(target);
+                PublishOccupancyProgress();
                 JobText = $"測試中 {BuildProgressText} · {BuildCurrentName}";
                 Notify();
                 var header = $"=== test {target} ===";
@@ -4967,7 +4972,7 @@ public sealed partial class ConsoleSession : IDisposable
                     allLines.Add(line);
                     AppendBuild(line);
                 });
-                var (code, _) = await TestRunner.TestAsync(catalog.Root, target, progress).ConfigureAwait(false);
+                var (code, _) = await TestRunner.TestAsync(catalog.Root, target, progress, JobToken).ConfigureAwait(false);
                 var footer = $"exit {code}  ({target})";
                 allLines.Add(footer);
                 AppendBuild(footer);
@@ -4998,7 +5003,7 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         var catalog = Catalog!;
         LeftTab = "prj";
-        BuildText = "";
+        ClearBuildLog();
         LastBuildFailure = null;
         CompileHelpEnabled = false;
         Notify();
@@ -5010,19 +5015,26 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (!await EnsureBuildToolsAsync(targets).ConfigureAwait(false))
             return;
+        var graph = BuildGraph.Plan(catalog.Root, targets);
         await RunJobAsync("建置中…", async () =>
         {
-            await BeginBuildBatchAsync(targets).ConfigureAwait(false);
+            await BeginBuildBatchAsync(graph.Steps).ConfigureAwait(false);
+            foreach (var original in targets)
+                MarkBuildActivity(original, "queued");
             var allLines = new List<string>();
             string? failedTarget = null;
             var failedCode = 0;
-            foreach (var target in targets)
+            foreach (var step in graph.Steps)
             {
-                MarkBuildActivity(target, "building");
-                BuildCurrentName = Path.GetFileName(BuildFreshness.ToProjectDir(catalog.Root, target));
+                JobToken.ThrowIfCancellationRequested();
+                var covered = graph.CoveredByStep.TryGetValue(step, out var list) ? list : [step];
+                foreach (var item in covered)
+                    MarkBuildActivity(item, "building");
+                BuildCurrentName = Path.GetFileName(BuildFreshness.ToProjectDir(catalog.Root, step));
+                PublishOccupancyProgress();
                 JobText = $"建置中 {BuildProgressText} · {BuildCurrentName}";
                 Notify();
-                var header = $"=== build {target} ===";
+                var header = $"=== build {step} ===";
                 allLines.Add(header);
                 AppendBuild(header);
                 var progress = new Progress<string>(line =>
@@ -5030,14 +5042,14 @@ public sealed partial class ConsoleSession : IDisposable
                     allLines.Add(line);
                     AppendBuild(line);
                 });
-                var (code, _) = await BuildRunner.BuildAsync(catalog.Root, target, progress).ConfigureAwait(false);
-                var footer = $"exit {code}  ({target})";
+                var (code, _) = await BuildRunner.BuildAsync(catalog.Root, step, progress, JobToken).ConfigureAwait(false);
+                var footer = $"exit {code}  ({step})";
                 allLines.Add(footer);
                 AppendBuild(footer);
-                FinishOneBuild(target, code);
+                FinishBuildStep(step, covered, code);
                 if (code != 0 && failedTarget is null)
                 {
-                    failedTarget = target;
+                    failedTarget = step;
                     failedCode = code;
                 }
             }
@@ -5124,18 +5136,26 @@ public sealed partial class ConsoleSession : IDisposable
         Notify();
     }
 
-    private void FinishOneBuild(string target, int exitCode)
+    private void FinishOneBuild(string target, int exitCode) =>
+        FinishBuildStep(target, [target], exitCode);
+
+    private void FinishBuildStep(string step, IReadOnlyList<string> covered, int exitCode)
     {
         BuildDone++;
         if (exitCode != 0)
             BuildFailedCount++;
-        MarkBuildActivity(target, exitCode == 0 ? "ok" : "failed");
-        RefreshOneProject(target, exitCode == 0 ? "ok" : "failed");
-        if (Runtime is not null)
+        var activity = exitCode == 0 ? "ok" : "failed";
+        foreach (var target in covered)
         {
-            try { BuildReportStore.Write(Runtime, target, exitCode, BuildFreshness.DefaultConfiguration); }
-            catch { /* report is optional */ }
+            MarkBuildActivity(target, activity);
+            RefreshOneProject(target, activity);
+            if (Runtime is not null)
+            {
+                try { BuildReportStore.Write(Runtime, target, exitCode, BuildFreshness.DefaultConfiguration); }
+                catch { /* report is optional */ }
+            }
         }
+        PublishOccupancyProgress();
         Notify();
     }
 
@@ -5176,12 +5196,6 @@ public sealed partial class ConsoleSession : IDisposable
         LastBuildFailure = new BuildFailure(target, exitCode, log);
         CompileHelpEnabled = true;
         AppendBuild("建置失敗 — 可點「編譯求救」交給目前 Agent 後端");
-        Notify();
-    }
-
-    private void AppendBuild(string line)
-    {
-        BuildText += line + "\n";
         Notify();
     }
 
@@ -5389,11 +5403,8 @@ public sealed partial class ConsoleSession : IDisposable
         string? returnDialog,
         Func<IProgress<string>, Task<string?>> fn)
     {
-        if (JobBusy)
-        {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+        if (!TryBeginOccupancy(run.Title + "…", OccupancyKind.Pack))
             return false;
-        }
         ReleaseRun = run;
         _releaseReturnDialog = returnDialog;
         JobResult = null;
@@ -5401,7 +5412,6 @@ public sealed partial class ConsoleSession : IDisposable
         ReleaseList = null;
         InfoCopied = false;
         Dialog = "release-progress";
-        JobBusy = true;
         run.Begin();
         JobText = run.Title + "…";
         Notify();
@@ -5416,17 +5426,21 @@ public sealed partial class ConsoleSession : IDisposable
         string? msg = null;
         try
         {
-            msg = await Task.Run(() => fn(progress)).ConfigureAwait(false);
+            msg = await Task.Run(() => fn(progress), JobToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            err = "已取消";
         }
         catch (Exception ex)
         {
             err = ex.Message;
         }
-        JobBusy = false;
+        EndOccupancy();
         if (err is not null)
         {
             run.Fail(err);
-            JobText = "錯誤";
+            JobText = err == "已取消" ? "已取消" : "錯誤";
         }
         else
         {
@@ -5441,27 +5455,27 @@ public sealed partial class ConsoleSession : IDisposable
 
     private async Task RunJobAsync(string title, Func<Task<string?>> fn, bool refreshBuilds = true)
     {
-        if (JobBusy)
-        {
-            _native.Info("忙碌中", "請等待目前工作完成。");
+        if (!TryBeginOccupancy(title))
             return;
-        }
-        JobBusy = true;
-        JobText = title;
-        Notify();
         string? err = null;
         string? msg = null;
         try
         {
-            msg = await Task.Run(fn).ConfigureAwait(false);
+            msg = await Task.Run(fn, JobToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            msg = "已取消";
         }
         catch (Exception ex)
         {
             err = ex.Message;
         }
-        JobBusy = false;
+        EndOccupancy();
         if (err is not null)
             JobText = "錯誤";
+        else if (msg == "已取消")
+            JobText = "已取消";
         else if (!refreshBuilds && BuildTotal > 0 && !string.IsNullOrEmpty(BuildProgressText))
             JobText = BuildProgressText;
         else if (!string.IsNullOrWhiteSpace(msg) && !JobResultView.IsDense(msg))
@@ -5480,14 +5494,27 @@ public sealed partial class ConsoleSession : IDisposable
 
     private async Task PollLoopAsync()
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(800));
-        var healthEvery = 0;
         try
         {
-            while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
+            var healthEvery = 0;
+            while (!_cts.IsCancellationRequested)
             {
-                if (FollowLog)
+                ObserveForeignOccupancy();
+                FlushBuildLog(force: false);
+                var occupied = Occupancy.IsActive;
+                if (FollowLog && !occupied)
                     AppendLogTail();
+                if (occupied)
+                {
+                    if (_occupancyOwned)
+                        PublishOccupancyProgress();
+                    if (ServiceActivityMap.ClearOpening(ServiceActivities) > 0)
+                    { }
+                    Notify();
+                    await Task.Delay(200, _cts.Token).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (ServiceActivityMap.ClearOpening(ServiceActivities) > 0)
                     Notify();
                 healthEvery++;
@@ -5526,6 +5553,7 @@ public sealed partial class ConsoleSession : IDisposable
                 if (healthEvery % 37 == 0)
                     _workHours.Touch();
                 Notify();
+                await Task.Delay(800, _cts.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -5553,6 +5581,7 @@ public sealed partial class ConsoleSession : IDisposable
 
     private void ResetToStartup()
     {
+        EndOccupancy();
         _workHours.End();
         _iconUrlCache.Clear();
         Catalog = null;
@@ -5594,7 +5623,7 @@ public sealed partial class ConsoleSession : IDisposable
         LogFilter = "";
         LogTitle = "Log · （未選服務）";
         LogText = "";
-        BuildText = "";
+        ClearBuildLog();
         AuditEntries = [];
         AuditTotal = 0;
         AuditPolicyText = "";
@@ -5607,7 +5636,6 @@ public sealed partial class ConsoleSession : IDisposable
         ResetBuildProgress();
         ReadyText = "就緒 0 / 0";
         JobText = "待命";
-        JobBusy = false;
         _logOffset = 0;
         LeftTab = "svc";
         AskPanelOpen = false;
@@ -5755,6 +5783,6 @@ public sealed partial class ConsoleSession : IDisposable
 
     private void SyncWindowTitle()
     {
-        _native.SetTitle(AppInfo.WindowTitle(Catalog?.Name));
+        _native.SetTitle(Occupancy.WindowCaption(Catalog?.Name));
     }
 }

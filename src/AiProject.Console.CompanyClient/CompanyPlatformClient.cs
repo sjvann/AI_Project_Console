@@ -6,6 +6,7 @@ namespace AiProject.Console.CompanyClient;
 
 public interface ICompanyPlatformClient
 {
+    Task<MeDto> MeAsync(string bearerToken, CancellationToken cancellationToken = default);
     Task<TimesheetUploadResponse> UploadAsync(TimesheetUploadRequest request, string bearerToken, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AssignmentDto>> AssignmentsAsync(string bearerToken, CancellationToken cancellationToken = default);
     Task<PayslipDto?> PayslipAsync(string bearerToken, CancellationToken cancellationToken = default);
@@ -16,6 +17,20 @@ public sealed class CompanyPlatformClient : ICompanyPlatformClient
     readonly HttpClient _http;
 
     public CompanyPlatformClient(HttpClient http) => _http = http;
+
+    public async Task<MeDto> MeAsync(string bearerToken, CancellationToken cancellationToken = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, "api/v1/me");
+        Apply(req, bearerToken);
+        var response = await SendWithRetry(req, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadFromJsonAsync<ApiError>(cancellationToken);
+            throw new CompanyPlatformException(error?.Code ?? "handshake_failed", error?.Message ?? "握手失敗，請檢查 Base URL 與權杖。");
+        }
+        return await response.Content.ReadFromJsonAsync<MeDto>(cancellationToken)
+            ?? throw new CompanyPlatformException("handshake_failed", "伺服器沒有回傳握手結果。");
+    }
 
     public async Task<TimesheetUploadResponse> UploadAsync(TimesheetUploadRequest request, string bearerToken, CancellationToken cancellationToken = default)
     {

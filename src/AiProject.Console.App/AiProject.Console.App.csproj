@@ -29,6 +29,14 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <ProjectReference Include="..\AiProject.Console.Core\AiProject.Console.Core.csproj" />
     <ProjectReference Include="..\AiProject.Console.CompanyClient\AiProject.Console.CompanyClient.csproj" />
+    <ProjectReference Include="..\AiProject.Shared.Hosting\AiProject.Shared.Hosting.csproj" />
+  </ItemGroup>
+
+  <!-- Photino 不走 RCL _content；直接複製 tokens 避免 StaticWebAssets 重複鍵 -->
+  <ItemGroup>
+    <Content Include="..\AiProject.Shared.DesignSystem\wwwroot\tokens\tokens.css" Link="wwwroot\css\tokens.css">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

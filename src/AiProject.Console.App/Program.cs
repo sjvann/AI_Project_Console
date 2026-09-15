@@ -7,6 +7,7 @@ using AiProject.Console.CompanyClient;
 using AiProject.Console.Core;
 using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Stack;
+using AiProject.Shared.Hosting;
 
 namespace AiProject.Console.App;
 
@@ -43,6 +44,7 @@ internal static class Program
         builder.Services.AddHttpClient<ICompanyPlatformClient, CompanyPlatformClient>()
             .AddHttpMessageHandler<CompanyBaseAddressHandler>();
         builder.Services.AddSingleton<NativeUi>();
+        builder.Services.AddSingleton<IWindowHost>(sp => sp.GetRequiredService<NativeUi>());
         builder.Services.AddSingleton<ConsoleSession>();
         builder.RootComponents.Add<App>("app");
 

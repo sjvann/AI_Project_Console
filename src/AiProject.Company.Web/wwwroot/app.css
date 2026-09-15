@@ -1,15 +1,4 @@
-:root {
-    --bg: #e8ecf0;
-    --panel: #f7f9fb;
-    --border: #c5ced8;
-    --text: #1c2430;
-    --muted: #5a6a7a;
-    --accent: #0b6e56;
-    --accent-hi: #0a5c48;
-    --danger: #9b2c2c;
-    --ok: #1a7f4b;
-    --wait: #b86e00;
-}
+/* 共用色票見 Shared.DesignSystem tokens.css */
 html, body { margin: 0; min-height: 100%; font-family: "Segoe UI", "Noto Sans TC", sans-serif; background: var(--bg); color: var(--text); font-size: 15px; }
 a { color: var(--accent); }
 .shell { min-height: 100vh; display: flex; flex-direction: column; }

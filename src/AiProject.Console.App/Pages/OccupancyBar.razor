@@ -1,0 +1,27 @@
+@inject ConsoleSession S
+
+@if (S.Occupancy.IsActive)
+{
+    <div class="occupancy-bar" role="status" aria-live="polite" aria-label="目前佔用">
+        <span class="occupancy-dot" aria-hidden="true"></span>
+        <strong class="occupancy-title">@S.Occupancy.Headline</strong>
+        @if (S.Occupancy.Total > 0)
+        {
+            <span class="occupancy-progress">@S.Occupancy.ProgressText</span>
+        }
+        <span class="occupancy-elapsed">@S.Occupancy.ElapsedText</span>
+        @if (!string.IsNullOrEmpty(S.Occupancy.CurrentName))
+        {
+            <span class="occupancy-current">@S.Occupancy.CurrentName</span>
+        }
+        @if (!string.IsNullOrEmpty(S.Occupancy.QueuedTitle))
+        {
+            <span class="occupancy-queued">下一個：@S.Occupancy.QueuedTitle</span>
+        }
+        <span class="grow"></span>
+        @if (S.Occupancy.CanCancel)
+        {
+            <button type="button" class="btn-sec" title="取消目前工作" @onclick="S.CancelOccupancy">取消</button>
+        }
+    </div>
+}

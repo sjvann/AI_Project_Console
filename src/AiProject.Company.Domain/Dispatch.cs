@@ -29,9 +29,11 @@ public enum AssignmentSyncState
     Pending = 2,
 }
 
-public sealed class Assignment
+public sealed class Assignment : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public Guid PersonId { get; private set; }
     public Guid ProjectId { get; private set; }
     public DateOnly Start { get; private set; }

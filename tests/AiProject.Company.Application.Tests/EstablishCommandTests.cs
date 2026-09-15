@@ -62,6 +62,10 @@ sealed class MemoryProjects : IProjectRepository
 {
     public List<Project> Items { get; } = [];
     public Task<Project?> GetAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Items.FirstOrDefault(p => p.Id == id));
+    public Task<Project?> GetByCodeAsync(string projectCode, CancellationToken ct = default) =>
+        Task.FromResult(Items.FirstOrDefault(p => string.Equals(p.ProjectCode, projectCode.Trim(), StringComparison.OrdinalIgnoreCase)));
+    public Task<Project?> FindByRepoAsync(string ownerRepo, CancellationToken ct = default) =>
+        Task.FromResult(Items.FirstOrDefault(p => p.Repos.Any(r => string.Equals(r.OwnerRepo, ownerRepo.Trim(), StringComparison.OrdinalIgnoreCase))));
     public Task<IReadOnlyList<Project>> ListAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Project>>(Items);
     public Task AddAsync(Project project, CancellationToken ct = default)
     {

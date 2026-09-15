@@ -42,8 +42,18 @@ public interface IContractRepository
 public interface IProjectRepository
 {
     Task<Project?> GetAsync(Guid id, CancellationToken ct = default);
+    Task<Project?> GetByCodeAsync(string projectCode, CancellationToken ct = default);
+    Task<Project?> FindByRepoAsync(string ownerRepo, CancellationToken ct = default);
     Task<IReadOnlyList<Project>> ListAsync(CancellationToken ct = default);
     Task AddAsync(Project project, CancellationToken ct = default);
+}
+
+public interface IReportingApiKeyRepository
+{
+    Task<ReportingApiKey?> GetAsync(Guid id, CancellationToken ct = default);
+    Task<ReportingApiKey?> GetByHashAsync(string keyHash, CancellationToken ct = default);
+    Task<IReadOnlyList<ReportingApiKey>> ListForPersonAsync(Guid personId, CancellationToken ct = default);
+    Task AddAsync(ReportingApiKey key, CancellationToken ct = default);
 }
 
 public interface IAssignmentRepository

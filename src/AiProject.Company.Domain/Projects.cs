@@ -121,9 +121,11 @@ public static class ClientCopy
     };
 }
 
-public sealed class Client
+public sealed class Client : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string Name { get; private set; } = "";
     public string? Contact { get; private set; }
     public ClientKind Kind { get; private set; }
@@ -267,9 +269,11 @@ public sealed class ClientActivity
         };
 }
 
-public sealed class Contract
+public sealed class Contract : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public Guid ClientId { get; private set; }
     public string Name { get; private set; } = "";
     public DateOnly Start { get; private set; }
@@ -321,11 +325,15 @@ public sealed class Contract
     public void SoftDelete() => IsDeleted = true;
 }
 
-public sealed class Project
+public sealed class Project : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public Guid ContractId { get; private set; }
     public string Name { get; private set; } = "";
+    /// <summary>公司對外專案碼（公開回報契約可用；租戶內唯一）。</summary>
+    public string? ProjectCode { get; private set; }
     public ProjectStatus Status { get; private set; }
     public DateOnly Start { get; private set; }
     public DateOnly TargetEnd { get; private set; }
@@ -381,6 +389,19 @@ public sealed class Project
         WorkspacePath = string.IsNullOrWhiteSpace(workspacePath) ? null : workspacePath.Trim();
         ExcludeFromMarginKpi = excludeFromMargin;
         ClientRateCipher = clientRateCipher;
+    }
+
+    public void SetProjectCode(string? projectCode)
+    {
+        if (string.IsNullOrWhiteSpace(projectCode))
+        {
+            ProjectCode = null;
+            return;
+        }
+        var code = projectCode.Trim();
+        if (code.Length > 64)
+            throw new DomainException(ErrorCodes.InvalidState, "專案碼最多 64 字。");
+        ProjectCode = code;
     }
 
     public void SetStatus(ProjectStatus status) => Status = status;

@@ -1,11 +1,11 @@
 @using AiProject.Console.Core
 
 <div class="menu @(Open == Key ? "open" : null)">
-    <button class="btn-sec" @onclick="Toggle">@Title</button>
+    <button class="btn-sec" disabled="@Busy" title="@(Busy ? DisabledTitle : Title)" @onclick="Toggle">@Title</button>
     <div class="menu-list">
         @foreach (var a in Actions)
         {
-            <button @onclick="@(() => Run(a))">@a.Label</button>
+            <button disabled="@Busy" title="@(Busy ? DisabledTitle : a.Label)" @onclick="@(() => Run(a))">@a.Label</button>
         }
     </div>
 </div>
@@ -18,10 +18,20 @@
     [Parameter] public string? Open { get; set; }
     [Parameter] public EventCallback<string?> OpenChanged { get; set; }
 
-    async Task Toggle() => await OpenChanged.InvokeAsync(Open == Key ? null : Key);
+    bool Busy => Session.JobBusy;
+    string DisabledTitle => string.IsNullOrEmpty(Session.BusyReason) ? "忙碌中" : Session.BusyReason;
+
+    async Task Toggle()
+    {
+        if (Busy)
+            return;
+        await OpenChanged.InvokeAsync(Open == Key ? null : Key);
+    }
 
     async Task Run(ConsoleAction a)
     {
+        if (Busy)
+            return;
         await OpenChanged.InvokeAsync(null);
         await Session.OnActionAsync(a);
     }

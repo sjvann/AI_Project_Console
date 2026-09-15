@@ -75,7 +75,7 @@ flowchart LR
 
 **可借鏡（方法論，非合併程式）：** MD → validate；定稿差異 → Issue；`needs-assignment` 紀律；假設／待決可見；ModuleDesigner.AI 類設計書生成流程。
 
-**禁止：** 把本站做進模啟分析者台或四套角色台；共用安裝包／登入／DbContext／monorepo；現在為本站開工深整合。若日後要服務「模啟模組開發」路徑，用**適配器**對齊 definition／SA 格式，不搬進 Photino 四台。
+**禁止：** 把本站做進模啟分析者台或四套角色台；共用安裝包／登入／DbContext；現在為本站開工深整合。若日後要服務「模啟模組開發」路徑，用**適配器**對齊 definition／SA 格式，不搬進本線控制台四套角色台。家族可同倉（見 [架構 AD-29](architecture.md)），仍禁止與模啟 L2 合併。
 
 細節與整合級別見模啟倉 `DocsLibrary/V3/00-產品/與AI_Project_Console整合評估.md`。
 

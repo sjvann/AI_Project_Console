@@ -15,6 +15,9 @@ public static class CompanyHostStartup
         await db.Database.EnsureCreatedAsync();
         await EnsureStaffAccountsTableAsync(db);
         await EnsureClientCrmSchemaAsync(db);
+        await EnsureTenantSchemaAsync(db);
+        await EnsureDefaultTenantAsync(db);
+        await EnsureReportingApiKeysAndProjectCodeAsync(db);
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsRepository>();
         await settings.GetAsync();
         var accounts = scope.ServiceProvider.GetRequiredService<IStaffAccountRepository>();
@@ -54,6 +57,7 @@ public static class CompanyHostStartup
             await db.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS staff_accounts (
                     Id TEXT NOT NULL CONSTRAINT PK_staff_accounts PRIMARY KEY,
+                    TenantId TEXT NOT NULL,
                     PersonId TEXT NOT NULL,
                     UserName TEXT NOT NULL,
                     PasswordHash TEXT NOT NULL,
@@ -69,6 +73,7 @@ public static class CompanyHostStartup
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS staff_accounts (
                 "Id" uuid NOT NULL PRIMARY KEY,
+                "TenantId" uuid NOT NULL,
                 "PersonId" uuid NOT NULL,
                 "UserName" text NOT NULL,
                 "PasswordHash" text NOT NULL,
@@ -144,6 +149,101 @@ public static class CompanyHostStartup
                 "ProjectId" uuid NOT NULL REFERENCES "Projects" ("Id") ON DELETE CASCADE
             );
             """);
+    }
+
+    static async Task EnsureTenantSchemaAsync(CompanyDbContext db)
+    {
+        var defaultId = TenantIds.Default.ToString();
+        string[] tables =
+        [
+            "CompanySettings",
+            "People",
+            "Vendors",
+            "Invitations",
+            "UnmatchedUploads",
+            "Clients",
+            "Contracts",
+            "Projects",
+            "Assignments",
+            "Timesheets",
+            "PayrollPeriods",
+            "staff_accounts",
+            "Audits",
+        ];
+
+        if (db.Database.IsSqlite())
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS Tenants (
+                    Id TEXT NOT NULL CONSTRAINT PK_Tenants PRIMARY KEY,
+                    DisplayName TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL
+                );
+                """);
+            foreach (var table in tables)
+                await TryAlterAsync(db, $"ALTER TABLE {table} ADD COLUMN TenantId TEXT NOT NULL DEFAULT '{defaultId}';");
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "Tenants" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "DisplayName" text NOT NULL,
+                "CreatedAt" timestamptz NOT NULL
+            );
+            """);
+        foreach (var table in tables)
+        {
+            var quoted = table == "staff_accounts" ? "staff_accounts" : $"\"{table}\"";
+            await TryAlterAsync(db, $"""ALTER TABLE {quoted} ADD COLUMN IF NOT EXISTS "TenantId" uuid NOT NULL DEFAULT '{defaultId}';""");
+        }
+    }
+
+    static async Task EnsureDefaultTenantAsync(CompanyDbContext db)
+    {
+        if (await db.Tenants.AnyAsync(t => t.Id == TenantIds.Default))
+            return;
+        db.Tenants.Add(Tenant.CreateDefault(DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+    }
+
+    static async Task EnsureReportingApiKeysAndProjectCodeAsync(CompanyDbContext db)
+    {
+        if (db.Database.IsSqlite())
+        {
+            await TryAlterAsync(db, "ALTER TABLE Projects ADD COLUMN ProjectCode TEXT NULL;");
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS reporting_api_keys (
+                    Id TEXT NOT NULL CONSTRAINT PK_reporting_api_keys PRIMARY KEY,
+                    TenantId TEXT NOT NULL,
+                    PersonId TEXT NOT NULL,
+                    Name TEXT NOT NULL,
+                    KeyPrefix TEXT NOT NULL,
+                    KeyHash TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    RevokedAt TEXT NULL,
+                    LastUsedAt TEXT NULL
+                );
+                """);
+            await db.Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IF NOT EXISTS IX_reporting_api_keys_KeyHash ON reporting_api_keys (KeyHash);");
+            return;
+        }
+
+        await TryAlterAsync(db, """ALTER TABLE "Projects" ADD COLUMN IF NOT EXISTS "ProjectCode" text NULL;""");
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS reporting_api_keys (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "TenantId" uuid NOT NULL,
+                "PersonId" uuid NOT NULL,
+                "Name" text NOT NULL,
+                "KeyPrefix" text NOT NULL,
+                "KeyHash" text NOT NULL,
+                "CreatedAt" timestamptz NOT NULL,
+                "RevokedAt" timestamptz NULL,
+                "LastUsedAt" timestamptz NULL
+            );
+            """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_reporting_api_keys_KeyHash" ON reporting_api_keys ("KeyHash");""");
     }
 
     static async Task TryAlterAsync(CompanyDbContext db, string sql)

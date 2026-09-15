@@ -1,8 +1,10 @@
+using AiProject.Shared.Hosting;
 using Photino.NET;
 
 namespace AiProject.Console.App.Services;
 
-public sealed class NativeUi
+/// <summary>Photino 適配：唯一允許持有 Photino 視窗類型的 UI 橋接（K0-1）。</summary>
+public sealed class NativeUi : IWindowHost
 {
     public PhotinoWindow? Window { get; set; }
 
@@ -22,19 +24,20 @@ public sealed class NativeUi
         return await Window.ShowOpenFileAsync(title, multiSelect: true, filters: mapped).ConfigureAwait(false);
     }
 
-    public PhotinoDialogResult Message(
+    public HostDialogResult Message(
         string title,
         string text,
         PhotinoDialogButtons buttons = PhotinoDialogButtons.Ok,
         PhotinoDialogIcon icon = PhotinoDialogIcon.Info)
     {
-        return Window?.ShowMessage(title, text, buttons, icon) ?? PhotinoDialogResult.Cancel;
+        var result = Window?.ShowMessage(title, text, buttons, icon) ?? PhotinoDialogResult.Cancel;
+        return Map(result);
     }
 
     public bool Confirm(string title, string text) =>
-        Message(title, text, PhotinoDialogButtons.YesNo, PhotinoDialogIcon.Question) == PhotinoDialogResult.Yes;
+        Message(title, text, PhotinoDialogButtons.YesNo, PhotinoDialogIcon.Question) == HostDialogResult.Yes;
 
-    public PhotinoDialogResult YesNoCancel(string title, string text) =>
+    public HostDialogResult YesNoCancel(string title, string text) =>
         Message(title, text, PhotinoDialogButtons.YesNoCancel, PhotinoDialogIcon.Question);
 
     public void Info(string title, string text) => Message(title, text);
@@ -53,4 +56,12 @@ public sealed class NativeUi
             return;
         Window.SetTitle(title);
     }
+
+    private static HostDialogResult Map(PhotinoDialogResult result) => result switch
+    {
+        PhotinoDialogResult.Ok => HostDialogResult.Ok,
+        PhotinoDialogResult.Yes => HostDialogResult.Yes,
+        PhotinoDialogResult.No => HostDialogResult.No,
+        _ => HostDialogResult.Cancel,
+    };
 }

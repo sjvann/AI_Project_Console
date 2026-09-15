@@ -158,6 +158,18 @@ public static class StackCommands
         {
             using var proc = new Process { StartInfo = psi };
             proc.Start();
+            await using var kill = ct.Register(() =>
+            {
+                try
+                {
+                    if (!proc.HasExited)
+                        proc.Kill(entireProcessTree: true);
+                }
+                catch (Exception)
+                {
+                    // 取消時殺不掉則等 WaitForExit 丟 OperationCanceledException
+                }
+            });
             var stdout = proc.StandardOutput.ReadToEndAsync(ct);
             var stderr = proc.StandardError.ReadToEndAsync(ct);
             await proc.WaitForExitAsync(ct).ConfigureAwait(false);
@@ -169,6 +181,11 @@ public static class StackCommands
                     Emit(text);
             }
             return (proc.ExitCode, string.Join('\n', lines));
+        }
+        catch (OperationCanceledException)
+        {
+            Emit("已取消");
+            throw;
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException)
         {

@@ -82,5 +82,15 @@ $Setup = Join-Path $Root "dist\AI_Project_Console-$Version-$Runtime-setup.exe"
 if (-not (Test-Path $Setup)) { throw "Inno Setup 後找不到 $Setup" }
 Invoke-AuthenticodeSign -Files @($Setup) -CorrelationId "AI_Project_Console-$Version-$Runtime-setup"
 
+Write-Host "PACK:checksum"
+function Write-Sha256Sidecar([string]$Path) {
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+    $name = Split-Path $Path -Leaf
+    Set-Content -Path ($Path + ".sha256") -Value "$hash  $name" -Encoding ascii -NoNewline
+    Write-Host "  $($name).sha256"
+}
+Write-Sha256Sidecar $Setup
+Write-Sha256Sidecar $Zip
+
 Write-Host "PACK:done"
 Get-ChildItem (Join-Path $Root "dist") -File | Select-Object Name, @{N="SizeMB";E={[math]::Round($_.Length/1MB,2)}} | Format-Table -AutoSize

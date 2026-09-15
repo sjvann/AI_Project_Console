@@ -7,9 +7,11 @@ public enum TimesheetStatus
     Returned = 2,
 }
 
-public sealed class Timesheet
+public sealed class Timesheet : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string LocalSlotId { get; private set; } = "";
     public Guid PersonId { get; private set; }
     public Guid ProjectId { get; private set; }

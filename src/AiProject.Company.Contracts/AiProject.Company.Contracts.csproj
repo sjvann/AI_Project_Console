@@ -7,4 +7,8 @@
     <RootNamespace>AiProject.Company.Contracts</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\AiProject.Shared.Contracts\AiProject.Shared.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

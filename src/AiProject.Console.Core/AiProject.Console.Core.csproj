@@ -15,6 +15,9 @@
     <EmbeddedResource Include="..\..\assets\brand\logo.svg" LogicalName="AiProject.Console.Core.Brand.logo.svg" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AiProject.Shared.Update\AiProject.Shared.Update.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="AiProject.Console.Core.Tests" />
   </ItemGroup>
 

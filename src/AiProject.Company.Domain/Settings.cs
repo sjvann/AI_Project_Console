@@ -1,10 +1,12 @@
 namespace AiProject.Company.Domain;
 
-public sealed class CompanySettings : IMarginThresholds
+public sealed class CompanySettings : IMarginThresholds, ITenantScoped
 {
     public static Guid SingletonId { get; } = Guid.Parse("aaaaaaaa-0000-4000-8000-000000000001");
 
     public Guid Id { get; private set; } = SingletonId;
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public string CompanyName { get; private set; } = "";
     public string TimeZoneId { get; private set; } = "Asia/Taipei";
     public string Currency { get; private set; } = "TWD";
@@ -14,7 +16,14 @@ public sealed class CompanySettings : IMarginThresholds
     public bool SetupCompleted { get; private set; }
     public List<ExchangeRate> ExchangeRates { get; private set; } = [];
 
-    public static CompanySettings CreateDefault() => new();
+    public static CompanySettings CreateDefault() => CreateForTenant(TenantIds.Default);
+
+    public static CompanySettings CreateForTenant(Guid tenantId) =>
+        new()
+        {
+            Id = tenantId == TenantIds.Default ? SingletonId : Guid.NewGuid(),
+            TenantId = tenantId,
+        };
 
     public void Update(string companyName, string timeZoneId, string currency, decimal yellowPercent, decimal redPercent, bool writeBack)
     {

@@ -11,6 +11,7 @@ public sealed class MeQueries
     readonly IPayrollRepository _periods;
     readonly IAuthorizationGate _auth;
     readonly ICurrentUser _user;
+    readonly ITenantContext _tenant;
     readonly PayrollCommands _payroll;
     readonly IClock _clock;
     readonly ISettingsRepository _settings;
@@ -22,6 +23,7 @@ public sealed class MeQueries
         IPayrollRepository periods,
         IAuthorizationGate auth,
         ICurrentUser user,
+        ITenantContext tenant,
         PayrollCommands payroll,
         IClock clock,
         ISettingsRepository settings)
@@ -32,6 +34,7 @@ public sealed class MeQueries
         _periods = periods;
         _auth = auth;
         _user = user;
+        _tenant = tenant;
         _payroll = payroll;
         _clock = clock;
         _settings = settings;
@@ -87,6 +90,45 @@ public sealed class MeQueries
         if (latest is null)
             return null;
         return await _payroll.PayslipAsync(personId, latest.Id, ct);
+    }
+
+    /// <summary>公開回報契約握手（A2-1）：確認呼叫者可否對此租戶申報。</summary>
+    public Task<MeDto> HandshakeAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_user.IsAuthenticated || string.IsNullOrWhiteSpace(_user.GitHubLogin) && string.IsNullOrWhiteSpace(_user.UserName))
+        {
+            return Task.FromResult(new MeDto
+            {
+                Matched = false,
+                Message = "請先用 GitHub 權杖或公司帳戶登入後再測試連線。",
+            });
+        }
+
+        var login = string.IsNullOrWhiteSpace(_user.GitHubLogin) ? _user.UserName : _user.GitHubLogin;
+        if (_user.PersonId is Guid personId)
+        {
+            return Task.FromResult(new MeDto
+            {
+                PersonId = personId,
+                TenantId = _tenant.TenantId,
+                GitHubLogin = login,
+                DisplayName = _user.DisplayName,
+                Role = _user.Role.ToString(),
+                Matched = true,
+                Message = "已對到人員，可以申報工時。",
+            });
+        }
+
+        return Task.FromResult(new MeDto
+        {
+            TenantId = _tenant.TenantId,
+            GitHubLogin = login,
+            DisplayName = _user.DisplayName,
+            Role = _user.Role.ToString(),
+            Matched = false,
+            Message = "GitHub 帳號尚未對到本工作區人員檔。請找人資加入名冊，或至「待歸戶」處理。",
+        });
     }
 }
 

@@ -15,9 +15,11 @@ public enum PayrollLineKind
     OvertimePending = 3,
 }
 
-public sealed class PayrollPeriod
+public sealed class PayrollPeriod : ITenantScoped
 {
     public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; } = TenantIds.Default;
+    public void BindTenant(Guid tenantId) => TenantId = tenantId == Guid.Empty ? throw new DomainException(ErrorCodes.Required, Messages.Required("租戶")) : tenantId;
     public DateOnly Start { get; private set; }
     public DateOnly End { get; private set; }
     public PayrollPeriodStatus Status { get; private set; }

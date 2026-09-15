@@ -160,25 +160,52 @@ public sealed class StackWorkspace
         if (targets.Count == 0)
             return Json(new { ok = true, message = "沒有需要編譯的項目", done = 0, failed = 0 });
 
+        var graph = BuildGraph.Plan(Root, targets);
+        var rec = new OccupancyRecord
+        {
+            Kind = nameof(OccupancyKind.McpBuild),
+            Title = "Agent 正在編譯",
+            Source = OccupancySources.Mcp,
+            Pid = Environment.ProcessId,
+            StartedUtc = DateTimeOffset.UtcNow,
+            Total = graph.Steps.Count,
+        };
+        if (!WorkspaceOccupancyLock.TryAcquire(Root, rec, out var blocker))
+            return Error($"忙碌中：{blocker!.DisplayTitle}。請等目前工作完成後再編譯。");
+
         var failed = new List<object>();
         var done = 0;
-        foreach (var target in targets)
+        try
         {
-            var (code, log) = await BuildRunner.BuildAsync(Root, target, progress: null).ConfigureAwait(false);
-            done++;
-            try { BuildReportStore.Write(Runtime, target, code, BuildFreshness.DefaultConfiguration); }
-            catch { /* optional */ }
-            if (code != 0)
+            foreach (var step in graph.Steps)
             {
-                var tail = log.Length > 2000 ? log[^2000..] : log;
-                failed.Add(new { target, exitCode = code, logTail = tail });
+                rec.Done = done;
+                rec.CurrentName = Path.GetFileName(step);
+                WorkspaceOccupancyLock.Heartbeat(Root, rec);
+                var covered = graph.CoveredByStep.TryGetValue(step, out var list) ? list : (IReadOnlyList<string>)[step];
+                var (code, log) = await BuildRunner.BuildAsync(Root, step, progress: null).ConfigureAwait(false);
+                done++;
+                foreach (var target in covered)
+                {
+                    try { BuildReportStore.Write(Runtime, target, code, BuildFreshness.DefaultConfiguration); }
+                    catch { /* optional */ }
+                }
+                if (code != 0)
+                {
+                    var tail = log.Length > 2000 ? log[^2000..] : log;
+                    failed.Add(new { target = step, exitCode = code, logTail = tail });
+                }
             }
+        }
+        finally
+        {
+            WorkspaceOccupancyLock.TryRelease(Root, Environment.ProcessId);
         }
         return Json(new
         {
             ok = failed.Count == 0,
             done,
-            total = targets.Count,
+            total = graph.Steps.Count,
             failed = failed.Count,
             failures = failed,
         });

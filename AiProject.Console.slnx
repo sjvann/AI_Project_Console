@@ -1,5 +1,9 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/AiProject.Shared.Hosting/AiProject.Shared.Hosting.csproj" />
+    <Project Path="src/AiProject.Shared.DesignSystem/AiProject.Shared.DesignSystem.csproj" />
+    <Project Path="src/AiProject.Shared.Update/AiProject.Shared.Update.csproj" />
+    <Project Path="src/AiProject.Shared.Contracts/AiProject.Shared.Contracts.csproj" />
     <Project Path="src/AiProject.Console.Core/AiProject.Console.Core.csproj" />
     <Project Path="src/AiProject.Console.App/AiProject.Console.App.csproj" />
     <Project Path="src/AiProject.Console.Mcp/AiProject.Console.Mcp.csproj" />
@@ -16,5 +20,6 @@
     <Project Path="tests/AiProject.Company.Application.Tests/AiProject.Company.Application.Tests.csproj" />
     <Project Path="tests/AiProject.Company.Web.Tests/AiProject.Company.Web.Tests.csproj" />
     <Project Path="tests/AiProject.Console.CompanyClient.Tests/AiProject.Console.CompanyClient.Tests.csproj" />
+    <Project Path="tests/AiProject.Shared.ContractTests/AiProject.Shared.ContractTests.csproj" />
   </Folder>
 </Solution>

@@ -51,7 +51,7 @@ public sealed class TimesheetCommands
         var person = actingPersonId is Guid pid
             ? await _people.GetAsync(pid, ct)
             : await _people.GetByGitHubAsync(gitHubLogin, ct);
-        var invite = await _invites.GetByGitHubAsync(gitHubLogin, ct);
+        var invite = string.IsNullOrWhiteSpace(gitHubLogin) ? null : await _invites.GetByGitHubAsync(gitHubLogin, ct);
         if (person is null && invite is not null)
             person = await ProvisionFromInviteAsync(invite, gitHubLogin, ct);
         if (person is null)
@@ -69,26 +69,62 @@ public sealed class TimesheetCommands
             return Outcome<Guid>.Fail(gate.Code, gate.Message);
         if (vendorSubmit && actingVendorId is Guid vendor && person.VendorId != vendor)
             return Outcome<Guid>.Fail(ErrorCodes.Forbidden, Messages.Forbidden);
-        var project = await _projects.GetAsync(request.ProjectId, ct);
-        if (project is null)
-            return Outcome<Guid>.Fail(ErrorCodes.NotFound, Messages.NotFound("專案"));
+
+        var resolved = await ResolveProjectAsync(request, ct);
+        if (!resolved.Ok)
+            return Outcome<Guid>.Fail(resolved.Code, resolved.Message);
+        var project = resolved.Value!;
+        var projectId = project.Id;
+
         var existing = await _timesheets.GetByLocalSlotAsync(request.LocalSlotId, ct);
         var decision = _idempotency.Decide(existing, request.IsCorrection);
         if (!decision.Ok)
             return Outcome<Guid>.Fail(decision.Code, decision.Message);
-        var chart = request.Chart.Select(c => new StatusChartCell(c.ProjectId, c.Date, c.Intensity, c.Note));
+        var chart = request.Chart.Select(c => new StatusChartCell(
+            c.ProjectId == Guid.Empty ? projectId : c.ProjectId,
+            c.Date,
+            c.Intensity,
+            c.Note));
         if (existing is null || (existing.Status == TimesheetStatus.Approved && request.IsCorrection))
         {
-            var sheet = Timesheet.Upload(request.LocalSlotId, person.Id, request.ProjectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, request.IsCorrection, request.CorrectsLocalSlotId, _clock.UtcNow);
+            var sheet = Timesheet.Upload(request.LocalSlotId, person.Id, projectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, request.IsCorrection, request.CorrectsLocalSlotId, _clock.UtcNow);
             await _timesheets.AddAsync(sheet, ct);
             await _uow.SaveChangesAsync(ct);
             if (request.IsCorrection)
                 await _audit.SensitiveChange(AuditActions.CorrectTimesheet, "Timesheet", sheet.Id, "更正時段", existing?.Id, sheet.Id, ct);
             return Outcome<Guid>.Success(sheet.Id);
         }
-        existing.ReplacePending(request.ProjectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, _clock.UtcNow);
+        existing.ReplacePending(projectId, request.WorkDate, request.Hours, request.IssueNumbers, chart, _clock.UtcNow);
         await _uow.SaveChangesAsync(ct);
         return Outcome<Guid>.Success(existing.Id);
+    }
+
+    async Task<Outcome<Project>> ResolveProjectAsync(TimesheetUploadRequest request, CancellationToken ct)
+    {
+        if (request.ProjectId is Guid id && id != Guid.Empty)
+        {
+            var byId = await _projects.GetAsync(id, ct);
+            return byId is null
+                ? Outcome<Project>.Fail(ErrorCodes.NotFound, Messages.NotFound("專案"))
+                : Outcome<Project>.Success(byId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ProjectCode))
+        {
+            var byCode = await _projects.GetByCodeAsync(request.ProjectCode.Trim(), ct);
+            return byCode is null
+                ? Outcome<Project>.Fail(ErrorCodes.NotFound, Messages.NotFound("專案碼對應的專案"))
+                : Outcome<Project>.Success(byCode);
+        }
+
+        foreach (var repo in request.Repos.Where(r => !string.IsNullOrWhiteSpace(r)))
+        {
+            var byRepo = await _projects.FindByRepoAsync(repo.Trim(), ct);
+            if (byRepo is not null)
+                return Outcome<Project>.Success(byRepo);
+        }
+
+        return Outcome<Project>.Fail(ErrorCodes.ProjectUnresolved, Messages.ProjectUnresolved);
     }
 
     public async Task<Outcome> ConfirmAsync(Guid timesheetId, CancellationToken ct = default)

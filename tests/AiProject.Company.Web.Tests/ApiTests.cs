@@ -6,6 +6,7 @@ using AiProject.Company.Contracts;
 using AiProject.Company.Domain;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -88,6 +89,17 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
     }
 
     [Fact]
+    public async Task Default_tenant_is_seeded()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiProject.Company.Infrastructure.CompanyDbContext>();
+        var tenant = await db.Tenants.SingleAsync(t => t.Id == TenantIds.Default);
+        Assert.Equal("Default", tenant.DisplayName);
+        var person = await db.People.FirstAsync();
+        Assert.Equal(TenantIds.Default, person.TenantId);
+    }
+
+    [Fact]
     public async Task Login_page_has_no_github_oauth()
     {
         var client = _factory.CreateClient();
@@ -98,6 +110,49 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
         Assert.True(github.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed);
         var dev = await client.PostAsync("/login/dev", new FormUrlEncodedContent(new Dictionary<string, string> { ["login"] = "stranger" }));
         Assert.True(dev.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Fact]
+    public async Task Handshake_me_matched_for_invited_engineer()
+    {
+        await SeedInvitedEngineerProjectAsync();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invited-token");
+        var res = await client.GetAsync("/api/v1/me");
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
+        var me = await res.Content.ReadFromJsonAsync<MeDto>();
+        Assert.NotNull(me);
+        Assert.True(me.Matched);
+        Assert.Equal("invited", me.GitHubLogin);
+        Assert.NotNull(me.PersonId);
+        Assert.Contains("申報", me.Message);
+    }
+
+    [Fact]
+    public async Task Handshake_me_unmatched_is_human_readable()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "stranger-token");
+        var res = await client.GetAsync("/api/v1/me");
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
+        var me = await res.Content.ReadFromJsonAsync<MeDto>();
+        Assert.NotNull(me);
+        Assert.False(me.Matched);
+        Assert.Equal("stranger", me.GitHubLogin);
+        Assert.Contains("人資", me.Message);
+    }
+
+    [Fact]
+    public async Task Handshake_me_without_auth_is_401()
+    {
+        var client = _factory.CreateClient();
+        var res = await client.GetAsync("/api/v1/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+        var error = await res.Content.ReadFromJsonAsync<ApiError>();
+        Assert.Equal(ErrorCodes.Unauthenticated, error?.Code);
+        Assert.Contains("權杖", error?.Message);
     }
 
     [Fact]
@@ -175,6 +230,83 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
         Assert.NotEqual(Guid.Empty, uploaded.TimesheetId);
     }
 
+    [Fact]
+    public async Task Upload_by_project_code()
+    {
+        var (personId, _) = await SeedInvitedWithCodeAndRepoAsync("ACME-01", "acme/app");
+        _ = personId;
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invited-token");
+        var res = await client.PostAsJsonAsync("/api/v1/timesheets/upload", new TimesheetUploadRequest
+        {
+            LocalSlotId = "slot-by-code",
+            ProjectCode = "ACME-01",
+            WorkDate = new DateOnly(2026, 9, 2),
+            Hours = 4,
+        });
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
+    }
+
+    [Fact]
+    public async Task Upload_by_repo_slug()
+    {
+        await SeedInvitedWithCodeAndRepoAsync("ACME-02", "acme/billing");
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invited-token");
+        var res = await client.PostAsJsonAsync("/api/v1/timesheets/upload", new TimesheetUploadRequest
+        {
+            LocalSlotId = "slot-by-repo",
+            Repos = ["acme/billing"],
+            WorkDate = new DateOnly(2026, 9, 3),
+            Hours = 2,
+        });
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
+    }
+
+    [Fact]
+    public async Task Upload_without_project_identity_is_400()
+    {
+        await SeedInvitedEngineerProjectAsync();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invited-token");
+        var res = await client.PostAsJsonAsync("/api/v1/timesheets/upload", new TimesheetUploadRequest
+        {
+            LocalSlotId = "slot-no-project",
+            WorkDate = new DateOnly(2026, 9, 4),
+            Hours = 1,
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var error = await res.Content.ReadFromJsonAsync<ApiError>();
+        Assert.Equal(ErrorCodes.ProjectUnresolved, error?.Code);
+    }
+
+    [Fact]
+    public async Task Api_key_can_handshake_and_upload()
+    {
+        var (personId, projectId) = await SeedInvitedWithCodeAndRepoAsync("KEY-01", "acme/key");
+        var plaintext = await SeedApiKeyAsync(personId, "ci");
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", plaintext);
+        var me = await client.GetAsync("/api/v1/me");
+        var meBody = await me.Content.ReadAsStringAsync();
+        Assert.True(me.IsSuccessStatusCode, meBody);
+        var dto = await me.Content.ReadFromJsonAsync<MeDto>();
+        Assert.True(dto?.Matched);
+        Assert.Equal(personId, dto?.PersonId);
+
+        var res = await client.PostAsJsonAsync("/api/v1/timesheets/upload", new TimesheetUploadRequest
+        {
+            LocalSlotId = "slot-api-key",
+            ProjectId = projectId,
+            WorkDate = new DateOnly(2026, 9, 5),
+            Hours = 3,
+        });
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"{res.StatusCode} {body}");
+    }
+
     async Task SeedHrAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -218,6 +350,101 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
         var contract = Contract.Create(client.Id, "約", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), 1, "TWD", PricingKind.FixedPrice, []);
         await contracts.AddAsync(contract);
         var project = Project.Create(contract.Id, "P", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), RevenueMethod.Milestone, now);
+        await projects.AddAsync(project);
+        await uow.SaveChangesAsync();
+        return project.Id;
+    }
+
+    async Task<(Guid PersonId, Guid ProjectId)> SeedInvitedWithCodeAndRepoAsync(string projectCode, string ownerRepo)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var people = scope.ServiceProvider.GetRequiredService<IPersonRepository>();
+        var invites = scope.ServiceProvider.GetRequiredService<IInvitationRepository>();
+        var clients = scope.ServiceProvider.GetRequiredService<IClientRepository>();
+        var contracts = scope.ServiceProvider.GetRequiredService<IContractRepository>();
+        var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var now = DateTimeOffset.UtcNow;
+        var person = await people.GetByGitHubAsync("invited");
+        if (person is null)
+        {
+            person = Person.Create("invited", EmploymentKind.Freelance, null, now);
+            person.BindGitHub("invited", _ => null);
+            await people.AddAsync(person);
+            var invite = Invitation.Create("invited", PlatformRole.Engineer, null, now);
+            invite.BindPerson(person.Id);
+            await invites.AddAsync(invite);
+        }
+        var client = Client.Create("客-" + projectCode, ClientKind.External, null);
+        await clients.AddAsync(client);
+        var contract = Contract.Create(client.Id, "約-" + projectCode, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), 1, "TWD", PricingKind.FixedPrice, []);
+        await contracts.AddAsync(contract);
+        var project = Project.Create(contract.Id, "P-" + projectCode, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), RevenueMethod.Milestone, now);
+        project.SetProjectCode(projectCode);
+        project.AddRepo(ownerRepo);
+        await projects.AddAsync(project);
+        await uow.SaveChangesAsync();
+        return (person.Id, project.Id);
+    }
+
+    async Task<string> SeedApiKeyAsync(Guid personId, string name)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var keys = scope.ServiceProvider.GetRequiredService<IReportingApiKeyRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var (key, plaintext) = ReportingApiKey.Issue(personId, name, DateTimeOffset.UtcNow);
+        await keys.AddAsync(key);
+        await uow.SaveChangesAsync();
+        return plaintext;
+    }
+
+    [Fact]
+    public async Task Cross_tenant_project_returns_403()
+    {
+        var foreignProjectId = await SeedForeignTenantProjectAsync();
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var login = await client.PostAsync("/login/account", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "owner",
+            ["password"] = "AiProject-Owner-2026",
+        }));
+        Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+        var res = await client.GetAsync($"/api/v1/projects/{foreignProjectId}");
+        var body = await res.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        Assert.Contains(ErrorCodes.Forbidden, body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Foreign_tenant_project_hidden_from_list_scope()
+    {
+        var foreignProjectId = await SeedForeignTenantProjectAsync();
+        using var scope = _factory.Services.CreateScope();
+        var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
+        var list = await projects.ListAsync();
+        Assert.DoesNotContain(list, p => p.Id == foreignProjectId);
+    }
+
+    async Task<Guid> SeedForeignTenantProjectAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiProject.Company.Infrastructure.CompanyDbContext>();
+        var tenantCtx = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+        var clients = scope.ServiceProvider.GetRequiredService<IClientRepository>();
+        var contracts = scope.ServiceProvider.GetRequiredService<IContractRepository>();
+        var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var now = DateTimeOffset.UtcNow;
+        var other = Tenant.Create("Other Co", now);
+        if (!await db.Tenants.AnyAsync(t => t.Id == other.Id))
+            db.Tenants.Add(other);
+        await db.SaveChangesAsync();
+        tenantCtx.Assign(other.Id);
+        var client = Client.Create("他司客戶", ClientKind.External, null);
+        await clients.AddAsync(client);
+        var contract = Contract.Create(client.Id, "他司約", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), 1, "TWD", PricingKind.FixedPrice, []);
+        await contracts.AddAsync(contract);
+        var project = Project.Create(contract.Id, "他司專案", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), RevenueMethod.Milestone, now);
         await projects.AddAsync(project);
         await uow.SaveChangesAsync();
         return project.Id;
