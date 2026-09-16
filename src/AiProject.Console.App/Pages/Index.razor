@@ -985,7 +985,7 @@
                         </datalist>
                         <p class="hint">大型公司可填自建 Git 主機。GitHub 相容主機用 gh；其他種類先可設，任務功能尚未接時會明白停用。</p>
                         <h3 class="prefs-sub">申報目的地（公司工作區）</h3>
-                        <p class="hint">可加多家公司。每筆預設關閉；「測試連線」通過後才能啟用。零目的地時本機工時照常。</p>
+                        <p class="hint">可加多家公司。每筆預設關閉；「測試連線」通過後才能啟用。零目的地時本機工時照常。送到公司後，對方在工作區導覽「公開回報」看待 PM 確認。</p>
                         @if (!string.IsNullOrEmpty(S.DestinationHint))
                         {
                             <p class="hint">@S.DestinationHint</p>
@@ -995,6 +995,8 @@
                             <div class="field" style="border-top:1px solid var(--color-border, #ddd); padding-top:0.5rem; margin-top:0.5rem;">
                                 <span>@dest.DisplayName</span>
                                 <input value="@dest.BaseUrl" @oninput="e => OnDestUrl(dest, e)" placeholder="https://company.example.com" />
+                                <span>回報 API 金鑰（可選）</span>
+                                <input type="password" value="@dest.ApiKey" @oninput="e => OnDestApiKey(dest, e)" placeholder="apk_… 空白則用 GitHub 權杖" autocomplete="off" />
                                 <p class="hint">@DestStatus(dest)</p>
                                 <div class="row">
                                     <button class="btn-sec" type="button" disabled="@S.DestinationTestBusy" @onclick="() => S.TestReportingDestinationAsync(dest.Id)">測試連線</button>
@@ -1018,7 +1020,14 @@
                             <span>Base URL</span>
                             <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
                         </div>
-                        <button class="btn-sec" type="button" @onclick="S.AddReportingDestinationDraft">加入目的地</button>
+                        <div class="field">
+                            <span>回報 API 金鑰（可選）</span>
+                            <input type="password" @bind="S.NewDestinationApiKey" placeholder="apk_… 本機示範可從公司「公開回報」複製" autocomplete="off" />
+                        </div>
+                        <div class="row">
+                            <button class="btn-sec" type="button" @onclick="S.AddReportingDestinationDraft">加入目的地</button>
+                            <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機公司工作區</button>
+                        </div>
                         <h3 class="prefs-sub">控制台更新</h3>
                         <p class="hint">目前版本 v@(AppInfo.Version)。檢查時會詢問是否包含 RC／預發行。也可選本機安裝程式或 zip 直接套用。</p>
                         <div class="row">
@@ -1234,6 +1243,9 @@
 
     static void OnDestUrl(ReportingDestination dest, ChangeEventArgs e) =>
         dest.BaseUrl = (e.Value?.ToString() ?? string.Empty).Trim().TrimEnd('/');
+
+    static void OnDestApiKey(ReportingDestination dest, ChangeEventArgs e) =>
+        dest.ApiKey = (e.Value?.ToString() ?? string.Empty).Trim();
 
     static string DestStatus(ReportingDestination dest) =>
         string.IsNullOrEmpty(dest.LastTestMessage) ? dest.StatusLabel : dest.StatusLabel + " · " + dest.LastTestMessage;

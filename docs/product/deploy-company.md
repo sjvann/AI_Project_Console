@@ -84,21 +84,33 @@ docker compose up -d --build
 
 ## 開發範例資料
 
-`appsettings.Development.json` 開 `Company:SeedDemoData`。第一次啟動（或尚無 `exec` 帳戶／「晨星銀行」客戶時）會種入凌波資訊的測試公司：三個客戶、逾期專案、派工、工時、招募邀請、待歸戶、九月薪資週期。
+`appsettings.Development.json` 開 `Company:SeedDemoData`。第一次啟動（或尚無 `exec` 帳戶／「晨星銀行」客戶時）會種入凌波資訊的測試公司：三個客戶、逾期專案、派工、工時、招募邀請、待歸戶、九月薪資週期。重啟時會補上控制台示範專案 `AI_Project_Console`（專案碼 `CONSOLE-DEMO`）與王工程的固定回報 API 金鑰。
 
 | 帳號 | 密碼 | 角色 | 建議驗收 |
 |------|------|------|----------|
 | `owner` | `AiProject-Owner-2026` | 公司管理員 | 設定、帳戶 |
 | `exec` | `Demo-Pass-2026` | 經營層 | 戰情室紅燈／逾期 |
 | `delivery` | 同上 | 交付主管 | 派工週矩陣、超載 |
-| `pm` | 同上 | 專案經理 | 專案甘特、確認工時 |
+| `pm` | 同上 | 專案經理 | 專案甘特、公開回報確認工時 |
 | `hr` | 同上 | 人資 | 人員、薪資週期、待歸戶 |
 | `finance` | 同上 | 財務 | 預算／USD 匯率 |
 | `vendor` | 同上 | 外包窗口 | 只能看迅馳科技己方 |
 
 工程師不登後台。控制台 GitHub：`wang-dev`（正職）、`li-analyst`（招募進來的個人外包）、`chao-lead`、`chen-vendor`。待接受邀請 `newhire-dev`；未綁定上傳 `ghost-coder`。
 
-已有範例資料後重啟不會重複種。要重來：停掉網站後刪掉 `company.dev.db`（或清掉「晨星銀行」與 `exec` 帳戶）再啟動。
+## 控制台 ↔ 工作區範例整合（開發）
+
+API 已存在，但入帳要在工作區**看得見**。開發示範走這條，不必把你自己的 GitHub 綁進名冊：
+
+1. 啟動公司工作區：`dotnet run --project src/AiProject.Company.Web` → http://localhost:5100
+2. 用 `pm` / `Demo-Pass-2026` 登入，打開導覽 **公開回報**（設定裡也有「公開回報」分頁）。複製 Base URL 與示範 API 金鑰。
+3. 控制台設定 → 申報目的地：按「加入本機公司工作區」，把金鑰貼到該筆，測試連線 → 啟用這家公司。
+4. 開啟本機資料夾 `AI_Project_Console`（名稱會對到示範專案）、讓工時儀表板有時段，按「送到〔凌波資訊（本機示範）〕」。
+5. 回到工作區「公開回報」→「待 PM 確認」。PM 確認歸屬；人資再到「薪資」。
+
+握手也可用 GitHub 權杖：名冊 GitHub 必須是 `wang-dev`（或你在人員卡片改成自己的 login）。未對到的上傳進待歸戶。
+
+已有範例資料後重啟不會重複種客戶與帳戶。示範專案與 API 金鑰若缺失會補上。要重來：停掉網站後刪掉 `company.dev.db`（或清掉「晨星銀行」與 `exec` 帳戶）再啟動。
 
 生產第一次啟動用環境變數種管理員（密碼勿提交進 git）：
 
@@ -128,7 +140,7 @@ $env:Company__Auth__LocalOwner__Password = "請改成你的長密碼"
 
 ## 控制台
 
-控制台是獨立安裝包，不是本公司發行的前後台。把本實例的接收 API 位址（HTTPS Base URL）交給參與專案的工程師，請他們在控制台加成**申報目的地**。握手用控制台既有的 GitHub 權杖（`gh auth`），標頭 `X-Company-Api-Version: 1`。名冊有此人才可上傳；本機 `work-hours.json` 仍是真相。未邀請、未綁人員檔的 GitHub 會進待歸戶。同一工程師的控制台可以同時對別家公司申報，與本實例無關。
+控制台是獨立安裝包，不是本公司發行的前後台。把本實例的接收 API 位址（HTTPS Base URL）交給參與專案的工程師，請他們在控制台加成**申報目的地**。握手用控制台既有的 GitHub 權杖（`gh auth`）或公司核發的 `apk_` 回報金鑰，標頭 `X-Company-Api-Version: 1`。名冊有此人才可上傳；本機 `work-hours.json` 仍是真相。未邀請、未綁人員檔的 GitHub 會進待歸戶。PM 在導覽「公開回報」看待確認。同一工程師的控制台可以同時對別家公司申報，與本實例無關。
 
 ## 導入一個月
 

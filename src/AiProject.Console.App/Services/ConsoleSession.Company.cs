@@ -12,6 +12,7 @@ public sealed partial class ConsoleSession
     public string SelectedReportingDestinationId { get; set; } = "";
     public string NewDestinationName { get; set; } = "";
     public string NewDestinationUrl { get; set; } = "";
+    public string NewDestinationApiKey { get; set; } = "";
     public string DestinationHint { get; private set; } = "";
     public bool DestinationTestBusy { get; private set; }
 
@@ -114,14 +115,38 @@ public sealed partial class ConsoleSession
             DisplayName = string.IsNullOrWhiteSpace(name) ? uri.Host : name,
             BaseUrl = url,
             ContractVersion = "1",
+            ApiKey = (NewDestinationApiKey ?? "").Trim(),
             Enabled = false,
         };
         ReportingDestinations.Add(dest);
         SelectedReportingDestinationId = dest.Id;
         NewDestinationName = "";
         NewDestinationUrl = "";
-        DestinationHint = "已加入。請先「測試連線」，通過後再啟用。";
+        NewDestinationApiKey = "";
+        DestinationHint = string.IsNullOrWhiteSpace(dest.ApiKey)
+            ? "已加入。請先「測試連線」，通過後再啟用。"
+            : "已加入（使用回報 API 金鑰）。請先「測試連線」，通過後再啟用。";
+        PersistReportingDestinations();
         Notify();
+    }
+
+    public void AddLocalCompanySampleDestination()
+    {
+        const string sampleUrl = "http://localhost:5100";
+        var existing = ReportingDestinations.FirstOrDefault(d =>
+            string.Equals(d.BaseUrl.TrimEnd('/'), sampleUrl, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            SelectedReportingDestinationId = existing.Id;
+            DestinationHint = "本機公司工作區已在清單裡。到 http://localhost:5100 用 pm 登入，開啟「公開回報」複製示範金鑰貼上，再測試連線。";
+            Notify();
+            return;
+        }
+        NewDestinationName = "凌波資訊（本機示範）";
+        NewDestinationUrl = sampleUrl;
+        AddReportingDestinationDraft();
+        if (string.IsNullOrEmpty(DestinationHint) || DestinationHint.StartsWith("已加入", StringComparison.Ordinal))
+            DestinationHint = "已加入本機公司工作區 http://localhost:5100。請到該站「公開回報」複製示範 API 金鑰貼到這一筆，再測試連線。";
     }
 
     public void RemoveReportingDestination(string id)
@@ -130,6 +155,7 @@ public sealed partial class ConsoleSession
         if (SelectedReportingDestinationId == id)
             SelectedReportingDestinationId = ReportingDestinations.FirstOrDefault()?.Id ?? "";
         DestinationHint = "";
+        PersistReportingDestinations();
         Notify();
     }
 
@@ -153,6 +179,7 @@ public sealed partial class ConsoleSession
         }
         dest.Enabled = true;
         DestinationHint = $"已啟用〔{dest.DisplayName}〕。現在可以「送到〔{dest.DisplayName}〕」。";
+        PersistReportingDestinations();
         Notify();
     }
 
@@ -163,6 +190,7 @@ public sealed partial class ConsoleSession
             return;
         dest.Enabled = false;
         DestinationHint = $"已停用〔{dest.DisplayName}〕。本機工時不受影響。";
+        PersistReportingDestinations();
         Notify();
     }
 
@@ -178,11 +206,13 @@ public sealed partial class ConsoleSession
         Notify();
         try
         {
-            var token = await GithubTokenAsync();
+            var token = await BearerForAsync(dest);
             if (string.IsNullOrEmpty(token))
             {
                 dest.LastTestOk = false;
-                dest.LastTestMessage = "請先用 GitHub 登入後再測試連線。";
+                dest.LastTestMessage = string.IsNullOrWhiteSpace(dest.ApiKey)
+                    ? "請先用 GitHub 登入，或貼上公司核發的回報 API 金鑰。"
+                    : "回報 API 金鑰是空的。";
                 dest.LastTestedAt = DateTimeOffset.UtcNow;
                 dest.Enabled = false;
                 DestinationHint = dest.LastTestMessage;
@@ -225,6 +255,7 @@ public sealed partial class ConsoleSession
         finally
         {
             DestinationTestBusy = false;
+            PersistReportingDestinations();
             Notify();
         }
     }
@@ -255,7 +286,7 @@ public sealed partial class ConsoleSession
         }
         try
         {
-            var token = await GithubTokenAsync();
+            var token = await BearerForAsync(dest);
             if (string.IsNullOrEmpty(token))
             {
                 CompanyAssignments = [];
@@ -291,10 +322,10 @@ public sealed partial class ConsoleSession
             _native.Error("送到公司失敗", "控制台沒有公司平台用戶端。");
             return;
         }
-        var token = await GithubTokenAsync();
+        var token = await BearerForAsync(dest);
         if (string.IsNullOrEmpty(token))
         {
-            _native.Info("請先登入 GitHub", "送到公司要用你的 GitHub 帳號對人。");
+            _native.Info("請先登入或貼金鑰", "送到公司要用 GitHub 帳號，或公司核發的回報 API 金鑰（apk_ 開頭）。");
             return;
         }
         CompanyUploadBusy = true;
@@ -348,6 +379,7 @@ public sealed partial class ConsoleSession
                     IssueNumbers = issueNumbers,
                     ContributionTypes = contributionTypes,
                     Chart = chart,
+                    Repos = string.IsNullOrWhiteSpace(session.GithubSlug) ? [] : [session.GithubSlug],
                 };
                 await _company.UploadAsync(dest.BaseUrl, request, token);
                 sent++;
@@ -358,7 +390,7 @@ public sealed partial class ConsoleSession
             else if (unmatched.Count > 0)
                 CompanyUploadHint = (sent == 0 ? "" : $"已送到〔{label}〕 {sent} 筆。") + "本機專案對不到公司派工：" + string.Join("、", unmatched.Distinct()) + "。請先有派工，或確認 GitHub 倉與公司專案一致。本機 work-hours.json 仍在。";
             else
-                CompanyUploadHint = $"已送到〔{label}〕 {sent} 筆，狀態為待 PM 確認。本機 work-hours.json 仍在。";
+                CompanyUploadHint = $"已送到〔{label}〕 {sent} 筆，狀態為待 PM 確認。請到公司平台「公開回報」查看。本機 work-hours.json 仍在。";
         }
         catch (CompanyPlatformException ex)
         {
@@ -373,6 +405,13 @@ public sealed partial class ConsoleSession
             CompanyUploadBusy = false;
             Notify();
         }
+    }
+
+    async Task<string> BearerForAsync(ReportingDestination dest)
+    {
+        if (!string.IsNullOrWhiteSpace(dest.ApiKey))
+            return dest.ApiKey.Trim();
+        return await GithubTokenAsync();
     }
 
     async Task<string> GithubTokenAsync()
@@ -403,6 +442,7 @@ public sealed partial class ConsoleSession
         DisplayName = d.DisplayName,
         BaseUrl = d.BaseUrl,
         ContractVersion = d.ContractVersion,
+        ApiKey = d.ApiKey,
         Enabled = d.Enabled,
         LastTestOk = d.LastTestOk,
         LastTestMessage = d.LastTestMessage,

@@ -119,6 +119,28 @@ public class ConsoleSettingsStoreTests
         Assert.True(loaded[0].LastTestOk);
         Assert.Equal(id, ConsoleSettingsStore.GetSelectedReportingDestinationId());
         Assert.Equal("https://acme.example.com", ConsoleSettingsStore.GetCompanyBaseUrl());
+        Assert.Equal("", loaded[0].ApiKey);
+    }
+
+    [Fact]
+    public void ReportingDestinations_round_trip_keeps_api_key()
+    {
+        using var scope = SettingsScope.Create();
+        var id = Guid.NewGuid().ToString("N");
+        ConsoleSettingsStore.SetReportingDestinations(
+        [
+            new ReportingDestination
+            {
+                Id = id,
+                DisplayName = "凌波",
+                BaseUrl = "http://localhost:5100",
+                ApiKey = "apk_0123456789abcdef0123456789abcdef0123456789abcdef",
+                Enabled = false,
+            },
+        ], id);
+        var loaded = ConsoleSettingsStore.GetReportingDestinations();
+        Assert.Single(loaded);
+        Assert.Equal("apk_0123456789abcdef0123456789abcdef0123456789abcdef", loaded[0].ApiKey);
     }
 
     [Fact]

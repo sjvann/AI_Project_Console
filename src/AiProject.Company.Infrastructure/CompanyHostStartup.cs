@@ -42,6 +42,7 @@ public static class CompanyHostStartup
             }
         }
         await CompanyDemoSeed.ApplyAsync(scope.ServiceProvider, configuration);
+        await CompanyDemoSeed.EnsureReportingSampleAsync(scope.ServiceProvider, configuration);
     }
 
     static string ReadSeedPassword(IConfiguration configuration)

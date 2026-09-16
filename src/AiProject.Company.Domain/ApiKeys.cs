@@ -24,21 +24,29 @@ public sealed class ReportingApiKey : ITenantScoped
 
     public static (ReportingApiKey Key, string Plaintext) Issue(Guid personId, string name, DateTimeOffset now)
     {
+        var plaintext = Prefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        return (FromPlaintext(personId, name, plaintext, now), plaintext);
+    }
+
+    /// <summary>用已知明文建金鑰（示範種子）；雜湊規則與核發相同。</summary>
+    public static ReportingApiKey FromPlaintext(Guid personId, string name, string plaintext, DateTimeOffset now)
+    {
         if (personId == Guid.Empty)
             throw new DomainException(ErrorCodes.Required, Messages.Required("人員"));
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException(ErrorCodes.Required, Messages.Required("金鑰名稱"));
-        var plaintext = Prefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-        var key = new ReportingApiKey
+        if (!LooksLikeApiKey(plaintext))
+            throw new DomainException(ErrorCodes.InvalidState, "回報 API 金鑰必須以 apk_ 開頭。");
+        var secret = plaintext.Trim();
+        return new ReportingApiKey
         {
             Id = Guid.NewGuid(),
             PersonId = personId,
             Name = name.Trim(),
-            KeyPrefix = plaintext.Length <= 12 ? plaintext : plaintext[..12],
-            KeyHash = Hash(plaintext),
+            KeyPrefix = secret.Length <= 12 ? secret : secret[..12],
+            KeyHash = Hash(secret),
             CreatedAt = now,
         };
-        return (key, plaintext);
     }
 
     public void Revoke(DateTimeOffset now)

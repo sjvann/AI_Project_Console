@@ -10,6 +10,8 @@ public sealed class ReportingDestination
     public string DisplayName { get; set; } = "";
     public string BaseUrl { get; set; } = "";
     public string ContractVersion { get; set; } = "1";
+    /// <summary>公司核發的回報 API 金鑰（apk_…）。空白則改用 GitHub 權杖。</summary>
+    public string ApiKey { get; set; } = "";
     /// <summary>預設 false；僅測試連線通過後可由使用者啟用。</summary>
     public bool Enabled { get; set; }
     public bool? LastTestOk { get; set; }
@@ -47,6 +49,7 @@ public static class ReportingDestinationsStore
                     DisplayName = string.IsNullOrWhiteSpace(JsonUtil.Str(obj["displayName"])) ? url : JsonUtil.Str(obj["displayName"]),
                     BaseUrl = url.TrimEnd('/'),
                     ContractVersion = string.IsNullOrWhiteSpace(JsonUtil.Str(obj["contractVersion"])) ? "1" : JsonUtil.Str(obj["contractVersion"]),
+                    ApiKey = JsonUtil.Str(obj["apiKey"]),
                     Enabled = obj["enabled"]?.GetValue<bool>() ?? false,
                     LastTestOk = obj["lastTestOk"] is null ? null : obj["lastTestOk"]!.GetValue<bool>(),
                     LastTestMessage = JsonUtil.Str(obj["lastTestMessage"]),
@@ -99,6 +102,8 @@ public static class ReportingDestinationsStore
                 ["contractVersion"] = string.IsNullOrWhiteSpace(d.ContractVersion) ? "1" : d.ContractVersion.Trim(),
                 ["enabled"] = d.Enabled,
             };
+            if (!string.IsNullOrWhiteSpace(d.ApiKey))
+                obj["apiKey"] = d.ApiKey.Trim();
             if (d.LastTestOk is bool ok)
                 obj["lastTestOk"] = ok;
             if (!string.IsNullOrWhiteSpace(d.LastTestMessage))

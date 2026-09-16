@@ -37,6 +37,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<DirectoryQueries>();
         services.AddScoped<ContributionQueries>();
         services.AddScoped<ApiKeyCommands>();
+        services.AddScoped<ReportingQueries>();
         return services;
     }
 }

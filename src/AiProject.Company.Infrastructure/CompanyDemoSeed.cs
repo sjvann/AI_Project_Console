@@ -10,6 +10,13 @@ public static class CompanyDemoSeed
     public const string MarkerClientName = "晨星銀行";
     public const string SharedPassword = "Demo-Pass-2026";
     public const string CompanyName = "凌波資訊";
+    public const string SampleProjectName = "AI_Project_Console";
+    public const string SampleProjectCode = "CONSOLE-DEMO";
+    public const string SampleRepo = "demo/AI_Project_Console";
+    public const string DemoEngineerGitHub = "wang-dev";
+    public const string DemoReportingApiKey = "apk_0123456789abcdef0123456789abcdef0123456789abcdef";
+    public const string DemoReportingKeyName = "控制台示範";
+    public const string SampleSlotId = "console-sample-inbound";
 
     public static async Task ApplyAsync(IServiceProvider services, IConfiguration configuration, CancellationToken ct = default)
     {
@@ -160,6 +167,101 @@ public static class CompanyDemoSeed
             new PayrollLine(chen.Id, PayrollLineKind.Hourly, 7200, 7200, core.Id, 8, "外包時計", true),
         ]);
         await payroll.AddAsync(period, ct);
+        await uow.SaveChangesAsync(ct);
+        await EnsureReportingSampleAsync(services, configuration, ct);
+    }
+
+    /// <summary>開發示範：控制台本機專案能對到工作區，並用固定 API 金鑰握手。已有範例庫也會補上。</summary>
+    public static async Task EnsureReportingSampleAsync(IServiceProvider services, IConfiguration configuration, CancellationToken ct = default)
+    {
+        if (!configuration.GetValue("Company:SeedDemoData", false))
+            return;
+        var people = services.GetRequiredService<IPersonRepository>();
+        var wang = await people.GetByGitHubAsync(DemoEngineerGitHub, ct);
+        if (wang is null)
+            return;
+
+        var clients = services.GetRequiredService<IClientRepository>();
+        var contracts = services.GetRequiredService<IContractRepository>();
+        var projects = services.GetRequiredService<IProjectRepository>();
+        var assignments = services.GetRequiredService<IAssignmentRepository>();
+        var timesheets = services.GetRequiredService<ITimesheetRepository>();
+        var keys = services.GetRequiredService<IReportingApiKeyRepository>();
+        var uow = services.GetRequiredService<IUnitOfWork>();
+        var now = services.GetRequiredService<IClock>().UtcNow;
+        var staffing = new ContractStaffingPolicy();
+
+        var project = (await projects.ListAsync(ct)).FirstOrDefault(p =>
+            string.Equals(p.Name, SampleProjectName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(p.ProjectCode, SampleProjectCode, StringComparison.OrdinalIgnoreCase));
+        if (project is null)
+        {
+            var internalClient = (await clients.ListAsync(ct)).FirstOrDefault(c => c.Name == "內部資訊室");
+            if (internalClient is null)
+                return;
+            var contract = (await contracts.ListByClientAsync(internalClient.Id, ct)).FirstOrDefault();
+            if (contract is null)
+                return;
+            project = Project.Create(contract.Id, SampleProjectName, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), RevenueMethod.TimeAndMaterials, now);
+            project.SetProjectCode(SampleProjectCode);
+            project.AddRepo(SampleRepo);
+            project.AddJournal(now, "系統", ProjectJournalKind.Established, "控制台工時示範專案，名稱對齊本機資料夾 AI_Project_Console。");
+            await projects.AddAsync(project, ct);
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(project.ProjectCode))
+                project.SetProjectCode(SampleProjectCode);
+            project.AddRepo(SampleRepo);
+        }
+
+        var existingAssign = (await assignments.ListForProjectAsync(project.Id, ct))
+            .Any(a => a.PersonId == wang.Id && a.Status != AssignmentStatus.Cancelled);
+        if (!existingAssign)
+        {
+            var contract = await contracts.GetAsync(project.ContractId, ct);
+            if (contract is not null)
+            {
+                var hours = new Dictionary<Guid, decimal>();
+                await AddAssignment(
+                    assignments,
+                    staffing,
+                    hours,
+                    wang,
+                    project,
+                    contract,
+                    contract.Start,
+                    contract.End,
+                    8,
+                    AssignmentRole.Engineer,
+                    "控制台公開回報示範整合",
+                    now,
+                    ct);
+            }
+        }
+
+        var hash = ReportingApiKey.Hash(DemoReportingApiKey);
+        if (await keys.GetByHashAsync(hash, ct) is null)
+        {
+            var key = ReportingApiKey.FromPlaintext(wang.Id, DemoReportingKeyName, DemoReportingApiKey, now);
+            await keys.AddAsync(key, ct);
+        }
+
+        if (await timesheets.GetByLocalSlotAsync(SampleSlotId, ct) is null)
+        {
+            await AddSheet(
+                timesheets,
+                SampleSlotId,
+                wang.Id,
+                project.Id,
+                new DateOnly(2026, 9, 15),
+                4,
+                [1],
+                false,
+                now,
+                ct);
+        }
+
         await uow.SaveChangesAsync(ct);
     }
 

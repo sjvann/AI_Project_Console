@@ -4,6 +4,7 @@
 @inject DirectoryQueries Directory
 @inject IAuthorizationGate Gate
 @inject Microsoft.Extensions.Options.IOptions<HostingOptions> Hosting
+@inject NavigationManager Nav
 @inject IJSRuntime Js
 
 <PageTitle>設定</PageTitle>
@@ -21,6 +22,7 @@ else if (_model is not null)
 {
     <div class="tabs" role="tablist" aria-label="設定分類">
         <button type="button" class="tab @(_tab == "company" ? "is-on" : "")" @onclick='() => _tab = "company"'>公司</button>
+        <button type="button" class="tab @(_tab == "reporting" ? "is-on" : "")" @onclick='() => _tab = "reporting"'>公開回報</button>
         <button type="button" class="tab @(_tab == "theme" ? "is-on" : "")" @onclick='() => _tab = "theme"'>主題</button>
         <button type="button" class="tab @(_tab == "fx" ? "is-on" : "")" @onclick='() => _tab = "fx"'>匯率</button>
     </div>
@@ -47,6 +49,20 @@ else if (_model is not null)
                 <button class="btn-primary" @onclick="Save">存檔</button>
             </div>
             <Flash Text="@_message" />
+        </section>
+    }
+    else if (_tab == "reporting")
+    {
+        <section class="card stack">
+            <h2>公開回報接收口</h2>
+            <p class="hint">公司工作區用這組 HTTPS 契約收工時，不限控制台。把 Base URL 交給工程師加成申報目的地。入帳、待確認、金鑰在 <a href="/reporting">公開回報</a>。</p>
+            <div class="toolbar">
+                <code class="copy-target">@_baseUrl</code>
+                <button type="button" class="btn-sec" @onclick="CopyReportingUrl">複製 Base URL</button>
+                <a class="btn-primary" href="/reporting">開啟接收匣</a>
+            </div>
+            <p class="hint">端點：<code>GET /api/v1/me</code>、<code>POST /api/v1/timesheets/upload</code>、<code>GET /api/v1/me/assignments</code>。標頭 <code>X-Company-Api-Version: 1</code>。</p>
+            <Flash Text="@_reportingMessage" />
         </section>
     }
     else if (_tab == "theme")
@@ -143,6 +159,8 @@ else if (_model is not null)
     DateOnly _fxAsOf = DateOnly.FromDateTime(DateTime.Today);
     string _fxNote = "";
     string _fxMessage = "";
+    string _baseUrl = "";
+    string _reportingMessage = "";
 
     IEnumerable<string> CompanyCurrencyChoices =>
         Currencies.Common.Contains(_currency, StringComparer.OrdinalIgnoreCase)
@@ -163,7 +181,24 @@ else if (_model is not null)
         }
     }
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _baseUrl = Nav.BaseUri.TrimEnd('/');
+        await ReloadAsync();
+    }
+
+    async Task CopyReportingUrl()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", _baseUrl);
+            _reportingMessage = "已複製 Base URL。請工程師加到控制台申報目的地。";
+        }
+        catch
+        {
+            _reportingMessage = "無法自動複製，請手動選取上方網址。";
+        }
+    }
 
     async Task ReloadAsync()
     {

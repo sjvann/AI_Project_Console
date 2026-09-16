@@ -2,6 +2,7 @@
 @inject ICurrentUser User
 @inject IHomeRouteResolver Home
 @inject NavigationManager Nav
+@inject ReportingQueries Reporting
 
 <div class="shell">
     <ThemeApplier />
@@ -31,6 +32,15 @@
                 @if (Can(PlatformCapability.ManageBudget))
                 {
                     <NavLink href="/budget">預算</NavLink>
+                }
+                @if (Reporting.CanViewInbox)
+                {
+                    <NavLink href="/reporting">公開回報
+                        @if (_badge.Total > 0)
+                        {
+                            <span class="nav-badge" title="待確認 @_badge.Pending，待歸戶 @_badge.Unmatched">@_badge.Total</span>
+                        }
+                    </NavLink>
                 }
                 @if (Can(PlatformCapability.LockPayroll) || Can(PlatformCapability.ConfirmTimesheet))
                 {
@@ -72,6 +82,15 @@
 
 @code {
     [Inject] IAuthorizationGate Gate { get; set; } = default!;
+    ReportingBadge _badge = ReportingBadge.Empty;
 
     bool Can(PlatformCapability capability) => Gate.Can(capability);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (User.IsAuthenticated && User.PersonId is not null && Reporting.CanViewInbox)
+            _badge = await Reporting.BadgeAsync();
+        else
+            _badge = ReportingBadge.Empty;
+    }
 }

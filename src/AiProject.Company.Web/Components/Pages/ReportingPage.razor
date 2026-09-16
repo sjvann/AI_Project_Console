@@ -1,0 +1,316 @@
+@page "/reporting"
+@rendermode InteractiveServer
+@inject ReportingQueries Reporting
+@inject DirectoryQueries Directory
+@inject TimesheetCommands Timesheets
+@inject ApiKeyCommands ApiKeys
+@inject IAuthorizationGate Gate
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IConfiguration Config
+
+<PageTitle>公開回報</PageTitle>
+<div class="page-head">
+    <div>
+        <h1>公開回報</h1>
+        <p class="hint lede">這是公司工作區接收工時的入口。控制台（或其他符合契約的用戶端）送到這裡後，時段會進「待 PM 確認」。</p>
+    </div>
+</div>
+@if (!Reporting.CanViewInbox)
+{
+    <p>你沒有查看公開回報入帳的權限。</p>
+}
+else
+{
+    <Flash Text="@_message" />
+    <section class="card stack">
+        <h2>接收 API</h2>
+        <p class="hint">把這個 Base URL 交給工程師，請他們在控制台設定 → 申報目的地加入。測試連線通過後才能「送到〔這家公司〕」。</p>
+        <div class="toolbar">
+            <code class="copy-target">@_baseUrl</code>
+            <button type="button" class="btn-sec" @onclick="CopyBase">複製 Base URL</button>
+        </div>
+        <table class="grid">
+            <thead><tr><th>端點</th><th>用途</th></tr></thead>
+            <tbody>
+                <tr><td><code>GET /api/v1/me</code></td><td>握手：名冊有此人才算通過</td></tr>
+                <tr><td><code>POST /api/v1/timesheets/upload</code></td><td>上傳時段、狀態圖、Issue 參照</td></tr>
+                <tr><td><code>GET /api/v1/me/assignments</code></td><td>這週公司認為你在哪些專案</td></tr>
+            </tbody>
+        </table>
+        <p class="hint">標頭 <code>X-Company-Api-Version: 1</code>。認證用 GitHub 權杖，或公司核發、以 <code>apk_</code> 開頭的回報 API 金鑰。本機工時檔仍留在控制台。</p>
+        @if (_showDemo)
+        {
+            <div class="flash">
+                <p>開發示範（<code>Company:SeedDemoData</code>）：工程師 GitHub <code>wang-dev</code>，專案 <strong>AI_Project_Console</strong>（專案碼 <code>CONSOLE-DEMO</code>）。控制台可貼這把金鑰當目的地憑證，不必對到你自己的 GitHub。</p>
+                <div class="toolbar">
+                    <code class="copy-target">@CompanyDemoSeed.DemoReportingApiKey</code>
+                    <button type="button" class="btn-sec" @onclick="CopyDemoKey">複製示範金鑰</button>
+                </div>
+            </div>
+        }
+    </section>
+    <div class="tabs" role="tablist" aria-label="公開回報入帳">
+        <button type="button" class="tab @(_tab == "pending" ? "is-on" : "")" @onclick='() => _tab = "pending"'>待 PM 確認 @_pending.Count</button>
+        <button type="button" class="tab @(_tab == "unmatched" ? "is-on" : "")" @onclick='() => _tab = "unmatched"'>待歸戶 @_unmatched.Count</button>
+        @if (Gate.Can(PlatformCapability.ManageSettings))
+        {
+            <button type="button" class="tab @(_tab == "keys" ? "is-on" : "")" @onclick='() => _tab = "keys"'>API 金鑰 @_keys.Count</button>
+        }
+    </div>
+    @if (_tab == "pending")
+    {
+        <p class="hint">PM 確認專案歸屬與狀態圖，不核定薪水。繪圖入口在控制台。核發後到 <a href="/payroll">薪資週期</a>。</p>
+        @if (Gate.Can(PlatformCapability.ConfirmTimesheet))
+        {
+            <div class="toolbar">
+                <input placeholder="退回原因（必填）" @bind="_returnReason" style="min-width: 16rem;" />
+            </div>
+        }
+        <div class="table-wrap">
+            <table class="grid">
+                <thead><tr><th>日</th><th>人</th><th>專案</th><th>小時</th><th>來源時段</th><th>狀態圖</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var sheet in _pending)
+                    {
+                        <tr>
+                            <td>@sheet.WorkDate</td>
+                            <td>@PersonName(sheet.PersonId)</td>
+                            <td>@ProjectName(sheet.ProjectId)</td>
+                            <td>@sheet.Hours</td>
+                            <td><code>@sheet.LocalSlotId</code></td>
+                            <td>
+                                @if (sheet.Chart.Count == 0)
+                                {
+                                    <span class="hint">未繪</span>
+                                }
+                                else
+                                {
+                                    <ul class="chart-preview">
+                                        @foreach (var cell in sheet.Chart.OrderBy(c => c.Date))
+                                        {
+                                            <li>
+                                                <span class="chart-dot intensity-@cell.Intensity" title="強度 @cell.Intensity"></span>
+                                                @cell.Date @(string.IsNullOrWhiteSpace(cell.Note) ? "" : "· " + cell.Note)
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </td>
+                            <td>
+                                @if (Gate.Can(PlatformCapability.ConfirmTimesheet))
+                                {
+                                    <div class="row-actions">
+                                        <button class="btn-primary" @onclick="() => Confirm(sheet.Id)">確認歸屬</button>
+                                        <button class="btn-sec" @onclick="() => Return(sheet.Id)">退回</button>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_pending.Count == 0)
+        {
+            <p class="empty">還沒有從控制台或公開契約送來的工時。工程師在工時儀表板按「送到〔這家公司〕」後會出現在這裡。</p>
+        }
+    }
+    else if (_tab == "unmatched")
+    {
+        <p class="hint">GitHub 對不到人員檔的上傳會進這裡。人資到 <a href="/people">人員</a> 綁定後，請工程師重試。</p>
+        <div class="table-wrap">
+            <table class="grid">
+                <thead><tr><th>GitHub</th><th>本機時段</th><th>時間</th></tr></thead>
+                <tbody>
+                    @foreach (var item in _unmatched)
+                    {
+                        <tr>
+                            <td>@item.GitHubLogin</td>
+                            <td>@item.LocalSlotId</td>
+                            <td>@item.ReceivedAt.LocalDateTime</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_unmatched.Count == 0)
+        {
+            <p class="empty">目前沒有待歸戶上傳。</p>
+        }
+    }
+    else if (_tab == "keys" && Gate.Can(PlatformCapability.ManageSettings))
+    {
+        <p class="hint">金鑰對應人員，明文只顯示一次。撤銷必填原因。第三方工具與本機示範都走這把，不限控制台。</p>
+        <div class="form-grid">
+            <label>人員
+                <select @bind="_keyPerson">
+                    <option value="">選擇人員</option>
+                    @foreach (var person in _people.Values.OrderBy(p => p.DisplayName))
+                    {
+                        <option value="@person.Id.ToString()">@person.DisplayName @(string.IsNullOrEmpty(person.GitHubLogin) ? "" : "· " + person.GitHubLogin)</option>
+                    }
+                </select>
+            </label>
+            <label>名稱 <input @bind="_keyName" placeholder="例如 控制台示範" /></label>
+        </div>
+        <div class="toolbar">
+            <button type="button" class="btn-primary" @onclick="IssueKey">核發金鑰</button>
+        </div>
+        @if (!string.IsNullOrEmpty(_plaintext))
+        {
+            <div class="flash">
+                <p>請立刻複製，離開後無法再看完整金鑰。</p>
+                <div class="toolbar">
+                    <code class="copy-target">@_plaintext</code>
+                    <button type="button" class="btn-sec" @onclick="CopyIssued">複製金鑰</button>
+                </div>
+            </div>
+        }
+        <div class="table-wrap">
+            <table class="grid">
+                <thead><tr><th>名稱</th><th>人員</th><th>前綴</th><th>狀態</th><th>上次使用</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var key in _keys)
+                    {
+                        <tr>
+                            <td>@key.Name</td>
+                            <td>@PersonName(key.PersonId)</td>
+                            <td><code>@key.KeyPrefix…</code></td>
+                            <td>@(key.IsActive ? "有效" : "已撤銷")</td>
+                            <td>@(key.LastUsedAt is DateTimeOffset used ? used.LocalDateTime.ToString("yyyy-MM-dd HH:mm") : "尚未")</td>
+                            <td>
+                                @if (key.IsActive)
+                                {
+                                    <button type="button" class="btn-sec" @onclick="() => OpenRevoke(key.Id)">撤銷</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_keys.Count == 0)
+        {
+            <p class="empty">還沒有核發回報 API 金鑰。工程師也可以只用 GitHub 權杖握手。</p>
+        }
+        <UiDialog Open="_revokeOpen" Title="撤銷回報 API 金鑰" OnClose="() => _revokeOpen = false">
+            <p class="hint">撤銷後這把金鑰立刻不能再上傳。必填原因，會記入審計。</p>
+            <label>原因 <input @bind="_revokeReason" /></label>
+            <div class="dialog-actions">
+                <button type="button" class="btn-sec" @onclick="() => _revokeOpen = false">取消</button>
+                <button type="button" class="btn-danger" @onclick="Revoke">撤銷</button>
+            </div>
+        </UiDialog>
+    }
+}
+
+@code {
+    string _tab = "pending";
+    string _message = "";
+    string _returnReason = "";
+    string _baseUrl = "";
+    string _plaintext = "";
+    string _keyName = "控制台";
+    string _keyPerson = "";
+    string _revokeReason = "";
+    bool _revokeOpen;
+    Guid _revokeId;
+    bool _showDemo;
+    IReadOnlyList<Timesheet> _pending = [];
+    IReadOnlyList<UnmatchedUpload> _unmatched = [];
+    IReadOnlyList<ReportingApiKey> _keys = [];
+    Dictionary<Guid, Person> _people = [];
+    Dictionary<Guid, string> _projects = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _baseUrl = Nav.BaseUri.TrimEnd('/');
+        _showDemo = Config.GetValue("Company:SeedDemoData", false);
+        await ReloadAsync();
+    }
+
+    async Task ReloadAsync()
+    {
+        _people = (await Directory.PeopleAsync()).ToDictionary(p => p.Id);
+        _projects = (await Directory.ProjectsAsync()).ToDictionary(p => p.Id, p => p.Name);
+        _pending = (await Directory.TimesheetsAsync()).Where(t => t.Status == TimesheetStatus.PendingPm).OrderBy(t => t.WorkDate).ToList();
+        _unmatched = await Directory.UnmatchedAsync();
+        _keys = await Reporting.KeysAsync();
+    }
+
+    string PersonName(Guid id) => _people.TryGetValue(id, out var p) ? p.DisplayName : "（已停用或不在名冊）";
+    string ProjectName(Guid id) => _projects.TryGetValue(id, out var n) ? n : "";
+
+    async Task CopyBase() => await CopyAsync(_baseUrl, "已複製 Base URL。請工程師加到控制台申報目的地。");
+    async Task CopyDemoKey() => await CopyAsync(CompanyDemoSeed.DemoReportingApiKey, "已複製示範金鑰。貼到控制台該目的地的「回報 API 金鑰」。");
+    async Task CopyIssued() => await CopyAsync(_plaintext, "已複製金鑰。");
+
+    async Task CopyAsync(string text, string ok)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            _message = ok;
+        }
+        catch
+        {
+            _message = "無法自動複製，請手動選取上方文字。";
+        }
+    }
+
+    async Task Confirm(Guid id)
+    {
+        var result = await Timesheets.ConfirmAsync(id);
+        _message = result.Ok ? "已確認專案歸屬（不是核定薪水）。" : result.Message;
+        await ReloadAsync();
+    }
+
+    async Task Return(Guid id)
+    {
+        if (string.IsNullOrWhiteSpace(_returnReason))
+        {
+            _message = "退回必須填原因。";
+            return;
+        }
+        var result = await Timesheets.ReturnAsync(id, _returnReason);
+        _message = result.Ok ? "已退回，工程師可在控制台更正後再送。" : result.Message;
+        if (result.Ok)
+            _returnReason = "";
+        await ReloadAsync();
+    }
+
+    async Task IssueKey()
+    {
+        if (!Guid.TryParse(_keyPerson, out var personId))
+        {
+            _message = "請先選人員。";
+            return;
+        }
+        var result = await ApiKeys.IssueAsync(personId, _keyName);
+        if (!result.Ok)
+        {
+            _message = result.Message;
+            return;
+        }
+        _plaintext = result.Value.Plaintext;
+        _message = "已核發。請立刻複製明文金鑰。";
+        await ReloadAsync();
+    }
+
+    void OpenRevoke(Guid id)
+    {
+        _revokeId = id;
+        _revokeReason = "";
+        _revokeOpen = true;
+    }
+
+    async Task Revoke()
+    {
+        var result = await ApiKeys.RevokeAsync(_revokeId, _revokeReason);
+        _message = result.Ok ? "已撤銷這把金鑰。" : result.Message;
+        if (result.Ok)
+            _revokeOpen = false;
+        await ReloadAsync();
+    }
+}

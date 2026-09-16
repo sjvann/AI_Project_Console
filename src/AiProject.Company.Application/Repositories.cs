@@ -52,6 +52,7 @@ public interface IReportingApiKeyRepository
 {
     Task<ReportingApiKey?> GetAsync(Guid id, CancellationToken ct = default);
     Task<ReportingApiKey?> GetByHashAsync(string keyHash, CancellationToken ct = default);
+    Task<IReadOnlyList<ReportingApiKey>> ListAsync(CancellationToken ct = default);
     Task<IReadOnlyList<ReportingApiKey>> ListForPersonAsync(Guid personId, CancellationToken ct = default);
     Task AddAsync(ReportingApiKey key, CancellationToken ct = default);
 }

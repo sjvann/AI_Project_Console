@@ -355,4 +355,19 @@ public class DomainPolicyTests
         var ready = new ProjectHealthPolicy(settings).Evaluate(project, new DateOnly(2026, 9, 6), 0, false, 40, true);
         Assert.Equal(HealthTone.Green, ready.Schedule);
     }
+
+    [Fact]
+    public void Reporting_api_key_from_plaintext_hashes_and_looks_like_key()
+    {
+        var personId = Guid.NewGuid();
+        var plaintext = "apk_0123456789abcdef0123456789abcdef0123456789abcdef";
+        var key = ReportingApiKey.FromPlaintext(personId, "控制台示範", plaintext, DateTimeOffset.UtcNow);
+        Assert.True(ReportingApiKey.LooksLikeApiKey(plaintext));
+        Assert.Equal(personId, key.PersonId);
+        Assert.Equal(ReportingApiKey.Hash(plaintext), key.KeyHash);
+        Assert.StartsWith("apk_", key.KeyPrefix, StringComparison.Ordinal);
+        var issued = ReportingApiKey.Issue(personId, "ci", DateTimeOffset.UtcNow);
+        Assert.True(ReportingApiKey.LooksLikeApiKey(issued.Plaintext));
+        Assert.Equal(ReportingApiKey.Hash(issued.Plaintext), issued.Key.KeyHash);
+    }
 }
