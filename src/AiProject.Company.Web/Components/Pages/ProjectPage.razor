@@ -14,9 +14,27 @@
 }
 else
 {
-    <h1>@_project.Name</h1>
-    <p>目標 @_project.TargetEnd · @_project.Status · 目前階段 @_project.CurrentPhase(DateTimeOffset.Now)?.Name</p>
-    <section class="card" id="docs">
+    <div class="page-head">
+        <div>
+            <h1>@_project.Name</h1>
+            <p class="hint lede">目標 @_project.TargetEnd · @_project.Status · 目前階段 @_project.CurrentPhase(DateTimeOffset.Now)?.Name</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn-sec" href="/dispatch?project=@Id">去週矩陣</a>
+            <button class="btn-danger" @onclick="Close">結案</button>
+        </div>
+    </div>
+    <Flash Text="@_message" />
+    <div class="tabs" role="tablist" aria-label="專案">
+        <button type="button" class="tab @(_tab == "docs" ? "is-on" : "")" @onclick='() => _tab = "docs"'>需求分析</button>
+        <button type="button" class="tab @(_tab == "journal" ? "is-on" : "")" @onclick='() => _tab = "journal"'>專案紀錄</button>
+        <button type="button" class="tab @(_tab == "contrib" ? "is-on" : "")" @onclick='() => _tab = "contrib"'>專案貢獻</button>
+        <button type="button" class="tab @(_tab == "gantt" ? "is-on" : "")" @onclick='() => _tab = "gantt"'>甘特</button>
+        <button type="button" class="tab @(_tab == "meta" ? "is-on" : "")" @onclick='() => _tab = "meta"'>主檔</button>
+    </div>
+    @if (_tab == "docs")
+    {
+        <section class="card" id="docs">
         <h2>需求分析</h2>
         <p class="hint">這裡只當目錄與健康燈。進件與規格仍在控制台／Git 寫。先掛倉或連工作區，需求分析在控制台寫、這裡只當入口。</p>
         @if (!string.IsNullOrWhiteSpace(_docs?.EmptyHint))
@@ -58,8 +76,11 @@ else
         {
             <p class="hint">工作區還沒有 intake.json，請到控制台需求工作台畫進件。</p>
         }
-    </section>
-    <section class="card">
+        </section>
+    }
+    @if (_tab == "journal")
+    {
+        <section class="card">
         <h2>專案紀錄</h2>
         <ol class="timeline">
             @foreach (var item in _project.Journals.OrderByDescending(j => j.At))
@@ -86,14 +107,17 @@ else
             }
         </div>
     </section>
+    }
+    @if (_tab == "meta")
+    {
     <section class="card" id="project-meta">
         <h2>專案主檔</h2>
-        <div class="stack">
+        <div class="form-grid">
             <label>名稱 <input @bind="_editName" /></label>
             <label>專案碼 <input @bind="_editCode" placeholder="上傳可用 projectCode" /></label>
             <label>開始 <input type="date" @bind="_editStart" /></label>
             <label>目標結束 <input type="date" @bind="_editTarget" /></label>
-            <label>工作區路徑 <input @bind="_editWorkspace" /></label>
+            <label class="full">工作區路徑 <input @bind="_editWorkspace" /></label>
             <label>狀態
                 <select @bind="_editStatus">
                     <option value="@ProjectStatus.Draft">立案</option>
@@ -104,11 +128,14 @@ else
                 </select>
             </label>
             <label class="check"><input type="checkbox" @bind="_editExcludeMargin" /> 不計入毛利 KPI</label>
-            <div class="toolbar">
-                <button class="btn-primary" @onclick="SaveMeta">儲存主檔</button>
-            </div>
+        </div>
+        <div class="toolbar">
+            <button class="btn-primary" @onclick="SaveMeta">儲存主檔</button>
         </div>
     </section>
+    }
+    @if (_tab == "contrib")
+    {
     <section class="card" id="contrib">
         <h2>專案貢獻</h2>
         @if (_contrib is null)
@@ -161,6 +188,9 @@ else
             </table>
         }
     </section>
+    }
+    @if (_tab == "gantt")
+    {
     <div class="split">
         <section>
             <h2>甘特</h2>
@@ -296,11 +326,7 @@ else
         <h2>進件彙總（只讀自倉）</h2>
         <p>已發出 @intake.Issued · 待驗收 @intake.PendingAcceptance。真相仍在 Git，不搬 intake.json。</p>
     }
-    <div class="toolbar">
-        <a class="btn-sec" href="/dispatch?project=@Id">去週矩陣</a>
-        <button class="btn-danger" @onclick="Close">結案</button>
-    </div>
-    <p>@_message</p>
+    }
 }
 
 @code {
@@ -326,6 +352,7 @@ else
     bool _editExcludeMargin;
     IReadOnlyList<Person> _people = [];
     string _message = "";
+    string _tab = "docs";
 
     protected override async Task OnInitializedAsync()
     {

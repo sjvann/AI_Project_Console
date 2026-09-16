@@ -7,96 +7,122 @@
 @inject IJSRuntime Js
 
 <PageTitle>設定</PageTitle>
-<h1>公司設定</h1>
-<p class="hint">@Hosting.Value.OperatorLabel · Hosting:Mode=@Hosting.Value.NormalizedMode</p>
+<div class="page-head">
+    <div>
+        <h1>公司設定</h1>
+        <p class="hint lede">@Hosting.Value.OperatorLabel · Hosting:Mode=@Hosting.Value.NormalizedMode。人員帳戶改到 <a href="/accounts">帳戶管理</a>。</p>
+    </div>
+</div>
 @if (!Gate.Can(PlatformCapability.ManageSettings))
 {
     <p>只有公司管理員能改全公司設定。</p>
 }
 else if (_model is not null)
 {
-    <div class="stack card">
-        <label>公司名 <input @bind="_name" /></label>
-        <label>時區 <input @bind="_tz" /></label>
-        <label>記帳貨幣
-            <select @bind="_currency">
-                @foreach (var iso in CompanyCurrencyChoices)
-                {
-                    <option value="@iso">@iso</option>
-                }
-            </select>
-        </label>
-        <p class="hint">損益、戰情室、匯出 CSV 都換成這個幣。合約仍可開美金等外幣，靠下面匯率表換算。不接銀行牌價。</p>
-        <label>毛利黃燈（%） <input type="number" @bind="_yellow" /></label>
-        <label>毛利紅燈（%） <input type="number" @bind="_red" /></label>
-        <label class="check"><input type="checkbox" @bind="_writeBack" /> 派工寫回 GitHub assignee</label>
-        <button class="btn-primary" @onclick="Save">存檔</button>
-        <p class="hint">@_message</p>
+    <div class="tabs" role="tablist" aria-label="設定分類">
+        <button type="button" class="tab @(_tab == "company" ? "is-on" : "")" @onclick='() => _tab = "company"'>公司</button>
+        <button type="button" class="tab @(_tab == "theme" ? "is-on" : "")" @onclick='() => _tab = "theme"'>主題</button>
+        <button type="button" class="tab @(_tab == "fx" ? "is-on" : "")" @onclick='() => _tab = "fx"'>匯率</button>
     </div>
-    <section class="card">
-        <h2>主題包</h2>
-        <p class="hint">五色選盤（對比已對淺底檢查）。完整開帳精靈下一切可後補；色票來自 Shared.DesignSystem，畫面不散落硬編碼 accent。</p>
-        <div class="toolbar">
-            @foreach (var pack in ThemePacks.All)
-            {
-                <button type="button" class="btn-sec @(_theme == pack.Id ? "is-on" : "")" @onclick="() => SaveTheme(pack.Id)">@pack.Label</button>
-            }
-        </div>
-        <p class="hint">@_themeMessage</p>
-    </section>
-    <p class="hint">人員帳戶改到 <a href="/accounts">帳戶管理</a>。公司管理人員用帳號密碼進後台。從線上招募進來的外部工程師用 GitHub 邀請，走桌面控制台。</p>
-    <h2>外幣匯率（換成 @_currency）</h2>
-    <p class="hint">合約若用外幣計價，預算損益要先換成記帳貨幣才看得懂毛利。這裡是人工匯率表，可同時維護多種外幣；同一幣別再存一次會覆蓋。記帳貨幣本身固定為 1，不必填。</p>
-    @if (_model.ExchangeRates.Count == 0)
+    @if (_tab == "company")
     {
-        <p class="empty">還沒有外幣匯率。合約若都是 @_currency，這裡可以空白。</p>
+        <section class="card">
+            <div class="form-grid">
+                <label>公司名 <input @bind="_name" /></label>
+                <label>時區 <input @bind="_tz" /></label>
+                <label>記帳貨幣
+                    <select @bind="_currency">
+                        @foreach (var iso in CompanyCurrencyChoices)
+                        {
+                            <option value="@iso">@iso</option>
+                        }
+                    </select>
+                </label>
+                <label>毛利黃燈（%） <input type="number" @bind="_yellow" /></label>
+                <label>毛利紅燈（%） <input type="number" @bind="_red" /></label>
+            </div>
+            <p class="hint">損益、戰情室、匯出 CSV 都換成這個幣。合約仍可開美金等外幣，靠匯率表換算。不接銀行牌價。</p>
+            <label class="check"><input type="checkbox" @bind="_writeBack" /> 派工寫回 GitHub assignee</label>
+            <div class="toolbar">
+                <button class="btn-primary" @onclick="Save">存檔</button>
+            </div>
+            <Flash Text="@_message" />
+        </section>
+    }
+    else if (_tab == "theme")
+    {
+        <section class="card">
+            <h2>主題包</h2>
+            <p class="hint">五色選盤（對比已對淺底檢查）。完整開帳精靈下一切可後補；色票來自 Shared.DesignSystem，畫面不散落硬編碼 accent。</p>
+            <div class="toolbar">
+                @foreach (var pack in ThemePacks.All)
+                {
+                    <button type="button" class="btn-sec @(_theme == pack.Id ? "is-on" : "")" @onclick="() => SaveTheme(pack.Id)">@pack.Label</button>
+                }
+            </div>
+            <Flash Text="@_themeMessage" />
+        </section>
     }
     else
     {
-        <table class="grid">
-            <thead>
-                <tr>
-                    <th>外幣</th>
-                    <th>1 單位兌 @_currency</th>
-                    <th>生效日</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _model.ExchangeRates.OrderBy(x => x.Currency))
+        <div class="workbench">
+            <section>
+                <h2>外幣匯率（換成 @_currency）</h2>
+                <p class="hint">合約若用外幣計價，預算損益要先換成記帳貨幣才看得懂毛利。人工匯率表；同一幣別再存一次會覆蓋。記帳貨幣本身固定為 1。</p>
+                @if (_model.ExchangeRates.Count == 0)
                 {
-                    <tr>
-                        <td>@row.Currency</td>
-                        <td>@row.RateToCompany</td>
-                        <td>@row.AsOf</td>
-                        <td><button type="button" class="btn-link" @onclick="() => EditRate(row)">改這筆</button></td>
-                    </tr>
+                    <p class="empty">還沒有外幣匯率。合約若都是 @_currency，這裡可以空白。</p>
                 }
-            </tbody>
-        </table>
+                else
+                {
+                    <table class="grid">
+                        <thead>
+                            <tr>
+                                <th>外幣</th>
+                                <th>1 單位兌 @_currency</th>
+                                <th>生效日</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _model.ExchangeRates.OrderBy(x => x.Currency))
+                            {
+                                <tr>
+                                    <td>@row.Currency</td>
+                                    <td>@row.RateToCompany</td>
+                                    <td>@row.AsOf</td>
+                                    <td><button type="button" class="btn-link" @onclick="() => EditRate(row)">改這筆</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+            <aside class="rail card stack">
+                <h2>寫入匯率</h2>
+                <label>外幣
+                    <select @bind="_fxPick" @bind:after="PrefillFromTable">
+                        @foreach (var iso in ForeignCodes)
+                        {
+                            <option value="@iso">@iso</option>
+                        }
+                        <option value="@Currencies.Other">其他（自行輸入）</option>
+                    </select>
+                </label>
+                @if (_fxPick == Currencies.Other)
+                {
+                    <label>幣別代碼 <input @bind="_fxCustom" @bind:after="PrefillFromTable" maxlength="8" placeholder="例如 THB" /></label>
+                }
+                <label>匯率 <input type="number" step="0.0001" min="0.0001" @bind="_fxRate" /></label>
+                <p class="hint">@FxPreview</p>
+                <label>生效日 <input type="date" @bind="_fxAsOf" /></label>
+                <label>備註（可選） <input @bind="_fxNote" placeholder="例如 2026 年 9 月財務月結" /></label>
+                <p class="hint">誰改了匯率、改成多少，系統會自動記審計。</p>
+                <button class="btn-primary" @onclick="SaveFx">儲存匯率</button>
+                <Flash Text="@_fxMessage" />
+            </aside>
+        </div>
     }
-    <div class="stack card">
-        <label>外幣
-            <select @bind="_fxPick" @bind:after="PrefillFromTable">
-                @foreach (var iso in ForeignCodes)
-                {
-                    <option value="@iso">@iso</option>
-                }
-                <option value="@Currencies.Other">其他（自行輸入）</option>
-            </select>
-        </label>
-        @if (_fxPick == Currencies.Other)
-        {
-            <label>幣別代碼 <input @bind="_fxCustom" @bind:after="PrefillFromTable" maxlength="8" placeholder="例如 THB" /></label>
-        }
-        <label>匯率 <input type="number" step="0.0001" min="0.0001" @bind="_fxRate" /></label>
-        <p class="hint">@FxPreview</p>
-        <label>生效日 <input type="date" @bind="_fxAsOf" /></label>
-        <label>備註（可選） <input @bind="_fxNote" placeholder="例如 2026 年 9 月財務月結" /></label>
-        <p class="hint">誰改了匯率、改成多少，系統會自動記審計。備註只在你想留下月結說明時才填。</p>
-        <button class="btn-primary" @onclick="SaveFx">儲存匯率</button>
-        <p class="hint">@_fxMessage</p>
-    </div>
 }
 
 @code {
@@ -108,6 +134,7 @@ else if (_model is not null)
     decimal _red = 10;
     bool _writeBack = true;
     string _message = "";
+    string _tab = "company";
     string _theme = ThemePacks.Default;
     string _themeMessage = "";
     string _fxPick = "USD";

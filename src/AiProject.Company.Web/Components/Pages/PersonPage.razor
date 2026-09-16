@@ -11,84 +11,108 @@
 }
 else
 {
-    <h1>@_person.DisplayName</h1>
-    <p class="hint">@_person.EmploymentKind.Display() · @_person.Status.Display() @(string.IsNullOrEmpty(_vendorName) ? "" : "· " + _vendorName)</p>
-    <div class="stack card">
-        <label>顯示名 <input @bind="_name" /></label>
-        <label>Email <input @bind="_email" /></label>
-        <label>部門 <input @bind="_department" /></label>
-        <label>直屬主管
-            <select @bind="_manager">
-                <option value="">無</option>
-                @foreach (var p in _managers)
-                {
-                    <option value="@p.Id">@p.DisplayName</option>
-                }
-            </select>
-        </label>
-        <label>狀態
-            <select @bind="_status">
-                <option value="@PersonStatus.Active">在職</option>
-                <option value="@PersonStatus.Inactive">停用</option>
-                <option value="@PersonStatus.Blacklisted">黑名單</option>
-            </select>
-        </label>
-        <label>每週上限 <input type="number" @bind="_cap" /></label>
-        <label>技能（逗號） <input @bind="_skills" /></label>
-        <label>GitHub <input @bind="_github" /></label>
-        <p class="hint">給控制台上傳對人用，不是後台登入。招募邀請也會自動綁。</p>
-        <label>不可派起 <input type="date" @bind="_unavailStart" /></label>
-        <label>不可派迄 <input type="date" @bind="_unavailEnd" /></label>
-        <label>不可派原因 <input @bind="_unavailReason" /></label>
-        <label class="check"><input type="checkbox" @bind="_exempt" /> 不參與專案分攤</label>
-        <label>月薪 <input type="password" @bind="_salary" autocomplete="off" /> <button type="button" class="btn-sec" @onclick="Reveal">顯示</button></label>
-        <label>對內時計費率 <input type="password" @bind="_hourly" autocomplete="off" /></label>
-        <label>改費率原因 <input @bind="_reason" /></label>
-        <button class="btn-primary" @onclick="Save">儲存</button>
-        <button class="btn-sec" @onclick="Bind">綁定 GitHub</button>
-        <button class="btn-danger" @onclick="Deactivate">停用</button>
-        <p>@_message</p>
+    <div class="page-head">
+        <div>
+            <h1>@_person.DisplayName</h1>
+            <p class="hint lede">@_person.EmploymentKind.Display() · @_person.Status.Display() @(string.IsNullOrEmpty(_vendorName) ? "" : "· " + _vendorName)</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn-sec" href="/people">回名冊</a>
+        </div>
     </div>
-    <section class="card">
-        <h2>目前派工</h2>
-        @if (_assignments.Count == 0)
-        {
-            <p class="empty">目前沒有進行中的派工。</p>
-        }
-        else
-        {
-            <ul>
-                @foreach (var a in _assignments)
+    <Flash Text="@_message" />
+    <div class="tabs" role="tablist" aria-label="人員卡片">
+        <button type="button" class="tab @(_tab == "profile" ? "is-on" : "")" @onclick='() => _tab = "profile"'>主檔</button>
+        <button type="button" class="tab @(_tab == "work" ? "is-on" : "")" @onclick='() => _tab = "work"'>派工與工時</button>
+    </div>
+    @if (_tab == "profile")
+    {
+        <section class="card">
+            <div class="form-grid">
+                <label>顯示名 <input @bind="_name" /></label>
+                <label>Email <input @bind="_email" /></label>
+                <label>部門 <input @bind="_department" /></label>
+                <label>直屬主管
+                    <select @bind="_manager">
+                        <option value="">無</option>
+                        @foreach (var p in _managers)
+                        {
+                            <option value="@p.Id">@p.DisplayName</option>
+                        }
+                    </select>
+                </label>
+                <label>狀態
+                    <select @bind="_status">
+                        <option value="@PersonStatus.Active">在職</option>
+                        <option value="@PersonStatus.Inactive">停用</option>
+                        <option value="@PersonStatus.Blacklisted">黑名單</option>
+                    </select>
+                </label>
+                <label>每週上限 <input type="number" @bind="_cap" /></label>
+                <label class="full">技能（逗號） <input @bind="_skills" /></label>
+                <label>GitHub <input @bind="_github" /></label>
+                <label>不可派起 <input type="date" @bind="_unavailStart" /></label>
+                <label>不可派迄 <input type="date" @bind="_unavailEnd" /></label>
+                <label>不可派原因 <input @bind="_unavailReason" /></label>
+                <label>月薪 <input type="@(_showPay ? "text" : "password")" @bind="_salary" autocomplete="off" /></label>
+                <label>對內時計費率 <input type="@(_showPay ? "text" : "password")" @bind="_hourly" autocomplete="off" /></label>
+                <label>改費率原因 <input @bind="_reason" /></label>
+            </div>
+            <p class="hint">GitHub 給控制台上傳對人用，不是後台登入。招募邀請也會自動綁。</p>
+            <label class="check"><input type="checkbox" @bind="_exempt" /> 不參與專案分攤</label>
+            <div class="toolbar">
+                <button class="btn-primary" @onclick="Save">儲存</button>
+                <button class="btn-sec" @onclick="Bind">綁定 GitHub</button>
+                <button type="button" class="btn-sec" @onclick="Reveal">@(_showPay ? "遮罩薪資" : "顯示薪資")</button>
+                <button class="btn-danger" @onclick="Deactivate">停用</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <div class="workbench">
+            <section class="card">
+                <h2>目前派工</h2>
+                @if (_assignments.Count == 0)
                 {
-                    <li>@ProjectName(a.ProjectId) · @a.Role · @a.Start–@a.End · @a.PlannedHoursPerWeek 時/週</li>
+                    <p class="empty">目前沒有進行中的派工。</p>
                 }
-            </ul>
-        }
-    </section>
-    <section class="card">
-        <h2>近期工時</h2>
-        @if (_hours.Count == 0)
-        {
-            <p class="empty">還沒有上傳工時。</p>
-        }
-        else
-        {
-            <table class="grid">
-                <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th></tr></thead>
-                <tbody>
-                @foreach (var h in _hours)
+                else
                 {
-                    <tr>
-                        <td>@h.WorkDate</td>
-                        <td>@ProjectName(h.ProjectId)</td>
-                        <td>@h.Hours.ToString("0.##")</td>
-                        <td>@h.Status</td>
-                    </tr>
+                    <ul>
+                        @foreach (var a in _assignments)
+                        {
+                            <li>@ProjectName(a.ProjectId) · @a.Role · @a.Start–@a.End · @a.PlannedHoursPerWeek 時/週</li>
+                        }
+                    </ul>
                 }
-                </tbody>
-            </table>
-        }
-    </section>
+            </section>
+            <section class="card">
+                <h2>近期工時</h2>
+                @if (_hours.Count == 0)
+                {
+                    <p class="empty">還沒有上傳工時。</p>
+                }
+                else
+                {
+                    <table class="grid">
+                        <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th></tr></thead>
+                        <tbody>
+                        @foreach (var h in _hours)
+                        {
+                            <tr>
+                                <td>@h.WorkDate</td>
+                                <td>@ProjectName(h.ProjectId)</td>
+                                <td>@h.Hours.ToString("0.##")</td>
+                                <td>@h.Status</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        </div>
+    }
 }
 
 @code {
@@ -110,6 +134,7 @@ else
     string _hourly = "";
     string _reason = "";
     string _message = "";
+    string _tab = "profile";
     string _vendorName = "";
     bool _showPay;
     IReadOnlyList<Person> _managers = [];

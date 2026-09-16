@@ -12,8 +12,19 @@
 }
 else
 {
-    <h1>@_client.Name</h1>
-    <p>@_client.Lifecycle.Display() · @_client.Kind · @_client.Source.Display() · 窗口 @(_client.Contact ?? "未填")</p>
+    <div class="page-head">
+        <div>
+            <h1>@_client.Name</h1>
+            <p class="hint lede">@_client.Lifecycle.Display() · @_client.Kind · @_client.Source.Display() · 窗口 @(_client.Contact ?? "未填")</p>
+        </div>
+        <div class="page-actions">
+            @if (_client.CanEstablish().Ok)
+            {
+                <button type="button" class="btn-primary" @onclick="() => _establishOpen = true">成立專案</button>
+            }
+            <a class="btn-sec" href="/clients">回客戶列表</a>
+        </div>
+    </div>
     <div class="toolbar">
         @if (Client.AllowsTransition(_client.Lifecycle, ClientLifecycle.Discovery))
         {
@@ -36,164 +47,186 @@ else
             <button class="btn-sec" @onclick="() => ChangeLife(ClientLifecycle.Lead)">重開為潛在</button>
         }
     </div>
-    <section class="card">
-        <h2>主檔</h2>
-        <div class="stack">
-            <label>名稱 <input @bind="_name" /></label>
-            <label>窗口 <input @bind="_contact" /></label>
-            <label>電話 <input @bind="_phone" /></label>
-            <label>Email <input @bind="_email" /></label>
-            <label>來源
-                <select @bind="_source">
-                    <option value="@ClientSource.Existing">既有客戶</option>
-                    <option value="@ClientSource.Referral">轉介</option>
-                    <option value="@ClientSource.SelfDeveloped">自行開發</option>
-                    <option value="@ClientSource.Recruit">招募轉介</option>
-                    <option value="@ClientSource.Other">其他</option>
-                </select>
-            </label>
-            <label>負責 PM
-                <select @bind="_owner">
-                    <option value="">未指定</option>
-                    @foreach (var person in _people)
-                    {
-                        <option value="@person.Id">@person.DisplayName</option>
-                    }
-                </select>
-            </label>
-            <label>下次跟進 <input type="date" @bind="_follow" /></label>
-            <button class="btn-sec" @onclick="SaveProfile">儲存主檔</button>
-        </div>
-    </section>
-    <section class="card">
-        <h2>活動時間線</h2>
-        <ol class="timeline">
-            @foreach (var item in _client.Activities.OrderByDescending(a => a.At))
-            {
-                <li>
-                    <strong>@item.Kind.Display()</strong>
-                    <span class="hint">@item.At.LocalDateTime.ToString("yyyy-MM-dd HH:mm") · @item.Actor</span>
-                    <p>@item.Summary</p>
-                </li>
-            }
-        </ol>
-        @if (_client.Activities.Count == 0)
-        {
-            <p class="empty">還沒有跟進紀錄。</p>
-        }
-        <div class="toolbar">
-            <select @bind="_actKind">
-                <option value="@ClientActivityKind.Call">來電</option>
-                <option value="@ClientActivityKind.Meeting">面談</option>
-                <option value="@ClientActivityKind.RequirementNote">需求紀錄</option>
-                <option value="@ClientActivityKind.ProposalSent">提案送出</option>
-            </select>
-            <input placeholder="摘要（人話，不要填金額）" @bind="_actSummary" style="min-width: 16rem;" />
-            <input type="date" @bind="_actFollow" />
-            <button class="btn-sec" @onclick="AddActivity">記一筆</button>
-        </div>
-    </section>
-    @if (_client.CanEstablish().Ok)
+    <Flash Text="@_message" />
+    @if (!_client.CanEstablish().Ok)
+    {
+        <p class="hint">潛在或訪談中的客戶要先進入議約，才能成立專案。</p>
+    }
+    <div class="tabs" role="tablist" aria-label="客戶">
+        <button type="button" class="tab @(_tab == "timeline" ? "is-on" : "")" @onclick='() => _tab = "timeline"'>活動時間線</button>
+        <button type="button" class="tab @(_tab == "profile" ? "is-on" : "")" @onclick='() => _tab = "profile"'>主檔</button>
+        <button type="button" class="tab @(_tab == "contracts" ? "is-on" : "")" @onclick='() => _tab = "contracts"'>合約與專案</button>
+    </div>
+    @if (_tab == "timeline")
     {
         <section class="card">
-            <h2>成立專案</h2>
-            <p class="hint">一次建立合約與專案，客戶會標成合約客戶。同一客戶加第二條請用下方既有合約。</p>
-            <div class="stack">
-                <label>沿用合約
-                    <select @bind="_existingContract">
-                        <option value="">新建合約</option>
-                        @foreach (var contract in _contracts)
-                        {
-                            <option value="@contract.Id">@contract.Name</option>
-                        }
-                    </select>
-                </label>
-                @if (string.IsNullOrEmpty(_existingContract))
+            <ol class="timeline">
+                @foreach (var item in _client.Activities.OrderByDescending(a => a.At))
                 {
-                    <label>合約名稱 <input @bind="_cName" /></label>
-                    <label>合約開始 <input type="date" @bind="_cStart" /></label>
-                    <label>合約結束 <input type="date" @bind="_cEnd" /></label>
-                    <label>總額 <input type="number" @bind="_cAmount" /></label>
-                    <label>幣別
-                        <select @bind="_cCurrency">
-                            @foreach (var iso in Currencies.Common)
-                            {
-                                <option value="@iso">@iso</option>
-                            }
-                        </select>
-                    </label>
-                    <label>計價
-                        <select @bind="_pricing">
-                            <option value="@PricingKind.FixedPrice">固定價格</option>
-                            <option value="@PricingKind.TimeAndMaterials">T&amp;M</option>
-                            <option value="@PricingKind.Mixed">混合</option>
-                        </select>
-                    </label>
-                    <p>可派外包商</p>
-                    @foreach (var vendor in _vendors)
-                    {
-                        <label class="check"><input type="checkbox" checked="@_vendorIds.Contains(vendor.Id)" @onchange="e => ToggleVendor(vendor.Id, e)" /> @vendor.Name</label>
-                    }
+                    <li>
+                        <strong>@item.Kind.Display()</strong>
+                        <span class="hint">@item.At.LocalDateTime.ToString("yyyy-MM-dd HH:mm") · @item.Actor</span>
+                        <p>@item.Summary</p>
+                    </li>
                 }
-                <label>專案名稱 <input @bind="_pName" /></label>
-                <label>專案開始 <input type="date" @bind="_pStart" /></label>
-                <label>目標結束 <input type="date" @bind="_pEnd" /></label>
-                <label>認列
-                    <select @bind="_method">
-                        <option value="@RevenueMethod.Milestone">里程碑認列</option>
-                        <option value="@RevenueMethod.StraightLine">直線攤提</option>
-                        <option value="@RevenueMethod.TimeAndMaterials">T&amp;M</option>
+            </ol>
+            @if (_client.Activities.Count == 0)
+            {
+                <p class="empty">還沒有跟進紀錄。</p>
+            }
+            <div class="toolbar">
+                <select @bind="_actKind">
+                    <option value="@ClientActivityKind.Call">來電</option>
+                    <option value="@ClientActivityKind.Meeting">面談</option>
+                    <option value="@ClientActivityKind.RequirementNote">需求紀錄</option>
+                    <option value="@ClientActivityKind.ProposalSent">提案送出</option>
+                </select>
+                <input placeholder="摘要（人話，不要填金額）" @bind="_actSummary" style="min-width: 16rem;" />
+                <input type="date" @bind="_actFollow" />
+                <button class="btn-sec" @onclick="AddActivity">記一筆</button>
+            </div>
+        </section>
+    }
+    else if (_tab == "profile")
+    {
+        <section class="card">
+            <div class="form-grid">
+                <label>名稱 <input @bind="_name" /></label>
+                <label>窗口 <input @bind="_contact" /></label>
+                <label>電話 <input @bind="_phone" /></label>
+                <label>Email <input @bind="_email" /></label>
+                <label>來源
+                    <select @bind="_source">
+                        <option value="@ClientSource.Existing">既有客戶</option>
+                        <option value="@ClientSource.Referral">轉介</option>
+                        <option value="@ClientSource.SelfDeveloped">自行開發</option>
+                        <option value="@ClientSource.Recruit">招募轉介</option>
+                        <option value="@ClientSource.Other">其他</option>
                     </select>
                 </label>
-                <label>GitHub 倉（選填）
-                    <select @bind="_repo">
-                        <option value="">稍後掛倉</option>
-                        @foreach (var repo in _repos)
+                <label>負責 PM
+                    <select @bind="_owner">
+                        <option value="">未指定</option>
+                        @foreach (var person in _people)
                         {
-                            <option value="@repo">@repo</option>
+                            <option value="@person.Id">@person.DisplayName</option>
                         }
                     </select>
                 </label>
-                <label>工作區路徑（選填，給進件只讀） <input @bind="_workspace" /></label>
-                <label class="check"><input type="checkbox" @bind="_startActive" /> 直接進入進行中</label>
-                <button class="btn-primary" @onclick="Establish">成立專案</button>
+                <label>下次跟進 <input type="date" @bind="_follow" /></label>
+            </div>
+            <div class="toolbar">
+                <button class="btn-sec" @onclick="SaveProfile">儲存主檔</button>
             </div>
         </section>
     }
     else
     {
-        <p class="hint">潛在或訪談中的客戶要先進入議約，才能成立專案。</p>
-    }
-    <h2>既有合約</h2>
-    <p class="hint">同一客戶加第二條專案，用這裡的合約。</p>
-    <div class="stack card">
-        <label>名稱 <input @bind="_extraContract" /></label>
-        <p>可派外包商</p>
-        @foreach (var vendor in _vendors)
-        {
-            <label class="check"><input type="checkbox" checked="@_vendorIds.Contains(vendor.Id)" @onchange="e => ToggleVendor(vendor.Id, e)" /> @vendor.Name</label>
-        }
-        <button class="btn-sec" @onclick="CreateContract">只建合約</button>
-    </div>
-    @foreach (var contract in _contracts)
-    {
+        <p class="hint">同一客戶加第二條專案，用這裡的合約。</p>
+        <div class="cards">
+            @foreach (var contract in _contracts)
+            {
+                <section class="proj-card">
+                    <strong>@contract.Name</strong>
+                    <p>@contract.Start – @contract.End · @contract.Amount @contract.Currency · @contract.Pricing</p>
+                    <div class="toolbar">
+                        <input placeholder="專案名稱" @bind="_extraProject" />
+                        <button class="btn-primary" @onclick="() => CreateProject(contract.Id)">加專案</button>
+                    </div>
+                </section>
+            }
+        </div>
         <section class="card">
-            <h3>@contract.Name</h3>
-            <p>@contract.Start – @contract.End · @contract.Amount @contract.Currency · @contract.Pricing</p>
+            <h2>只建合約</h2>
+            <div class="form-grid">
+                <label>名稱 <input @bind="_extraContract" /></label>
+            </div>
+            <p>可派外包商</p>
+            @foreach (var vendor in _vendors)
+            {
+                <label class="check"><input type="checkbox" checked="@_vendorIds.Contains(vendor.Id)" @onchange="e => ToggleVendor(vendor.Id, e)" /> @vendor.Name</label>
+            }
             <div class="toolbar">
-                <input placeholder="專案名稱" @bind="_extraProject" />
-                <button class="btn-primary" @onclick="() => CreateProject(contract.Id)">加專案</button>
+                <button class="btn-sec" @onclick="CreateContract">只建合約</button>
             </div>
         </section>
+        <h2>專案</h2>
+        <ul>
+            @foreach (var project in _projects.Where(p => _contracts.Any(c => c.Id == p.ContractId)))
+            {
+                <li><a href="/projects/@project.Id">@project.Name</a> · @project.Status · @(project.CurrentPhase(DateTimeOffset.Now)?.Name)</li>
+            }
+        </ul>
     }
-    <p>@_message</p>
-    <h2>專案</h2>
-    <ul>
-        @foreach (var project in _projects.Where(p => _contracts.Any(c => c.Id == p.ContractId)))
+    <UiDialog Open="_establishOpen" Title="成立專案" Wide="true" OnClose="() => _establishOpen = false">
+        <p class="hint">一次建立合約與專案，客戶會標成合約客戶。同一客戶加第二條請用「合約與專案」。</p>
+        <div class="form-grid">
+            <label>沿用合約
+                <select @bind="_existingContract">
+                    <option value="">新建合約</option>
+                    @foreach (var contract in _contracts)
+                    {
+                        <option value="@contract.Id">@contract.Name</option>
+                    }
+                </select>
+            </label>
+            @if (string.IsNullOrEmpty(_existingContract))
+            {
+                <label>合約名稱 <input @bind="_cName" /></label>
+                <label>合約開始 <input type="date" @bind="_cStart" /></label>
+                <label>合約結束 <input type="date" @bind="_cEnd" /></label>
+                <label>總額 <input type="number" @bind="_cAmount" /></label>
+                <label>幣別
+                    <select @bind="_cCurrency">
+                        @foreach (var iso in Currencies.Common)
+                        {
+                            <option value="@iso">@iso</option>
+                        }
+                    </select>
+                </label>
+                <label>計價
+                    <select @bind="_pricing">
+                        <option value="@PricingKind.FixedPrice">固定價格</option>
+                        <option value="@PricingKind.TimeAndMaterials">T&amp;M</option>
+                        <option value="@PricingKind.Mixed">混合</option>
+                    </select>
+                </label>
+            }
+            <label>專案名稱 <input @bind="_pName" /></label>
+            <label>專案開始 <input type="date" @bind="_pStart" /></label>
+            <label>目標結束 <input type="date" @bind="_pEnd" /></label>
+            <label>認列
+                <select @bind="_method">
+                    <option value="@RevenueMethod.Milestone">里程碑認列</option>
+                    <option value="@RevenueMethod.StraightLine">直線攤提</option>
+                    <option value="@RevenueMethod.TimeAndMaterials">T&amp;M</option>
+                </select>
+            </label>
+            <label>GitHub 倉（選填）
+                <select @bind="_repo">
+                    <option value="">稍後掛倉</option>
+                    @foreach (var repo in _repos)
+                    {
+                        <option value="@repo">@repo</option>
+                    }
+                </select>
+            </label>
+            <label class="full">工作區路徑（選填，給進件只讀） <input @bind="_workspace" /></label>
+        </div>
+        @if (string.IsNullOrEmpty(_existingContract))
         {
-            <li><a href="/projects/@project.Id">@project.Name</a> · @project.Status · @(project.CurrentPhase(DateTimeOffset.Now)?.Name)</li>
+            <p>可派外包商</p>
+            @foreach (var vendor in _vendors)
+            {
+                <label class="check"><input type="checkbox" checked="@_vendorIds.Contains(vendor.Id)" @onchange="e => ToggleVendor(vendor.Id, e)" /> @vendor.Name</label>
+            }
         }
-    </ul>
+        <label class="check"><input type="checkbox" @bind="_startActive" /> 直接進入進行中</label>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _establishOpen = false">取消</button>
+            <button type="button" class="btn-primary" @onclick="Establish">成立專案</button>
+        </div>
+    </UiDialog>
 }
 
 @code {
@@ -232,6 +265,8 @@ else
     string _extraContract = "";
     string _extraProject = "";
     string _message = "";
+    string _tab = "timeline";
+    bool _establishOpen;
 
     protected override async Task OnInitializedAsync()
     {

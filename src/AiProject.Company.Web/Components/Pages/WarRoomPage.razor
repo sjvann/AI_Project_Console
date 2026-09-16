@@ -22,45 +22,55 @@ else if (_snap is null)
 }
 else
 {
-    <h1>戰情室</h1>
-    <p class="hint">本週 @_snap.WeekStart.ToString("MM/dd") 起 · 毛利 @_snap.MarginYear-@_snap.MarginMonth.ToString("00") · @_snap.Today.ToString("yyyy-MM-dd")</p>
+    <div class="page-head">
+        <div>
+            <h1>戰情室</h1>
+            <p class="hint lede">本週 @_snap.WeekStart.ToString("MM/dd") 起 · 毛利 @_snap.MarginYear-@_snap.MarginMonth.ToString("00") · @_snap.Today.ToString("yyyy-MM-dd")</p>
+        </div>
+    </div>
     <div class="kpis">
         <article class="kpi"><span>進行中</span><strong>@_snap.ActiveProjects</strong></article>
         <article class="kpi kpi-red"><span>紅燈</span><strong>@_snap.RedCount</strong></article>
         <article class="kpi"><span>待案人力</span><strong>@_snap.IdlePeople</strong></article>
         <article class="kpi"><span>本月預估毛利</span><strong>@(MarginResult.Display(_snap.MonthMargin))</strong></article>
     </div>
-    <label class="check"><input type="checkbox" @bind="_onlyAlerts" /> 只看紅黃</label>
-    <div class="cards">
-        @foreach (var card in Visible)
-        {
-            <a class="proj-card tone-@card.Health.Worst.ToString().ToLowerInvariant()" href="@CardHref(card)">
-                <h2>@card.Name</h2>
-                <p class="hint">@(string.IsNullOrEmpty(card.ClientName) ? "—" : card.ClientName)</p>
-                <p>@card.Phase · 目標 @card.TargetEnd.ToString("MM/dd") · @card.Headcount 人</p>
-                <p><span>@card.Health.ScheduleLabel</span> · <span>@card.Health.StaffingLabel</span> · <span>@card.Health.MarginLabel</span></p>
-            </a>
-        }
+    <div class="workbench">
+        <div>
+            <label class="check"><input type="checkbox" @bind="_onlyAlerts" /> 只看紅黃</label>
+            <div class="cards">
+                @foreach (var card in Visible)
+                {
+                    <a class="proj-card tone-@card.Health.Worst.ToString().ToLowerInvariant()" href="@CardHref(card)">
+                        <h2>@card.Name</h2>
+                        <p class="hint">@(string.IsNullOrEmpty(card.ClientName) ? "—" : card.ClientName)</p>
+                        <p>@card.Phase · 目標 @card.TargetEnd.ToString("MM/dd") · @card.Headcount 人</p>
+                        <p><span>@card.Health.ScheduleLabel</span> · <span>@card.Health.StaffingLabel</span> · <span>@card.Health.MarginLabel</span></p>
+                    </a>
+                }
+            </div>
+            @if (!Visible.Any())
+            {
+                <p class="empty">還沒有專案。請先<a href="/clients">建立第一個客戶與專案</a>。</p>
+            }
+        </div>
+        <aside class="rail card">
+            <h2>例外</h2>
+            <ul class="exceptions">
+                @foreach (var item in _snap.Exceptions)
+                {
+                    <li><a href="@item.Href">@item.Text</a></li>
+                }
+                @if (_snap.Exceptions.Count == 0)
+                {
+                    <li class="hint">目前沒有例外。</li>
+                }
+            </ul>
+            @if (Gate.Can(PlatformCapability.Dispatch))
+            {
+                <p class="hint">交付主管可從例外進<a href="/dispatch">派工週矩陣</a>改派。</p>
+            }
+        </aside>
     </div>
-    @if (!Visible.Any())
-    {
-        <p class="empty">還沒有專案。請先<a href="/clients">建立第一個客戶與專案</a>。</p>
-    }
-    <h2>例外</h2>
-    <ul class="exceptions">
-        @foreach (var item in _snap.Exceptions)
-        {
-            <li><a href="@item.Href">@item.Text</a></li>
-        }
-        @if (_snap.Exceptions.Count == 0)
-        {
-            <li class="hint">目前沒有例外。</li>
-        }
-    </ul>
-    @if (Gate.Can(PlatformCapability.Dispatch))
-    {
-        <p class="hint">交付主管可從例外進<a href="/dispatch">派工週矩陣</a>改派。</p>
-    }
 }
 
 @code {

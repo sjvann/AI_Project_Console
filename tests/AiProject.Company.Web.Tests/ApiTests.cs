@@ -493,6 +493,8 @@ public class ApiTests : IClassFixture<CompanyApiFactory>
         Assert.True(page.IsSuccessStatusCode, html);
         Assert.Contains("開公司帳戶", html);
         Assert.Contains("邀請 GitHub", html);
+        Assert.Contains("公司帳戶", html);
+        Assert.DoesNotContain("給經營層、人資、財務、交付主管", html);
     }
 
     [Fact]

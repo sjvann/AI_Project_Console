@@ -5,13 +5,19 @@
 @inject NavigationManager Nav
 
 <PageTitle>派工週矩陣</PageTitle>
-<h1>派工全貌</h1>
-<p class="hint">列是人，欄是工作日。超載格子紅底並標「超載」。寫回 GitHub 失敗會顯示待同步，不會假裝已派到 GitHub。</p>
+<div class="page-head">
+    <div>
+        <h1>派工全貌</h1>
+        <p class="hint lede">列是人，欄是工作日。超載格子紅底並標「超載」。寫回 GitHub 失敗會顯示待同步，不會假裝已派到 GitHub。</p>
+    </div>
+</div>
 <div class="toolbar">
     <button class="btn-sec" @onclick="Prev">上一週</button>
     <strong>@_weekStart.ToString("yyyy-MM-dd") 當週</strong>
     <button class="btn-sec" @onclick="Next">下一週</button>
 </div>
+<div class="workbench">
+<div class="table-wrap">
 <div class="matrix" tabindex="0" @onkeydown="OnKey">
     <div class="matrix-head">
         <span>人員</span>
@@ -55,7 +61,8 @@
         }
     }
 </div>
-<aside class="card">
+</div>
+<aside class="rail card">
     <h2>建立派工</h2>
     <label>專案
         <select @bind="_projectId">
@@ -117,6 +124,7 @@
         }
     </ul>
 </aside>
+</div>
 
 @code {
     [SupplyParameterFromQuery(Name = "project")] public Guid? Project { get; set; }

@@ -4,9 +4,46 @@
 @inject DirectoryQueries Directory
 
 <PageTitle>我的工時</PageTitle>
-<h1>我的工時／派工／薪資條</h1>
-<section class="card">
-    <h2>我的派工</h2>
+<div class="page-head">
+    <div>
+        <h1>我的工時</h1>
+        <p class="hint lede">@_hours?.DrawHint</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn-primary" href="#">到控制台畫狀態並上傳</a>
+    </div>
+</div>
+<div class="tabs" role="tablist" aria-label="我的資料">
+    <button type="button" class="tab @(_tab == "hours" ? "is-on" : "")" @onclick='() => _tab = "hours"'>工時</button>
+    <button type="button" class="tab @(_tab == "assign" ? "is-on" : "")" @onclick='() => _tab = "assign"'>派工 @_assignments.Count</button>
+    <button type="button" class="tab @(_tab == "pay" ? "is-on" : "")" @onclick='() => _tab = "pay"'>薪資條</button>
+</div>
+@if (_tab == "hours")
+{
+    <div class="table-wrap">
+        <table class="grid">
+            <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th><th>退回原因</th></tr></thead>
+            <tbody>
+                @foreach (var row in _hours?.Rows ?? [])
+                {
+                    <tr>
+                        <td>@row.Date</td>
+                        <td>@row.ProjectName</td>
+                        <td>@row.Hours</td>
+                        <td>@(row.Status == TimesheetStatus.PendingPm ? "待 PM 確認" : row.Status == TimesheetStatus.Approved ? "已核准" : "已退回")</td>
+                        <td>@row.ReturnReason</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if ((_hours?.Rows.Count ?? 0) == 0)
+    {
+        <p class="empty">還沒有工時。到控制台畫狀態並上傳。</p>
+    }
+}
+else if (_tab == "assign")
+{
     <p class="hint">只讀期間與專案；改碼與上傳仍在控制台。</p>
     @if (_assignments.Count == 0)
     {
@@ -30,37 +67,27 @@
             </tbody>
         </table>
     }
-</section>
-<p class="hint">@_hours?.DrawHint</p>
-<a class="btn-primary" href="#">到控制台畫狀態並上傳</a>
-<table class="grid">
-    <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th><th>退回原因</th></tr></thead>
-    <tbody>
-        @foreach (var row in _hours?.Rows ?? [])
-        {
-            <tr>
-                <td>@row.Date</td>
-                <td>@row.ProjectName</td>
-                <td>@row.Hours</td>
-                <td>@(row.Status == TimesheetStatus.PendingPm ? "待 PM 確認" : row.Status == TimesheetStatus.Approved ? "已核准" : "已退回")</td>
-                <td>@row.ReturnReason</td>
-            </tr>
-        }
-    </tbody>
-</table>
-@if (_slip is not null)
+}
+else if (_slip is not null)
 {
-    <h2>薪資條</h2>
-    <p>@_slip.PeriodStart – @_slip.PeriodEnd · 實發 @_slip.PayableTotal</p>
-    <ul>
-        @foreach (var line in _slip.Lines)
-        {
-            <li>@line.Kind · @line.Amount · @line.Note</li>
-        }
-    </ul>
+    <section class="card">
+        <h2>薪資條</h2>
+        <p>@_slip.PeriodStart – @_slip.PeriodEnd · 實發 @_slip.PayableTotal</p>
+        <ul>
+            @foreach (var line in _slip.Lines)
+            {
+                <li>@line.Kind · @line.Amount · @line.Note</li>
+            }
+        </ul>
+    </section>
+}
+else
+{
+    <p class="empty">還沒有薪資條。</p>
 }
 
 @code {
+    string _tab = "hours";
     MyHoursView? _hours;
     PayslipDto? _slip;
     IReadOnlyList<AssignmentDto> _assignments = [];

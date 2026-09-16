@@ -5,7 +5,12 @@
 @inject IAuthorizationGate Gate
 
 <PageTitle>預算</PageTitle>
-<h1>預算費用</h1>
+<div class="page-head">
+    <div>
+        <h1>預算費用</h1>
+        <p class="hint lede">先看各專案毛利燈。點一張卡才展開分攤與其他費用。</p>
+    </div>
+</div>
 @if (!Gate.Can(PlatformCapability.ManageBudget))
 {
     <p>你沒有預算權限，對客戶費率也不會顯示。</p>
@@ -27,18 +32,26 @@ else
             <a class="btn-primary" href="@CsvDataUri(_csv)" download="@($"allocation-{_year}{_month:00}.csv")">下載分攤</a>
         }
     </div>
-    <p class="hint">@_message</p>
-    @if (!string.IsNullOrEmpty(_csv))
+    <Flash Text="@_message" />
+    <div class="cards">
+        @foreach (var project in _projects.Where(p => !p.IsDeleted))
+        {
+            var pnl = _pnls.FirstOrDefault(p => p.ProjectId == project.Id);
+            <button type="button" class="proj-card @(ToneClass(pnl?.Tone)) @(_selectedId == project.Id ? "is-on" : "")" @onclick="() => Select(project.Id)">
+                <strong>@project.Name</strong>
+                <p>@(pnl is null ? "載入中或無權限" : pnl.Tone + " · 實際毛利 " + pnl.Margin.ActualMargin)</p>
+                @if (pnl is not null)
+                {
+                    <p class="hint">@MarginResult.Display(pnl.Margin.ActualRate) · 核准工時 @pnl.ApprovedHours.ToString("0.##")</p>
+                }
+            </button>
+        }
+    </div>
+    @if (_selected is not null)
     {
-        <h2>CSV 預覽</h2>
-        <p class="hint">表頭：@(_csvKind == "alloc" ? CostAllocationCsv.Header : BudgetCsv.Header)</p>
-        <pre>@_csv</pre>
-    }
-    @foreach (var project in _projects)
-    {
-        var pnl = _pnls.FirstOrDefault(p => p.ProjectId == project.Id);
+        var pnl = _pnls.FirstOrDefault(p => p.ProjectId == _selected.Id);
         <section class="card @(ToneClass(pnl?.Tone))">
-            <h2><a href="/projects/@project.Id#pnl">@project.Name</a> @(pnl is null ? "" : "· " + pnl.Tone)</h2>
+            <h2><a href="/projects/@_selected.Id#pnl">@_selected.Name</a> @(pnl is null ? "" : "· " + pnl.Tone)</h2>
             @if (pnl is null)
             {
                 <p class="hint">載入中或無權限。</p>
@@ -64,14 +77,10 @@ else
                 <p class="hint">核准工時 @pnl.ApprovedHours.ToString("0.##")@(pnl.ClientRateVisible ? $" · 對客戶費率 {pnl.ClientRate}" : "")</p>
             }
             <div class="toolbar">
-                <button class="btn-sec" @onclick="() => ShowAlloc(project.Id)">看分攤明細</button>
-                <input placeholder="其他費用名稱" @bind="_expLabel" />
-                <input type="number" placeholder="計劃" @bind="_expPlan" />
-                <input type="number" placeholder="實際" @bind="_expActual" />
-                <label class="check"><input type="checkbox" @bind="_expIsActual" /> 已發生</label>
-                <button class="btn-sec" @onclick="() => AddExpense(project.Id)">加一筆其他費用</button>
+                <button class="btn-sec" @onclick="() => ShowAlloc(_selected.Id)">看分攤明細</button>
+                <button type="button" class="btn-sec" @onclick="() => _expenseOpen = true">加其他費用</button>
             </div>
-            @if (_allocProjectId == project.Id && _alloc.Count > 0)
+            @if (_allocProjectId == _selected.Id && _alloc.Count > 0)
             {
                 <table class="grid">
                     <thead><tr><th>人</th><th>小時</th><th>成本</th><th>佔比</th><th>口徑</th></tr></thead>
@@ -89,12 +98,31 @@ else
                     </tbody>
                 </table>
             }
-            else if (_allocProjectId == project.Id)
+            else if (_allocProjectId == _selected.Id)
             {
                 <p class="empty">這個月還沒有可分攤的人事成本（檢查工時核准或「不參與專案分攤」標記）。</p>
             }
         </section>
     }
+    <UiDialog Open="@(!string.IsNullOrEmpty(_csv))" Title="CSV 預覽" Wide="true" OnClose="ClearCsv">
+        <p class="hint">表頭：@(_csvKind == "alloc" ? CostAllocationCsv.Header : BudgetCsv.Header)</p>
+        <pre class="csv-preview">@_csv</pre>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="ClearCsv">關閉</button>
+        </div>
+    </UiDialog>
+    <UiDialog Open="_expenseOpen" Title="加一筆其他費用" OnClose="() => _expenseOpen = false">
+        <div class="stack">
+            <label>名稱 <input @bind="_expLabel" /></label>
+            <label>計劃 <input type="number" @bind="_expPlan" /></label>
+            <label>實際 <input type="number" @bind="_expActual" /></label>
+            <label class="check"><input type="checkbox" @bind="_expIsActual" /> 已發生</label>
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _expenseOpen = false">取消</button>
+            <button type="button" class="btn-primary" @onclick="AddSelectedExpense">加入</button>
+        </div>
+    </UiDialog>
 }
 
 @code {
@@ -102,6 +130,7 @@ else
     List<ProjectPnl> _pnls = [];
     IReadOnlyList<CostAllocationRow> _alloc = [];
     Guid? _allocProjectId;
+    Guid? _selectedId;
     string _csv = "";
     string _csvKind = "";
     string _message = "";
@@ -109,14 +138,23 @@ else
     decimal _expPlan;
     decimal _expActual;
     bool _expIsActual = true;
+    bool _expenseOpen;
     int _year = DateTime.Today.Year;
     int _month = DateTime.Today.Month;
+
+    Project? _selected => _projects.FirstOrDefault(p => p.Id == _selectedId);
 
     protected override async Task OnInitializedAsync()
     {
         _projects = await Directory.ProjectsAsync();
         if (Gate.Can(PlatformCapability.ManageBudget))
             await ReloadMonth();
+    }
+
+    async Task Select(Guid id)
+    {
+        _selectedId = id;
+        await ShowAlloc(id);
     }
 
     async Task ReloadMonth()
@@ -131,6 +169,15 @@ else
             await ShowAlloc(pid);
     }
 
+    async Task AddSelectedExpense()
+    {
+        if (_selectedId is not Guid id)
+            return;
+        await AddExpense(id);
+        if (string.IsNullOrEmpty(_message) || _message.StartsWith("已加", StringComparison.Ordinal))
+            _expenseOpen = false;
+    }
+
     async Task AddExpense(Guid projectId)
     {
         var result = await Commands.AddExpenseAsync(projectId, _expLabel, _expPlan, _expActual, _expIsActual);
@@ -138,6 +185,7 @@ else
         if (result.Ok)
         {
             _expLabel = "";
+            _expenseOpen = false;
             await ReloadMonth();
         }
     }
@@ -170,6 +218,12 @@ else
         _csv = result.Ok ? result.Value! : "";
         _csvKind = result.Ok ? "alloc" : "";
         _message = result.Ok ? "分攤明細已產出（正職／時計）。" : result.Message;
+    }
+
+    void ClearCsv()
+    {
+        _csv = "";
+        _csvKind = "";
     }
 
     static string ToneClass(string? tone) => tone switch

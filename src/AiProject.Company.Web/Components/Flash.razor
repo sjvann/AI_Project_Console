@@ -1,0 +1,8 @@
+@if (!string.IsNullOrWhiteSpace(Text))
+{
+    <p class="flash" role="status">@Text</p>
+}
+
+@code {
+    [Parameter] public string? Text { get; set; }
+}

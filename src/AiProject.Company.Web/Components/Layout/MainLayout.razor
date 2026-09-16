@@ -12,41 +12,41 @@
             {
                 @if (Can(PlatformCapability.ViewWarRoom))
                 {
-                    <a href="/war-room">戰情室</a>
+                    <NavLink href="/war-room">戰情室</NavLink>
                 }
                 @if (User.Role is PlatformRole.Pm or PlatformRole.Lead or PlatformRole.Delivery or PlatformRole.Owner or PlatformRole.Finance)
                 {
-                    <a href="/projects">專案</a>
-                    <a href="/clients">客戶</a>
+                    <NavLink href="/projects">專案</NavLink>
+                    <NavLink href="/clients">客戶</NavLink>
                 }
                 @if (Can(PlatformCapability.Dispatch))
                 {
-                    <a href="/dispatch">派工</a>
+                    <NavLink href="/dispatch">派工</NavLink>
                 }
                 @if (Can(PlatformCapability.ManagePeople) || User.Role == PlatformRole.Hr)
                 {
-                    <a href="/people">人員</a>
-                    <a href="/vendors">外包商</a>
+                    <NavLink href="/people">人員</NavLink>
+                    <NavLink href="/vendors">外包商</NavLink>
                 }
                 @if (Can(PlatformCapability.ManageBudget))
                 {
-                    <a href="/budget">預算</a>
+                    <NavLink href="/budget">預算</NavLink>
                 }
                 @if (Can(PlatformCapability.LockPayroll) || Can(PlatformCapability.ConfirmTimesheet))
                 {
-                    <a href="/payroll">@(Can(PlatformCapability.LockPayroll) ? "薪資" : "工時確認")</a>
+                    <NavLink href="/payroll">@(Can(PlatformCapability.LockPayroll) ? "薪資" : "工時確認")</NavLink>
                 }
                 @if (User.Role.LandsOnMyHours() || User.Role == PlatformRole.Engineer)
                 {
-                    <a href="/me">我的工時</a>
+                    <NavLink href="/me">我的工時</NavLink>
                 }
                 @if (Can(PlatformCapability.ManageSettings) || Can(PlatformCapability.InviteUser))
                 {
-                    <a href="/accounts">帳戶</a>
+                    <NavLink href="/accounts">帳戶</NavLink>
                 }
                 @if (Can(PlatformCapability.ManageSettings))
                 {
-                    <a href="/settings">設定</a>
+                    <NavLink href="/settings">設定</NavLink>
                 }
             }
         </nav>

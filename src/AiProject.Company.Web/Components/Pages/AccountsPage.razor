@@ -7,28 +7,143 @@
 @inject ICurrentUser User
 
 <PageTitle>帳戶</PageTitle>
-<h1>帳戶管理</h1>
 @if (!Gate.Can(PlatformCapability.InviteUser) && !User.Role.UsesCompanyAccount())
 {
+    <h1>帳戶管理</h1>
     <p>你不能管理帳戶。後台帳戶由公司管理員開；招募進來的工程師用 GitHub 邀請，走控制台。</p>
+}
+else if (!Gate.Can(PlatformCapability.InviteUser))
+{
+    <div class="page-head">
+        <div>
+            <h1>帳戶管理</h1>
+            <p class="hint lede">改自己後台密碼。工程師不走這裡。</p>
+        </div>
+    </div>
+    <section class="card stack form-narrow">
+        <h2>改自己的密碼</h2>
+        <label>目前密碼 <input type="password" @bind="_current" autocomplete="current-password" /></label>
+        <label>新密碼 <input type="password" @bind="_ownNew" autocomplete="new-password" /></label>
+        <button class="btn-primary" @onclick="ChangeOwn">更新密碼</button>
+    </section>
+    <Flash Text="@_message" />
 }
 else
 {
-    <p>@_message</p>
-    @if (User.Role.UsesCompanyAccount())
+    <div class="page-head">
+        <div>
+            <h1>帳戶管理</h1>
+            <p class="hint lede">公司管理員用帳號密碼進後台。招募進來的工程師用 GitHub 邀請，走控制台。</p>
+        </div>
+        <div class="page-actions">
+            <button type="button" class="btn-primary" @onclick="() => _createOpen = true">開公司帳戶</button>
+            <button type="button" class="btn-sec" @onclick="OpenInvite">邀請 GitHub</button>
+            @if (User.Role.UsesCompanyAccount())
+            {
+                <button type="button" class="btn-sec" @onclick="() => _passwordOpen = true">改自己的密碼</button>
+            }
+        </div>
+    </div>
+    <Flash Text="@_message" />
+    <div class="kpis">
+        <article class="kpi"><span>可登入</span><strong>@_rows.Count(r => r.Account.Enabled)</strong></article>
+        <article class="kpi"><span>已停用</span><strong>@_rows.Count(r => !r.Account.Enabled)</strong></article>
+        <article class="kpi"><span>待接受邀請</span><strong>@_invites.Count(i => !i.Revoked && i.AcceptedAt is null)</strong></article>
+    </div>
+    <div class="tabs" role="tablist" aria-label="帳戶種類">
+        <button type="button" class="tab @(_tab == "company" ? "is-on" : "")" role="tab" aria-selected="@(_tab == "company")" @onclick='() => _tab = "company"'>公司帳戶 @_rows.Count</button>
+        <button type="button" class="tab @(_tab == "github" ? "is-on" : "")" role="tab" aria-selected="@(_tab == "github")" @onclick='() => _tab = "github"'>GitHub 邀請 @_invites.Count</button>
+    </div>
+    @if (_tab == "company")
     {
-        <section class="card stack">
-            <h2>改自己的密碼</h2>
-            <label>目前密碼 <input type="password" @bind="_current" autocomplete="current-password" /></label>
-            <label>新密碼 <input type="password" @bind="_ownNew" autocomplete="new-password" /></label>
-            <button class="btn-sec" @onclick="ChangeOwn">更新密碼</button>
-        </section>
+        <div class="toolbar">
+            <select @bind="_statusFilter">
+                <option value="">全部狀態</option>
+                <option value="on">可登入</option>
+                <option value="off">已停用</option>
+            </select>
+        </div>
+        <div class="table-wrap">
+            <table class="grid">
+                <thead><tr><th>帳號</th><th>姓名</th><th>角色</th><th>狀態</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var row in VisibleRows)
+                    {
+                        <tr>
+                            <td>@row.Account.UserName</td>
+                            <td>@row.Name</td>
+                            <td>@row.Account.Role.Display()</td>
+                            <td>
+                                @if (row.Account.Enabled)
+                                {
+                                    <span class="pill pill-ok">可登入</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill-off">已停用</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="row-actions">
+                                    <button type="button" class="btn-sec" @onclick="() => OpenReset(row)">重設密碼</button>
+                                    @if (row.Account.Enabled)
+                                    {
+                                        <button type="button" class="btn-danger" @onclick="() => SetEnabled(row.Account.Id, false)">停用</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn-sec" @onclick="() => SetEnabled(row.Account.Id, true)">啟用</button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (!VisibleRows.Any())
+        {
+            <p class="empty">這個篩選沒有帳戶。</p>
+        }
     }
-    @if (Gate.Can(PlatformCapability.InviteUser))
+    else
     {
-        <section class="card stack">
-            <h2>開公司帳戶</h2>
-            <p class="hint">給經營層、人資、財務、交付主管、專案經理、外包窗口。工程師與招募進來的外部工程師請用下方 GitHub 邀請，他們用控制台上傳，不登這個後台。</p>
+        <div class="table-wrap">
+            <table class="grid">
+                <thead><tr><th>GitHub</th><th>角色</th><th>狀態</th></tr></thead>
+                <tbody>
+                    @foreach (var invite in _invites)
+                    {
+                        <tr>
+                            <td>@invite.GitHubLogin</td>
+                            <td>@invite.Role.Display()</td>
+                            <td>
+                                @if (invite.Revoked)
+                                {
+                                    <span class="pill pill-off">已撤銷</span>
+                                }
+                                else if (invite.AcceptedAt is null)
+                                {
+                                    <span class="pill pill-wait">待接受</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill-ok">已接受</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_invites.Count == 0)
+        {
+            <p class="empty">還沒有 GitHub 邀請。從線上招募進來的工程師按右上「邀請 GitHub」。</p>
+        }
+    }
+    <UiDialog Open="_createOpen" Title="開公司帳戶" OnClose="() => _createOpen = false">
+        <p class="hint">給經營層、人資、財務、交付主管、專案經理、外包窗口。工程師請用 GitHub 邀請，不要在後台開密碼。</p>
+        <div class="stack">
             <label>顯示名 <input @bind="_display" /></label>
             <label>登入帳號 <input @bind="_userName" autocomplete="off" /></label>
             <label>初始密碼 <input type="password" @bind="_password" autocomplete="new-password" /></label>
@@ -55,39 +170,15 @@ else
                     </select>
                 </label>
             }
-            <button class="btn-primary" @onclick="Create">建立帳戶</button>
-        </section>
-        <h2>公司帳戶</h2>
-        <table class="grid">
-            <thead><tr><th>帳號</th><th>姓名</th><th>角色</th><th>狀態</th><th></th></tr></thead>
-            <tbody>
-                @foreach (var row in _rows)
-                {
-                    <tr>
-                        <td>@row.Account.UserName</td>
-                        <td>@row.Name</td>
-                        <td>@row.Account.Role.Display()</td>
-                        <td>@(row.Account.Enabled ? "可登入" : "已停用")</td>
-                        <td>
-                            <input type="password" @bind="row.ResetTo" placeholder="重設密碼" autocomplete="new-password" />
-                            <input @bind="row.Reason" placeholder="原因" />
-                            <button class="btn-sec" @onclick="() => Reset(row)">重設密碼</button>
-                            @if (row.Account.Enabled)
-                            {
-                                <button class="btn-danger" @onclick="() => SetEnabled(row.Account.Id, false)">停用</button>
-                            }
-                            else
-                            {
-                                <button class="btn-sec" @onclick="() => SetEnabled(row.Account.Id, true)">啟用</button>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        <section class="card stack">
-            <h2>邀請 GitHub（線上招募／外部工程師）</h2>
-            <p class="hint">從招募系統找來的外部工程師、外包工程師、Tech Lead：填他們的 GitHub 帳號。系統會建人員檔並綁定，控制台上傳就能對到人。他們不會拿到後台密碼。</p>
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _createOpen = false">取消</button>
+            <button type="button" class="btn-primary" @onclick="Create">建立帳戶</button>
+        </div>
+    </UiDialog>
+    <UiDialog Open="_inviteOpen" Title="邀請 GitHub" OnClose="() => _inviteOpen = false">
+        <p class="hint">填他們的 GitHub 帳號。系統會建人員檔並綁定，控制台上傳就能對到人。他們不會拿到後台密碼。</p>
+        <div class="stack">
             <label>GitHub 帳號 <input @bind="_github" /></label>
             <label>角色
                 <select @bind="_gitRole">
@@ -109,27 +200,39 @@ else
                     </select>
                 </label>
             }
-            <button class="btn-primary" @onclick="InviteGitHub">送出邀請</button>
-        </section>
-        <h2>GitHub 邀請</h2>
-        <table class="grid">
-            <thead><tr><th>GitHub</th><th>角色</th><th>狀態</th></tr></thead>
-            <tbody>
-                @foreach (var invite in _invites)
-                {
-                    <tr>
-                        <td>@invite.GitHubLogin</td>
-                        <td>@invite.Role.Display()</td>
-                        <td>@(invite.Revoked ? "已撤銷" : invite.AcceptedAt is null ? "待接受" : "已接受")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _inviteOpen = false">取消</button>
+            <button type="button" class="btn-primary" @onclick="InviteGitHub">送出邀請</button>
+        </div>
+    </UiDialog>
+    <UiDialog Open="@(_reset is not null)" Title="@("重設 " + (_reset?.Account.UserName ?? "") + " 的密碼")" OnClose="() => _reset = null">
+        <p class="hint">重設密碼要填原因，會記入審計。</p>
+        <div class="stack">
+            <label>新密碼 <input type="password" @bind="_resetTo" autocomplete="new-password" /></label>
+            <label>原因 <input @bind="_resetReason" /></label>
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _reset = null">取消</button>
+            <button type="button" class="btn-primary" @onclick="Reset">重設密碼</button>
+        </div>
+    </UiDialog>
+    <UiDialog Open="_passwordOpen" Title="改自己的密碼" OnClose="() => _passwordOpen = false">
+        <div class="stack">
+            <label>目前密碼 <input type="password" @bind="_current" autocomplete="current-password" /></label>
+            <label>新密碼 <input type="password" @bind="_ownNew" autocomplete="new-password" /></label>
+        </div>
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _passwordOpen = false">取消</button>
+            <button type="button" class="btn-primary" @onclick="ChangeOwn">更新密碼</button>
+        </div>
+    </UiDialog>
 }
 
 @code {
     string _message = "";
+    string _tab = "company";
+    string _statusFilter = "";
     string _display = "";
     string _userName = "";
     string _password = "";
@@ -140,22 +243,46 @@ else
     PlatformRole _gitRole = PlatformRole.Engineer;
     string _current = "";
     string _ownNew = "";
+    string _resetTo = "";
+    string _resetReason = "";
+    bool _createOpen;
+    bool _inviteOpen;
+    bool _passwordOpen;
+    AccountRow? _reset;
     IReadOnlyList<Vendor> _vendors = [];
     IReadOnlyList<Invitation> _invites = [];
     List<AccountRow> _rows = [];
+
+    IEnumerable<AccountRow> VisibleRows => _statusFilter switch
+    {
+        "on" => _rows.Where(r => r.Account.Enabled),
+        "off" => _rows.Where(r => !r.Account.Enabled),
+        _ => _rows,
+    };
 
     sealed class AccountRow
     {
         public StaffAccount Account { get; set; } = default!;
         public string Name { get; set; } = "";
-        public string ResetTo { get; set; } = "";
-        public string Reason { get; set; } = "";
     }
 
     protected override async Task OnInitializedAsync()
     {
         if (Gate.Can(PlatformCapability.InviteUser))
             await Reload();
+    }
+
+    void OpenReset(AccountRow row)
+    {
+        _reset = row;
+        _resetTo = "";
+        _resetReason = "";
+    }
+
+    void OpenInvite()
+    {
+        _tab = "github";
+        _inviteOpen = true;
     }
 
     async Task Reload()
@@ -180,14 +307,19 @@ else
             _userName = "";
             _password = "";
             _display = "";
+            _createOpen = false;
             await Reload();
         }
     }
 
-    async Task Reset(AccountRow row)
+    async Task Reset()
     {
-        var result = await Accounts.ResetPasswordAsync(row.Account.Id, row.ResetTo, row.Reason);
-        _message = result.Ok ? "已重設 " + row.Account.UserName + " 的密碼。" : result.Message;
+        if (_reset is null)
+            return;
+        var result = await Accounts.ResetPasswordAsync(_reset.Account.Id, _resetTo, _resetReason);
+        _message = result.Ok ? "已重設 " + _reset.Account.UserName + " 的密碼。" : result.Message;
+        if (result.Ok)
+            _reset = null;
     }
 
     async Task SetEnabled(Guid id, bool enabled)
@@ -204,7 +336,12 @@ else
         var result = await Settings.InviteAsync(_github, _gitRole, vendor);
         _message = result.Ok ? "已邀請 " + _github : result.Message;
         if (result.Ok)
+        {
+            _github = "";
+            _inviteOpen = false;
+            _tab = "github";
             await Reload();
+        }
     }
 
     async Task ChangeOwn()
@@ -215,6 +352,7 @@ else
         {
             _current = "";
             _ownNew = "";
+            _passwordOpen = false;
         }
     }
 }

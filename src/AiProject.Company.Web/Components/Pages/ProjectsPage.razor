@@ -4,8 +4,16 @@
 @inject IProjectHealthPolicy Health
 @inject IProjectDocsCatalog Docs
 
-<PageTitle>專案</PageTitle>
-<h1>專案組合</h1>
+<PageTitle>專案組合</PageTitle>
+<div class="page-head">
+    <div>
+        <h1>專案組合</h1>
+        <p class="hint lede">從客戶成立專案。健康燈用語意色＋文字。</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn-sec" href="/clients">從客戶建立</a>
+    </div>
+</div>
 <div class="toolbar">
     <label class="check"><input type="checkbox" @bind="_onlyActiveDelivery" @bind:after="ReloadAsync" /> 只看合約客戶進行中</label>
 </div>

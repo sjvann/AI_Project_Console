@@ -6,32 +6,24 @@
 @inject IAuthorizationGate Gate
 
 <PageTitle>人員</PageTitle>
-<h1>人員名冊</h1>
+<div class="page-head">
+    <div>
+        <h1>人員名冊</h1>
+        <p class="hint lede">篩選後看表。開卡片才編主檔。新建可只建檔、稍後綁 GitHub。</p>
+    </div>
+    <div class="page-actions">
+        @if (Gate.Can(PlatformCapability.ManagePeople))
+        {
+            <button type="button" class="btn-primary" @onclick="() => _createOpen = true">建立人員</button>
+        }
+        <a class="btn-sec" href="/people/unmatched">待歸戶佇列</a>
+        <a class="btn-sec" href="/vendors">外包商</a>
+    </div>
+</div>
 @if (!Gate.Can(PlatformCapability.ManagePeople) && Gate.Ensure(PlatformCapability.ManagePeople).Code == ErrorCodes.Forbidden)
 {
     <p>@_gate.Message</p>
 }
-<div class="toolbar">
-    <input placeholder="顯示名" @bind="_newName" />
-    <select @bind="_newKind" @bind:after="OnKindChanged">
-        <option value="@EmploymentKind.FullTime">正職</option>
-        <option value="@EmploymentKind.Freelance">個人外包</option>
-        <option value="@EmploymentKind.VendorStaff">承攬派駐</option>
-    </select>
-    @if (_newKind == EmploymentKind.VendorStaff)
-    {
-        <select @bind="_newVendor">
-            <option value="">選外包商（必填）</option>
-            @foreach (var v in _vendors)
-            {
-                <option value="@v.Id">@v.Name</option>
-            }
-        </select>
-    }
-    <button class="btn-primary" @onclick="Create">建立</button>
-    <a href="/people/unmatched">待歸戶佇列</a>
-    <a href="/vendors">外包商</a>
-</div>
 <div class="toolbar">
     <select @bind="_filterKind">
         <option value="">全部類型</option>
@@ -54,7 +46,7 @@
     </select>
     <input placeholder="技能關鍵字" @bind="_filterSkill" />
 </div>
-<p class="hint">@_message</p>
+<Flash Text="@_message" />
 <table class="grid">
     <thead>
         <tr><th>名</th><th>類型</th><th>外包商</th><th>GitHub</th><th>本週已派／上限</th><th>狀態</th></tr>
@@ -73,6 +65,35 @@
         }
     </tbody>
 </table>
+<UiDialog Open="_createOpen" Title="建立人員" OnClose="() => _createOpen = false">
+    <p class="hint">可只建檔、稍後再綁 GitHub。</p>
+    <div class="stack">
+        <label>顯示名 <input @bind="_newName" /></label>
+        <label>類型
+            <select @bind="_newKind" @bind:after="OnKindChanged">
+                <option value="@EmploymentKind.FullTime">正職</option>
+                <option value="@EmploymentKind.Freelance">個人外包</option>
+                <option value="@EmploymentKind.VendorStaff">承攬派駐</option>
+            </select>
+        </label>
+        @if (_newKind == EmploymentKind.VendorStaff)
+        {
+            <label>外包商
+                <select @bind="_newVendor">
+                    <option value="">選外包商（必填）</option>
+                    @foreach (var v in _vendors)
+                    {
+                        <option value="@v.Id">@v.Name</option>
+                    }
+                </select>
+            </label>
+        }
+    </div>
+    <div class="dialog-actions">
+        <button type="button" class="btn-sec" @onclick="() => _createOpen = false">取消</button>
+        <button type="button" class="btn-primary" @onclick="Create">建立</button>
+    </div>
+</UiDialog>
 
 @code {
     Outcome _gate = Outcome.Success();
@@ -80,6 +101,7 @@
     EmploymentKind _newKind = EmploymentKind.FullTime;
     string _newVendor = "";
     string _message = "";
+    bool _createOpen;
     string _filterKind = "";
     string _filterVendor = "";
     string _filterStatus = "";
@@ -143,6 +165,7 @@
         if (result.Ok)
         {
             _newName = "";
+            _createOpen = false;
             await OnInitializedAsync();
         }
     }

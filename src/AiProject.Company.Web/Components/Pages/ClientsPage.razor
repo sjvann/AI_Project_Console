@@ -5,28 +5,19 @@
 @inject IAuthorizationGate Gate
 
 <PageTitle>客戶</PageTitle>
-<h1>客戶</h1>
-<p class="hint">同一份主檔，用生命週期篩選。成交後才成立合約與專案。</p>
-@if (Gate.Can(PlatformCapability.ManageClients))
-{
-    <div class="toolbar card">
-        <input placeholder="客戶名稱" @bind="_name" />
-        <select @bind="_kind">
-            <option value="@ClientKind.External">外部</option>
-            <option value="@ClientKind.Internal">內部</option>
-        </select>
-        <select @bind="_lifecycle">
-            <option value="@ClientLifecycle.Lead">潛在</option>
-            <option value="@ClientLifecycle.Discovery">需求訪談</option>
-            <option value="@ClientLifecycle.Proposal">提案議約</option>
-            <option value="@ClientLifecycle.Active">合約客戶</option>
-        </select>
-        <input placeholder="窗口" @bind="_contact" />
-        <input type="date" @bind="_follow" />
-        <button class="btn-primary" @onclick="Create">建立客戶</button>
+<div class="page-head">
+    <div>
+        <h1>客戶</h1>
+        <p class="hint lede">同一份主檔，用生命週期篩選。成交後才成立合約與專案。</p>
     </div>
-}
-<p>@_message</p>
+    <div class="page-actions">
+        @if (Gate.Can(PlatformCapability.ManageClients))
+        {
+            <button type="button" class="btn-primary" @onclick="() => _createOpen = true">建立客戶</button>
+        }
+    </div>
+</div>
+<Flash Text="@_message" />
 <div class="tabs" role="tablist">
     <button type="button" class="tab @(_filter is null ? "is-on" : "")" @onclick="ShowAll">全部</button>
     <button type="button" class="tab @(TabOn("lead"))" @onclick="@(() => SetFilter("lead"))">潛在</button>
@@ -57,6 +48,31 @@ else if (!Visible.Any())
 {
     <p class="empty">這個分頁沒有客戶。</p>
 }
+<UiDialog Open="_createOpen" Title="建立客戶" OnClose="() => _createOpen = false">
+    <div class="stack">
+        <label>客戶名稱 <input @bind="_name" /></label>
+        <label>種類
+            <select @bind="_kind">
+                <option value="@ClientKind.External">外部</option>
+                <option value="@ClientKind.Internal">內部</option>
+            </select>
+        </label>
+        <label>生命週期
+            <select @bind="_lifecycle">
+                <option value="@ClientLifecycle.Lead">潛在</option>
+                <option value="@ClientLifecycle.Discovery">需求訪談</option>
+                <option value="@ClientLifecycle.Proposal">提案議約</option>
+                <option value="@ClientLifecycle.Active">合約客戶</option>
+            </select>
+        </label>
+        <label>窗口 <input @bind="_contact" /></label>
+        <label>下次跟進 <input type="date" @bind="_follow" /></label>
+    </div>
+    <div class="dialog-actions">
+        <button type="button" class="btn-sec" @onclick="() => _createOpen = false">取消</button>
+        <button type="button" class="btn-primary" @onclick="Create">建立客戶</button>
+    </div>
+</UiDialog>
 
 @code {
     string _name = "";
@@ -65,6 +81,7 @@ else if (!Visible.Any())
     ClientLifecycle _lifecycle = ClientLifecycle.Lead;
     DateOnly? _follow;
     string _message = "";
+    bool _createOpen;
     string? _filter;
     DateOnly _today;
     IReadOnlyList<Client> _clients = [];
@@ -97,6 +114,11 @@ else if (!Visible.Any())
         var result = await Commands.CreateClientAsync(_name, _kind, _contact, _lifecycle, ClientSource.SelfDeveloped, null, null, _follow, null);
         _message = result.Ok ? "已建立" : result.Message;
         if (result.Ok)
+        {
+            _name = "";
+            _contact = "";
+            _createOpen = false;
             _clients = await Directory.ClientsAsync();
+        }
     }
 }

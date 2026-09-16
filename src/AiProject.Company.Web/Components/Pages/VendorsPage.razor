@@ -4,52 +4,98 @@
 @inject DirectoryQueries Directory
 
 <PageTitle>外包商</PageTitle>
-<h1>外包商</h1>
-<div class="toolbar">
-    <input placeholder="公司名" @bind="_name" />
-    <input placeholder="統編" @bind="_tax" />
-    <button class="btn-primary" @onclick="Create">建立</button>
+<div class="page-head">
+    <div>
+        <h1>外包商</h1>
+        <p class="hint lede">卡片只顯示摘要。改費率、有效期進編輯對話框，原因仍要填。</p>
+    </div>
+    <div class="page-actions">
+        <button type="button" class="btn-primary" @onclick="() => _createOpen = true">建立外包商</button>
+    </div>
 </div>
-<p>@_message</p>
-@foreach (var card in _cards)
+<Flash Text="@_message" />
+<div class="cards">
+    @foreach (var card in _cards)
+    {
+        var vendor = card.Vendor;
+        <article class="proj-card">
+            <strong>@vendor.Name</strong>
+            <p class="meta-line">
+                <span>統編 @(string.IsNullOrEmpty(vendor.TaxId) ? "—" : vendor.TaxId)</span>
+                <span>有效 @vendor.ValidFrom – @(vendor.ValidTo?.ToString() ?? "—")</span>
+            </p>
+            <p>本月對帳 @card.MonthHours.ToString("0.##") 時 · 授權專案 @card.ProjectCount · 派駐 @card.Staff.Count 人</p>
+            @if (card.Staff.Count == 0)
+            {
+                <p class="empty">尚無派駐人員。</p>
+            }
+            else
+            {
+                <p class="hint">@string.Join("、", card.Staff.Take(4).Select(p => p.DisplayName))@(card.Staff.Count > 4 ? "…" : "")</p>
+            }
+            <div class="page-actions">
+                <button type="button" class="btn-sec" @onclick="() => OpenEdit(card)">編輯</button>
+            </div>
+        </article>
+    }
+</div>
+@if (_cards.Count == 0)
 {
-    var vendor = card.Vendor;
-    <section class="card">
-        <h2>@vendor.Name</h2>
+    <p class="empty">還沒有外包商。先建立一筆，人員名冊才能掛承攬派駐。</p>
+}
+<UiDialog Open="_createOpen" Title="建立外包商" OnClose="() => _createOpen = false">
+    <div class="stack">
+        <label>公司名 <input @bind="_name" /></label>
+        <label>統編 <input @bind="_tax" /></label>
+    </div>
+    <div class="dialog-actions">
+        <button type="button" class="btn-sec" @onclick="() => _createOpen = false">取消</button>
+        <button type="button" class="btn-primary" @onclick="Create">建立</button>
+    </div>
+</UiDialog>
+<UiDialog Open="@(_edit is not null)" Title="@("編輯 " + (_edit?.Name ?? ""))" OnClose="() => _edit = null">
+    @if (_edit is not null)
+    {
         <div class="stack">
-            <label>名稱 <input @bind="card.Name" /></label>
-            <label>統編 <input @bind="card.TaxId" /></label>
-            <label>有效起 <input type="date" @bind="card.From" /></label>
-            <label>有效迄 <input type="date" @bind="card.To" /></label>
-            <label>預設費率 <input type="number" @bind="card.DefaultRate" /></label>
-            <label>改費率原因 <input @bind="card.RateReason" /></label>
-            <button class="btn-sec" @onclick="() => Save(card)">儲存</button>
+            <label>名稱 <input @bind="_edit.Name" /></label>
+            <label>統編 <input @bind="_edit.TaxId" /></label>
+            <label>有效起 <input type="date" @bind="_edit.From" /></label>
+            <label>有效迄 <input type="date" @bind="_edit.To" /></label>
+            <label>預設費率 <input type="number" @bind="_edit.DefaultRate" /></label>
+            <label>改費率原因 <input @bind="_edit.RateReason" /></label>
         </div>
         <h3>派駐名單</h3>
-        @if (card.Staff.Count == 0)
+        @if (_edit.Staff.Count == 0)
         {
             <p class="empty">尚無派駐人員。</p>
         }
         else
         {
             <ul>
-                @foreach (var p in card.Staff)
+                @foreach (var p in _edit.Staff)
                 {
                     <li><a href="/people/@p.Id">@p.DisplayName</a> · @p.Status.Display()</li>
                 }
             </ul>
         }
-        <p class="hint">本月對帳小時（非退回）：@card.MonthHours.ToString("0.##") · 有效專案授權數：@card.ProjectCount</p>
-    </section>
-}
+        <div class="dialog-actions">
+            <button type="button" class="btn-sec" @onclick="() => _edit = null">取消</button>
+            <button type="button" class="btn-primary" @onclick="() => Save(_edit)">儲存</button>
+        </div>
+    }
+</UiDialog>
 
 @code {
     string _name = "";
     string _tax = "";
     string _message = "";
+    bool _createOpen;
+    VendorCard? _edit;
     List<VendorCard> _cards = [];
 
     protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    void OpenEdit(VendorCard card) => _edit = card;
 
     async Task ReloadAsync()
     {
@@ -91,6 +137,7 @@
         {
             _name = "";
             _tax = "";
+            _createOpen = false;
             await ReloadAsync();
         }
     }
@@ -101,7 +148,10 @@
         var result = await Commands.UpdateVendorAsync(card.Vendor.Id, card.Name, card.TaxId, card.Vendor.WindowPersonId, card.From, card.To, rate, card.RateReason);
         _message = result.Ok ? $"已更新 {card.Name}" : result.Message;
         if (result.Ok)
+        {
+            _edit = null;
             await ReloadAsync();
+        }
     }
 
     sealed class VendorCard
