@@ -11,7 +11,7 @@ _disableNextArticle: true
 <div class="home-hero">
   <p class="home-kicker">本機堆疊控制台 · 給軟體公司</p>
   <h1>選專案、編譯、一鍵啟動</h1>
-  <p class="home-lead">掃描服務與需重編項目，看 Log、提交 GitHub。卡住時把說明交給本機 Agent。一般使用者請用安裝包，不必編譯原始碼。現行出貨 0.6.13。經營層與採購請走產品規格與銷售套件；公司營運層（人員、派工、戰情室）標為規劃，尚未出貨。倉庫公開可見，授權為保留一切權利，不是開源。</p>
+  <p class="home-lead">掃描服務與需重編項目，看 Log、提交 GitHub。卡住時把說明交給本機 Agent。一般使用者請用安裝包，不必編譯原始碼。現行出貨 0.6.15。經營層與採購請走產品規格與銷售套件；公司營運層（人員、派工、戰情室）標為規劃，尚未出貨。倉庫公開可見，授權為保留一切權利，不是開源。</p>
   <div class="home-actions">
     <a class="home-btn home-btn-primary" href="docs/user/getting-started.md">開始使用</a>
     <a class="home-btn home-btn-ghost" href="https://github.com/sjvann/AI_Project_Console/releases">下載安裝包</a>
