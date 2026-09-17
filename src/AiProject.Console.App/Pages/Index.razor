@@ -998,14 +998,14 @@
                 else if (S.PrefsTab == "company")
                 {
                     <div id="prefs-panel-company" role="tabpanel" aria-labelledby="prefs-tab-company">
-                        <p class="hint">同一位工程師可以對<strong>多家公司</strong>申報，每家是清單裡的一張卡片。送工時時一次只送到選定的那一家；不同專案可以分屬不同公司。</p>
+                        <p class="hint">同一位工程師可以對<strong>多家公司</strong>申報。每一張卡片都一樣：測試連線、啟用、停用、再從那家讀派工與薪資條。送工時時一次選一家。不同公司請填對方自己的工作區網址，同一網址不必加第二張。</p>
                         @if (!string.IsNullOrEmpty(S.DestinationHint))
                         {
                             <p class="hint">@S.DestinationHint</p>
                         }
                         @if (S.ReportingDestinations.Count == 0)
                         {
-                            <p class="hint dest-empty">還沒有任何一家。先加入第一家，之後可用「再加一家公司」加第二家、第三家。</p>
+                            <p class="hint dest-empty">還沒有任何一家。按「加入第一家公司」會出現一張完整卡片。</p>
                         }
                         else
                         {
@@ -1014,21 +1014,21 @@
                             {
                                 <article class="dest-card" aria-label="@dest.DisplayName">
                                     <div class="dest-card-head">
-                                        <strong>@dest.DisplayName</strong>
-                                        <span class="mcp-badge @(dest.Enabled ? "on" : "muted")">@(dest.Enabled ? "已啟用" : dest.LastTestOk == true ? "已測未啟用" : "未啟用")</span>
+                                        <strong>@(string.IsNullOrWhiteSpace(dest.DisplayName) ? "未命名公司" : dest.DisplayName)</strong>
+                                        <span class="mcp-badge @(dest.Enabled ? "on" : "muted")">@(dest.Enabled ? "已啟用" : dest.LastTestOk == true ? "已測未啟用" : dest.LastTestOk == false ? "測試失敗" : "未測試")</span>
                                     </div>
                                     <p class="hint">@DestStatus(dest)</p>
                                     <div class="field">
                                         <span>顯示名</span>
-                                        <input value="@dest.DisplayName" @oninput="e => OnDestName(dest, e)" placeholder="這家公司在控制台的名稱" />
+                                        <input value="@dest.DisplayName" @oninput="e => S.SetDestinationName(dest.Id, e.Value?.ToString())" placeholder="這家公司在控制台的名稱" />
                                     </div>
                                     <div class="field">
                                         <span>工作區網址</span>
-                                        <input value="@dest.BaseUrl" @oninput="e => OnDestUrl(dest, e)" placeholder="https://company.example.com" />
+                                        <input value="@dest.BaseUrl" @oninput="e => S.SetDestinationUrl(dest.Id, e.Value?.ToString())" placeholder="https://company.example.com" />
                                     </div>
                                     <div class="field">
                                         <span>回報金鑰</span>
-                                        <input type="password" value="@dest.ApiKey" @oninput="e => OnDestApiKey(dest, e)" placeholder="空白則用 GitHub 權杖" autocomplete="off" />
+                                        <input type="password" value="@dest.ApiKey" @oninput="e => S.SetDestinationApiKey(dest.Id, e.Value?.ToString())" placeholder="空白則用 GitHub 權杖" autocomplete="off" />
                                     </div>
                                     <div class="row">
                                         <button class="btn-sec" type="button" disabled="@S.DestinationTestBusy" @onclick="() => S.TestReportingDestinationAsync(dest.Id)">測試連線</button>
@@ -1045,41 +1045,10 @@
                                 </article>
                             }
                         }
-                        @if (S.ShowAddDestinationForm)
-                        {
-                            <div class="dest-add">
-                                <h3 class="prefs-sub">@(S.ReportingDestinations.Count == 0 ? "加入第一家公司" : "再加一家公司")</h3>
-                                <p class="hint">@(S.ReportingDestinations.Count == 0 ? "填這家公司工作區的網址。加入後要測試連線並啟用，才能送工時。" : "這會變成清單裡的下一張卡片，與上面已有的公司並列，互不取代。")</p>
-                                <div class="field">
-                                    <span>顯示名</span>
-                                    <input @bind="S.NewDestinationName" placeholder="例如 另一家客戶的工作區" />
-                                </div>
-                                <div class="field">
-                                    <span>工作區網址</span>
-                                    <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
-                                </div>
-                                <div class="field">
-                                    <span>回報金鑰</span>
-                                    <input type="password" @bind="S.NewDestinationApiKey" placeholder="apk_… 可從該站「公開回報」複製" autocomplete="off" />
-                                </div>
-                                <div class="row">
-                                    <button class="btn-primary" type="button" @onclick="S.AddReportingDestinationDraft">加入清單</button>
-                                    <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機示範</button>
-                                    @if (S.ReportingDestinations.Count > 0)
-                                    {
-                                        <button class="btn-sec" type="button" @onclick="S.CancelAddReportingDestination">取消</button>
-                                    }
-                                </div>
-                                <p class="hint">本機示範網址是 http://localhost:5100。金鑰仍要從該站「公開回報」複製。</p>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="row dest-add-actions">
-                                <button class="btn-primary" type="button" @onclick="S.BeginAddReportingDestination">再加一家公司</button>
-                                <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機示範</button>
-                            </div>
-                        }
+                        <div class="row dest-add-actions">
+                            <button class="btn-primary" type="button" @onclick="S.AddReportingDestination">@(S.ReportingDestinations.Count == 0 ? "加入第一家公司" : "再加一家公司")</button>
+                            <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機示範</button>
+                        </div>
                     </div>
                 }
                 else if (S.PrefsTab == "agent")
@@ -1286,15 +1255,6 @@
     void OnNewDocPath(ChangeEventArgs e) => S.SetNewDocPath(e.Value?.ToString() ?? "");
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
-
-    static void OnDestName(ReportingDestination dest, ChangeEventArgs e) =>
-        dest.DisplayName = e.Value?.ToString() ?? string.Empty;
-
-    static void OnDestUrl(ReportingDestination dest, ChangeEventArgs e) =>
-        dest.BaseUrl = (e.Value?.ToString() ?? string.Empty).Trim().TrimEnd('/');
-
-    static void OnDestApiKey(ReportingDestination dest, ChangeEventArgs e) =>
-        dest.ApiKey = (e.Value?.ToString() ?? string.Empty).Trim();
 
     static string DestStatus(ReportingDestination dest) =>
         string.IsNullOrEmpty(dest.LastTestMessage) ? dest.StatusLabel : dest.StatusLabel + " · " + dest.LastTestMessage;

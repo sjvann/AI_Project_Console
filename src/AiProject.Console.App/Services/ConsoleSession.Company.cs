@@ -11,10 +11,6 @@ public sealed partial class ConsoleSession
 {
     public List<ReportingDestination> ReportingDestinations { get; private set; } = [];
     public string SelectedReportingDestinationId { get; set; } = "";
-    public string NewDestinationName { get; set; } = "";
-    public string NewDestinationUrl { get; set; } = "";
-    public string NewDestinationApiKey { get; set; } = "";
-    public bool ShowAddDestinationForm { get; private set; }
     public string DestinationHint { get; private set; } = "";
     public bool DestinationTestBusy { get; private set; }
 
@@ -85,7 +81,6 @@ public sealed partial class ConsoleSession
             ?? ReportingDestinations.FirstOrDefault(d => d.Enabled)?.Id
             ?? ReportingDestinations.FirstOrDefault()?.Id
             ?? "";
-        ShowAddDestinationForm = ReportingDestinations.Count == 0;
         Notify();
     }
 
@@ -94,66 +89,22 @@ public sealed partial class ConsoleSession
         ConsoleSettingsStore.SetReportingDestinations(ReportingDestinations, SelectedReportingDestinationId);
     }
 
-    public void AddReportingDestinationDraft()
+    public void AddReportingDestination()
     {
-        var url = (NewDestinationUrl ?? "").Trim().TrimEnd('/');
-        var name = (NewDestinationName ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            DestinationHint = "請填 Base URL，例如 https://company.example.com。";
-            Notify();
-            return;
-        }
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
-        {
-            DestinationHint = "網址要是 http 或 https 開頭。";
-            Notify();
-            return;
-        }
-        if (ReportingDestinations.Any(d => string.Equals(d.BaseUrl, url, StringComparison.OrdinalIgnoreCase)))
-        {
-            DestinationHint = "這個網址已在清單裡。";
-            Notify();
-            return;
-        }
+        var n = ReportingDestinations.Count + 1;
         var dest = new ReportingDestination
         {
             Id = Guid.NewGuid().ToString("N"),
-            DisplayName = string.IsNullOrWhiteSpace(name) ? uri.Host : name,
-            BaseUrl = url,
+            DisplayName = n == 1 ? "新公司" : $"公司 {n}",
+            BaseUrl = "",
             ContractVersion = "1",
-            ApiKey = (NewDestinationApiKey ?? "").Trim(),
             Enabled = false,
         };
         ReportingDestinations.Add(dest);
         SelectedReportingDestinationId = dest.Id;
-        NewDestinationName = "";
-        NewDestinationUrl = "";
-        NewDestinationApiKey = "";
-        ShowAddDestinationForm = false;
-        DestinationHint = string.IsNullOrWhiteSpace(dest.ApiKey)
-            ? $"已加入〔{dest.DisplayName}〕。清單裡現在有 {ReportingDestinations.Count} 家。請先「測試連線」，通過後再啟用。"
-            : $"已加入〔{dest.DisplayName}〕（使用回報 API 金鑰）。清單裡現在有 {ReportingDestinations.Count} 家。請先「測試連線」，通過後再啟用。";
-        PersistReportingDestinations();
-        Notify();
-    }
-
-    public void BeginAddReportingDestination()
-    {
-        ShowAddDestinationForm = true;
-        DestinationHint = ReportingDestinations.Count == 0
-            ? ""
-            : "填第二家（或第 N 家）的網址與金鑰。每家獨立測試、啟用；送工時時一次選一家。";
-        Notify();
-    }
-
-    public void CancelAddReportingDestination()
-    {
-        ShowAddDestinationForm = ReportingDestinations.Count == 0;
-        NewDestinationName = "";
-        NewDestinationUrl = "";
-        NewDestinationApiKey = "";
-        DestinationHint = "";
+        DestinationHint = n == 1
+            ? "這張卡片填網址與金鑰，再「測試連線」。通過後才能啟用、送工時、看派工。"
+            : "又加了一張卡片，功能和上面每一家相同：測試、啟用、停用、讀取派工。請填對方公司自己的工作區網址，不要複製同一家。";
         Notify();
     }
 
@@ -161,20 +112,61 @@ public sealed partial class ConsoleSession
     {
         const string sampleUrl = "http://localhost:5100";
         var existing = ReportingDestinations.FirstOrDefault(d =>
-            string.Equals(d.BaseUrl.TrimEnd('/'), sampleUrl, StringComparison.OrdinalIgnoreCase));
+            string.Equals((d.BaseUrl ?? "").TrimEnd('/'), sampleUrl, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
             SelectedReportingDestinationId = existing.Id;
-            ShowAddDestinationForm = false;
-            DestinationHint = "本機公司工作區已在清單裡。到 http://localhost:5100 用 pm 登入，開啟「公開回報」複製示範金鑰貼上，再測試連線。";
+            DestinationHint = "本機示範已在清單裡（同一網址只要一張卡片）。到 http://localhost:5100 用 pm 登入，開啟「公開回報」複製金鑰貼上，再測試連線。";
             Notify();
             return;
         }
-        NewDestinationName = "凌波資訊（本機示範）";
-        NewDestinationUrl = sampleUrl;
-        AddReportingDestinationDraft();
-        if (string.IsNullOrEmpty(DestinationHint) || DestinationHint.StartsWith("已加入", StringComparison.Ordinal))
-            DestinationHint = "已加入本機公司工作區 http://localhost:5100。請到該站「公開回報」複製示範 API 金鑰貼到這一筆，再測試連線。";
+        var dest = new ReportingDestination
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            DisplayName = "凌波資訊（本機示範）",
+            BaseUrl = sampleUrl,
+            ContractVersion = "1",
+            Enabled = false,
+        };
+        ReportingDestinations.Add(dest);
+        SelectedReportingDestinationId = dest.Id;
+        DestinationHint = "已加入本機示範卡片。請貼金鑰、測試連線，通過後再啟用。功能和其它公司相同。";
+        PersistReportingDestinations();
+        Notify();
+    }
+
+    public void SetDestinationName(string id, string? name)
+    {
+        var dest = ReportingDestinations.FirstOrDefault(d => d.Id == id);
+        if (dest is null)
+            return;
+        dest.DisplayName = name ?? "";
+        Notify();
+    }
+
+    public void SetDestinationUrl(string id, string? url)
+    {
+        var dest = ReportingDestinations.FirstOrDefault(d => d.Id == id);
+        if (dest is null)
+            return;
+        var next = (url ?? "").Trim().TrimEnd('/');
+        if (!string.Equals(dest.BaseUrl, next, StringComparison.Ordinal))
+        {
+            dest.LastTestOk = null;
+            dest.LastTestMessage = "";
+            dest.Enabled = false;
+        }
+        dest.BaseUrl = next;
+        Notify();
+    }
+
+    public void SetDestinationApiKey(string id, string? key)
+    {
+        var dest = ReportingDestinations.FirstOrDefault(d => d.Id == id);
+        if (dest is null)
+            return;
+        dest.ApiKey = (key ?? "").Trim();
+        Notify();
     }
 
     public void RemoveReportingDestination(string id)
@@ -182,8 +174,6 @@ public sealed partial class ConsoleSession
         ReportingDestinations.RemoveAll(d => d.Id == id);
         if (SelectedReportingDestinationId == id)
             SelectedReportingDestinationId = ReportingDestinations.FirstOrDefault()?.Id ?? "";
-        if (ReportingDestinations.Count == 0)
-            ShowAddDestinationForm = true;
         DestinationHint = "";
         PersistReportingDestinations();
         Notify();
@@ -205,6 +195,12 @@ public sealed partial class ConsoleSession
         if (dest.LastTestOk != true)
         {
             DestinationHint = "請先測試連線通過，才能啟用這家公司。";
+            Notify();
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(dest.BaseUrl))
+        {
+            DestinationHint = "請先填這家公司的工作區網址。";
             Notify();
             return;
         }
@@ -235,10 +231,34 @@ public sealed partial class ConsoleSession
         if (dest is null)
             return;
         DestinationTestBusy = true;
-        DestinationHint = $"正在測試〔{dest.DisplayName}〕…";
+        DestinationHint = $"正在測試〔{(string.IsNullOrWhiteSpace(dest.DisplayName) ? "這家公司" : dest.DisplayName)}〕…";
         Notify();
         try
         {
+            var url = (dest.BaseUrl ?? "").Trim().TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(url)
+                || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            {
+                dest.LastTestOk = false;
+                dest.LastTestMessage = "請填這家公司的工作區網址（http 或 https）。";
+                dest.LastTestedAt = DateTimeOffset.UtcNow;
+                dest.Enabled = false;
+                DestinationHint = dest.LastTestMessage;
+                return;
+            }
+            dest.BaseUrl = url;
+            if (ReportingDestinations.Any(d =>
+                    d.Id != dest.Id
+                    && string.Equals((d.BaseUrl ?? "").TrimEnd('/'), url, StringComparison.OrdinalIgnoreCase)))
+            {
+                dest.LastTestOk = false;
+                dest.LastTestMessage = "這個網址已在清單裡。同一家工作區只要一張卡片；另一家公司請填對方自己的網址。";
+                dest.LastTestedAt = DateTimeOffset.UtcNow;
+                dest.Enabled = false;
+                DestinationHint = dest.LastTestMessage;
+                return;
+            }
             var token = await BearerForAsync(dest);
             if (string.IsNullOrEmpty(token))
             {
