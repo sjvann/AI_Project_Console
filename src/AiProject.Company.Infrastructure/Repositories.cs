@@ -485,17 +485,21 @@ public sealed class ReportingApiKeyRepository : IReportingApiKeyRepository
     public Task<ReportingApiKey?> GetByHashAsync(string keyHash, CancellationToken ct = default) =>
         _db.ReportingApiKeys.FirstOrDefaultAsync(k => k.KeyHash == keyHash && k.RevokedAt == null, ct);
 
-    public async Task<IReadOnlyList<ReportingApiKey>> ListAsync(CancellationToken ct = default) =>
-        await _db.ReportingApiKeys
+    public async Task<IReadOnlyList<ReportingApiKey>> ListAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.ReportingApiKeys
             .Where(k => k.TenantId == _tenant.TenantId)
-            .OrderByDescending(k => k.CreatedAt)
             .ToListAsync(ct);
+        return rows.OrderByDescending(k => k.CreatedAt).ToList();
+    }
 
-    public async Task<IReadOnlyList<ReportingApiKey>> ListForPersonAsync(Guid personId, CancellationToken ct = default) =>
-        await _db.ReportingApiKeys
+    public async Task<IReadOnlyList<ReportingApiKey>> ListForPersonAsync(Guid personId, CancellationToken ct = default)
+    {
+        var rows = await _db.ReportingApiKeys
             .Where(k => k.TenantId == _tenant.TenantId && k.PersonId == personId)
-            .OrderByDescending(k => k.CreatedAt)
             .ToListAsync(ct);
+        return rows.OrderByDescending(k => k.CreatedAt).ToList();
+    }
 
     public Task AddAsync(ReportingApiKey key, CancellationToken ct = default)
     {

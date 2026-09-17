@@ -122,6 +122,8 @@ public class DemoSeedTests : IClassFixture<DemoSeedApiFactory>
         Assert.Contains(projects, p => p.TargetEnd < new DateOnly(2026, 9, 6));
         var keys = scope.ServiceProvider.GetRequiredService<IReportingApiKeyRepository>();
         Assert.NotNull(await keys.GetByHashAsync(ReportingApiKey.Hash(CompanyDemoSeed.DemoReportingApiKey)));
+        var listed = await keys.ListAsync();
+        Assert.Contains(listed, k => k.Name == CompanyDemoSeed.DemoReportingKeyName);
         var sheets = await scope.ServiceProvider.GetRequiredService<ITimesheetRepository>().ListAsync();
         Assert.Contains(sheets, s => s.Status == TimesheetStatus.Approved);
         Assert.Contains(sheets, s => s.Status == TimesheetStatus.Returned);
@@ -240,6 +242,26 @@ public class DemoSeedTests : IClassFixture<DemoSeedApiFactory>
         Assert.Contains("待 PM 確認", html, StringComparison.Ordinal);
         Assert.Contains("/api/v1/timesheets/upload", html, StringComparison.Ordinal);
         Assert.Contains(CompanyDemoSeed.SampleProjectName, html, StringComparison.Ordinal);
+        Assert.Contains(CompanyDemoSeed.DemoReportingApiKey, html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Owner_opens_reporting_inbox_and_lists_api_keys()
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var login = await client.PostAsync("/login/account", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "owner",
+            ["password"] = "AiProject-Owner-2026",
+        }));
+        Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+        var page = await client.GetAsync("/reporting");
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.True(page.IsSuccessStatusCode, html);
+        Assert.DoesNotContain("DateTimeOffset", html, StringComparison.Ordinal);
+        Assert.Contains("公開回報", html, StringComparison.Ordinal);
+        Assert.Contains("待 PM 確認", html, StringComparison.Ordinal);
+        Assert.Contains("API 金鑰", html, StringComparison.Ordinal);
         Assert.Contains(CompanyDemoSeed.DemoReportingApiKey, html, StringComparison.Ordinal);
     }
 
