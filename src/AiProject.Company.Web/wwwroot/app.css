@@ -74,11 +74,91 @@ button.proj-card { width: 100%; text-align: left; cursor: pointer; font: inherit
 .workbench.is-rail-first { grid-template-columns: minmax(220px, 22rem) minmax(0, 1fr); }
 .workbench > * { min-width: 0; }
 .workbench .rail { position: sticky; top: 12px; }
-.matrix { overflow: auto; min-width: 960px; border: 1px solid var(--border); background: var(--panel); }
-.matrix-group { width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--border); padding: 6px 8px; font-weight: 700; cursor: pointer; color: inherit; }
-.matrix-head, .matrix-row { display: grid; grid-template-columns: 160px repeat(5, 1fr) 90px; }
-.matrix-cell, .matrix-head span, .matrix-row > span { border: 1px solid var(--border); padding: 6px; min-height: 40px; }
-.matrix-chip { display: inline-block; margin: 1px; padding: 2px 6px; border-radius: 3px; color: #fff; font-size: 12px; line-height: 1.3; }
+.matrix-panel { padding-bottom: 0; }
+.matrix-panel > .toolbar { margin-top: 0; }
+.matrix-panel > .table-wrap { margin: 0 -14px; overflow: auto; max-height: calc(100vh - 12rem); }
+.matrix, .matrix * { box-sizing: border-box; }
+.matrix {
+    --matrix-person: 8rem;
+    --matrix-hours: 5.5rem;
+    width: 100%;
+    min-width: 42rem;
+    overflow: visible;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+}
+.matrix-group {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    background: var(--bg);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 10px;
+    font-weight: 700;
+    cursor: pointer;
+    color: inherit;
+}
+.matrix-head, .matrix-row {
+    display: grid;
+    grid-template-columns: var(--matrix-person) repeat(5, minmax(0, 1fr)) var(--matrix-hours);
+    width: 100%;
+}
+.matrix-head { position: sticky; top: 0; z-index: 2; }
+.matrix-cell, .matrix-head > *, .matrix-row > * {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 8px;
+    min-height: 44px;
+    min-width: 0;
+}
+.matrix-head > * { background: var(--bg); font-weight: 700; }
+.matrix-name, .matrix-hours {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.matrix-head > :first-child, .matrix-row > .matrix-name {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--panel);
+}
+.matrix-head > :first-child { z-index: 3; background: var(--bg); }
+.matrix-head > :last-child, .matrix-row > .matrix-hours {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--panel);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+}
+.matrix-head > :last-child { z-index: 3; background: var(--bg); }
+.matrix-day { display: flex; flex-direction: column; gap: 0; line-height: 1.2; }
+.matrix-day em { font-style: normal; font-weight: 500; color: var(--muted); font-size: 12px; }
+.matrix-day.is-today, .matrix-cell.is-today { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.matrix-head > .is-today { background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+.matrix-cell { cursor: pointer; }
+.matrix-cell:hover { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.matrix-cell.is-on { box-shadow: inset 0 0 0 2px var(--accent); }
+.matrix-row.is-on .matrix-name { box-shadow: inset 3px 0 0 var(--accent); }
+.matrix-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    max-width: 100%;
+    margin: 1px 0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.3;
+    overflow: hidden;
+}
+.matrix-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matrix-chip-h { font-variant-numeric: tabular-nums; opacity: 0.92; flex: none; }
 .matrix-chip em { font-style: normal; opacity: 0.85; }
 .chart-preview { margin: 0; padding-left: 1.1rem; font-size: 13px; }
 .chart-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; background: var(--muted); }
@@ -119,6 +199,7 @@ button.proj-card { width: 100%; text-align: left; cursor: pointer; font: inherit
     .gantt-row, .gantt-axis { grid-template-columns: 1fr; }
     .split, .workbench, .workbench.is-rail-first { grid-template-columns: 1fr; }
     .workbench .rail { position: static; }
-    .matrix { min-width: 0; }
+    .matrix { min-width: 42rem; }
+    .matrix-panel > .table-wrap { max-height: none; }
     .pnl-grid { grid-template-columns: 1fr; }
 }

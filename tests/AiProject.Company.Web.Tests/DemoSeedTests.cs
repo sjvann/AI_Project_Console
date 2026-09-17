@@ -305,4 +305,24 @@ public class DemoSeedTests : IClassFixture<DemoSeedApiFactory>
         Assert.DoesNotContain(">Approved<", html);
         Assert.DoesNotContain(">PendingPm<", html);
     }
+
+    [Fact]
+    public async Task Dispatch_matrix_keeps_hours_column_and_day_dates()
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var login = await client.PostAsync("/login/account", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "delivery",
+            ["password"] = CompanyDemoSeed.SharedPassword,
+        }));
+        Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+        var page = await client.GetAsync("/dispatch");
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.True(page.IsSuccessStatusCode, html);
+        Assert.Contains("matrix-panel", html, StringComparison.Ordinal);
+        Assert.Contains("matrix-hours", html, StringComparison.Ordinal);
+        Assert.Contains("matrix-day", html, StringComparison.Ordinal);
+        Assert.Contains("小時", html, StringComparison.Ordinal);
+        Assert.Contains("matrix-chip-h", html, StringComparison.Ordinal);
+    }
 }
