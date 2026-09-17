@@ -668,6 +668,8 @@ public sealed partial class ConsoleSession : IDisposable
         Dialog = "hours";
         Notify();
         _ = RefreshWorkTimesheetAsync();
+        if (EnabledReportingDestinations.Count > 0)
+            _ = RefreshCompanySnapshotAsync();
     }
 
     public void SetWorkHoursView(WorkHoursView view)
@@ -679,12 +681,12 @@ public sealed partial class ConsoleSession : IDisposable
 
     public void SetWorkHoursPane(string pane)
     {
-        WorkHoursPane = pane is "sheet" or "chart" ? pane : "dash";
+        WorkHoursPane = pane is "sheet" or "chart" or "company" ? pane : "dash";
         Notify();
         if (WorkHoursPane == "sheet")
             _ = RefreshWorkTimesheetAsync();
-        if (WorkHoursPane == "chart")
-            _ = RefreshCompanyAssignmentsAsync();
+        if (WorkHoursPane is "chart" or "company")
+            _ = RefreshCompanySnapshotAsync();
     }
 
     public void SetWorkHoursProjectFilter(string? key)

@@ -40,6 +40,8 @@
                             aria-selected="@(S.WorkHoursPane == "sheet")" @onclick="@(() => S.SetWorkHoursPane("sheet"))">報帳單</button>
                     <button type="button" class="hours-pane @(S.WorkHoursPane == "chart" ? "active" : null)"
                             aria-selected="@(S.WorkHoursPane == "chart")" @onclick="@(() => S.SetWorkHoursPane("chart"))">狀態圖</button>
+                    <button type="button" class="hours-pane @(S.WorkHoursPane == "company" ? "active" : null)"
+                            aria-selected="@(S.WorkHoursPane == "company")" @onclick="@(() => S.SetWorkHoursPane("company"))">公司</button>
                 </div>
                 <div class="hours-nav">
                     <button type="button" class="btn-sec" @onclick="@(() => S.ShiftWorkHours(-1))">@PrevLabel(S.WorkHoursView)</button>
@@ -55,14 +57,173 @@
             }
         </div>
         <div class="hours-body">
-            @if (S.WorkHoursPane == "chart")
+            @if (S.WorkHoursPane == "company")
+            {
+                var dest = S.SelectedReportingDestination;
+                var me = S.CompanyMe;
+                <div class="hours-company">
+                    <p class="hint">這頁是選定公司給你的只讀資料（握手、派工、薪資條），不是戰情室或甘特。週／月切換只影響本機工時，不篩這家公司的派工。</p>
+                    <div class="hours-list-head">
+                        <h3 class="hours-panel-title">連線身分</h3>
+                        <div class="btn-row">
+                            <button type="button" class="btn-sec" disabled="@S.CompanyInfoBusy" @onclick="S.RefreshCompanySnapshotAsync">重新整理</button>
+                            <button type="button" class="btn-sec" disabled="@(dest is null || string.IsNullOrWhiteSpace(dest.BaseUrl))" @onclick="S.OpenCompanyReportingInBrowser">在瀏覽器開公開回報</button>
+                        </div>
+                    </div>
+                    @if (S.CompanyInfoBusy)
+                    {
+                        <p class="hint">正在向這家公司讀取身分與派工…</p>
+                    }
+                    else if (!string.IsNullOrEmpty(S.CompanyInfoHint) && me is null)
+                    {
+                        <p class="hint">@S.CompanyInfoHint</p>
+                    }
+                    else if (dest is null)
+                    {
+                        <p class="hint hours-list-empty">尚未連公司工作區。</p>
+                        <button type="button" class="btn-sec" @onclick="@(() => S.OpenPreferences("company"))">開啟申報公司設定</button>
+                    }
+                    else
+                    {
+                        <div class="hours-stats">
+                            <div class="hours-stat">
+                                <span>目的地</span>
+                                <strong>@(string.IsNullOrWhiteSpace(dest.DisplayName) ? dest.BaseUrl : dest.DisplayName)</strong>
+                            </div>
+                            <div class="hours-stat">
+                                <span>名冊身分</span>
+                                <strong>@(me is null ? "尚未讀取" : me.Matched ? (string.IsNullOrWhiteSpace(me.DisplayName) ? me.GitHubLogin : me.DisplayName) : "未對到人員")</strong>
+                            </div>
+                            <div class="hours-stat">
+                                <span>GitHub</span>
+                                <strong>@(string.IsNullOrWhiteSpace(me?.GitHubLogin) ? "—" : me.GitHubLogin)</strong>
+                            </div>
+                            <div class="hours-stat">
+                                <span>角色</span>
+                                <strong>@(string.IsNullOrWhiteSpace(me?.Role) ? "—" : me.Role)</strong>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(S.CompanyInfoHint))
+                        {
+                            <p class="hint">@S.CompanyInfoHint</p>
+                        }
+                        else if (me is { Matched: true } && !string.IsNullOrWhiteSpace(me.Message))
+                        {
+                            <p class="hint">@me.Message</p>
+                        }
+                    }
+
+                    <section class="hours-sheet-project" aria-label="公司派工">
+                        <div class="hours-list-head">
+                            <h3 class="hours-panel-title">這家公司認為你在哪些專案</h3>
+                            <span class="hint">@S.CompanyAssignments.Count 筆派工</span>
+                        </div>
+                        @if (S.CompanyAssignments.Count == 0)
+                        {
+                            <p class="hint hours-list-empty">這家公司目前沒有給你派工，或還沒讀到。沒有派工就無法把本機專案對過去。</p>
+                        }
+                        else
+                        {
+                            <table class="grid status-chart hours-company-table">
+                                <thead>
+                                    <tr>
+                                        <th>專案</th>
+                                        <th>角色</th>
+                                        <th>每週時數</th>
+                                        <th>期間</th>
+                                        <th>倉</th>
+                                        <th>本機對應</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var a in S.CompanyAssignments)
+                                    {
+                                        var local = S.LocalProjectNameFor(a);
+                                        <tr>
+                                            <td>@a.ProjectName</td>
+                                            <td>@(string.IsNullOrWhiteSpace(a.Role) ? "—" : a.Role)</td>
+                                            <td>@a.HoursPerWeek.ToString("0.##")</td>
+                                            <td>@a.Start.ToString("yyyy-MM-dd") – @a.End.ToString("yyyy-MM-dd")</td>
+                                            <td>@(a.Repos.Count == 0 ? "—" : string.Join("、", a.Repos))</td>
+                                            <td>@(local is null ? "這段期間本機沒對上" : $"對得上「{local}」")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </section>
+
+                    <section class="hours-sheet-project" aria-label="最近一次送到公司">
+                        <h3 class="hours-panel-title">最近一次送到公司</h3>
+                        @if (string.IsNullOrEmpty(S.CompanyUploadHint))
+                        {
+                            <p class="hint hours-list-empty">這個視窗還沒送出。按下方「送到〔這家公司〕」才上傳，不會背景偷傳。本機 work-hours.json 仍在。</p>
+                        }
+                        else
+                        {
+                            <p class="hint">@S.CompanyUploadHint</p>
+                        }
+                    </section>
+
+                    <section class="hours-sheet-project" aria-label="薪資條">
+                        <h3 class="hours-panel-title">最新薪資條</h3>
+                        @if (S.CompanyPayslip is null)
+                        {
+                            <p class="hint hours-list-empty">這家公司還沒有你的薪資條，或對方不提供這個端點。費率與毛利不會出現在控制台。</p>
+                        }
+                        else
+                        {
+                            var slip = S.CompanyPayslip;
+                            <div class="hours-stats">
+                                <div class="hours-stat">
+                                    <span>期間</span>
+                                    <strong>@slip.PeriodStart.ToString("yyyy-MM-dd") – @slip.PeriodEnd.ToString("yyyy-MM-dd")</strong>
+                                </div>
+                                <div class="hours-stat">
+                                    <span>狀態</span>
+                                    <strong>@PayslipStatusLabel(slip.PeriodStatus)</strong>
+                                </div>
+                                <div class="hours-stat">
+                                    <span>應發合計</span>
+                                    <strong>@slip.PayableTotal.ToString("N0")</strong>
+                                </div>
+                                <div class="hours-stat">
+                                    <span>列數</span>
+                                    <strong>@slip.Lines.Count</strong>
+                                </div>
+                            </div>
+                            @if (slip.Lines.Count > 0)
+                            {
+                                <table class="grid status-chart hours-company-table">
+                                    <thead>
+                                        <tr>
+                                            <th>項目</th>
+                                            <th>時數</th>
+                                            <th>金額</th>
+                                            <th>備註</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var line in slip.Lines)
+                                        {
+                                            <tr>
+                                                <td>@PayslipKindLabel(line.Kind)</td>
+                                                <td>@line.Hours.ToString("0.##")</td>
+                                                <td>@line.Amount.ToString("N0")</td>
+                                                <td>@(string.IsNullOrWhiteSpace(line.Note) ? "—" : line.Note)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        }
+                    </section>
+                </div>
+            }
+            else if (S.WorkHoursPane == "chart")
             {
                 <div class="hours-chart-board">
-                    <p class="hint">專案 × 日期，點一下加深投入。這不是公司甘特。按「送到公司」才上傳，不會背景偷傳。</p>
-                    @if (S.CompanyAssignments.Count > 0)
-                    {
-                        <p class="hint">公司認為你這週在：@string.Join("、", S.CompanyAssignments.Select(a => a.ProjectName))</p>
-                    }
+                    <p class="hint">專案 × 日期，點一下加深投入。這不是公司甘特。派工與上傳結果改看「公司」分頁。按「送到公司」才上傳，不會背景偷傳。</p>
                     <table class="grid status-chart">
                         <thead>
                             <tr>
@@ -91,7 +252,7 @@
                     </table>
                     @if (!string.IsNullOrEmpty(S.CompanyUploadHint))
                     {
-                        <p class="hint">@S.CompanyUploadHint</p>
+                        <p class="hint">@S.CompanyUploadHint <button type="button" class="hours-link" @onclick="@(() => S.SetWorkHoursPane("company"))">看公司分頁</button></p>
                     }
                 </div>
             }
@@ -366,7 +527,7 @@
             }
         </div>
         <div class="dialog-actions hours-actions">
-            <span class="hint grow">可報帳時數寫在本機 work-hours.json；匯出 Markdown 與 CSV 給負責人汇整。</span>
+            <span class="hint grow">@(S.WorkHoursPane == "company" ? "派工與薪資條來自選定公司，只讀；本機 work-hours.json 仍是工時真相。" : "可報帳時數寫在本機 work-hours.json；匯出 Markdown 與 CSV 給負責人汇整。")</span>
             <button class="btn-sec" disabled="@(S.WorkHoursExporting || sheet is null)" @onclick="S.ExportWorkTimesheetAsync">匯出工時單</button>
             @if (S.EnabledReportingDestinations.Count > 0)
             {
@@ -377,7 +538,7 @@
                     }
                 </select>
             }
-            <button class="btn-primary" disabled="@(S.CompanyUploadBusy || S.EnabledReportingDestinations.Count == 0)" title="@(S.EnabledReportingDestinations.Count == 0 ? "請先在設定加入目的地、測試連線並啟用" : "")" @onclick="S.SendTimesheetToCompanyAsync">@S.SendToCompanyLabel</button>
+            <button class="btn-primary" disabled="@(S.CompanyUploadBusy || S.EnabledReportingDestinations.Count == 0)" title="@(S.EnabledReportingDestinations.Count == 0 ? "請先在設定「申報公司」加入、測試連線並啟用" : "")" @onclick="S.SendTimesheetToCompanyAsync">@S.SendToCompanyLabel</button>
             <button class="btn-primary" @onclick="S.CloseDialog">關閉</button>
         </div>
     </div>
@@ -388,6 +549,23 @@
     public ConsoleSession S { get; set; } = default!;
 
     void OnDest(ChangeEventArgs e) => S.SetSelectedReportingDestination(e.Value?.ToString() ?? "");
+
+    static string PayslipStatusLabel(string status) => status switch
+    {
+        "Locked" => "已鎖定",
+        "PmConfirming" => "核算中",
+        "Collecting" => "收集中",
+        _ => string.IsNullOrWhiteSpace(status) ? "—" : status,
+    };
+
+    static string PayslipKindLabel(string kind) => kind switch
+    {
+        "Monthly" => "月薪",
+        "Hourly" => "時計",
+        "OvertimePending" => "加班待核",
+        "ProjectBonus" => "專案獎金",
+        _ => string.IsNullOrWhiteSpace(kind) ? "—" : kind,
+    };
 
     static string PrevLabel(WorkHoursView view) => view switch
     {

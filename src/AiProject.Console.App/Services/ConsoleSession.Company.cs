@@ -1,6 +1,7 @@
 using AiProject.Company.Contracts;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Runtime;
+using AiProject.Console.Core.Util;
 using AiProject.Console.Core.WorkHours;
 using AiProject.Console.CompanyClient;
 
@@ -17,8 +18,12 @@ public sealed partial class ConsoleSession
     public bool DestinationTestBusy { get; private set; }
 
     public IReadOnlyList<AssignmentDto> CompanyAssignments { get; private set; } = [];
+    public MeDto? CompanyMe { get; private set; }
+    public PayslipDto? CompanyPayslip { get; private set; }
     public string CompanyUploadHint { get; private set; } = "";
+    public string CompanyInfoHint { get; private set; } = "";
     public bool CompanyUploadBusy { get; private set; }
+    public bool CompanyInfoBusy { get; private set; }
 
     public ReportingDestination? SelectedReportingDestination =>
         ReportingDestinations.FirstOrDefault(d => d.Id == SelectedReportingDestinationId)
@@ -162,8 +167,9 @@ public sealed partial class ConsoleSession
     public void SetSelectedReportingDestination(string id)
     {
         SelectedReportingDestinationId = id ?? "";
+        PersistReportingDestinations();
         Notify();
-        _ = RefreshCompanyAssignmentsAsync();
+        _ = RefreshCompanySnapshotAsync();
     }
 
     public void EnableReportingDestination(string id)
@@ -178,9 +184,10 @@ public sealed partial class ConsoleSession
             return;
         }
         dest.Enabled = true;
-        DestinationHint = $"已啟用〔{dest.DisplayName}〕。現在可以「送到〔{dest.DisplayName}〕」。";
+        DestinationHint = $"已啟用〔{dest.DisplayName}〕。現在可以「送到〔{dest.DisplayName}〕」，工時儀表板「公司」分頁會顯示這家給你的派工。";
         PersistReportingDestinations();
         Notify();
+        _ = RefreshCompanySnapshotAsync();
     }
 
     public void DisableReportingDestination(string id)
@@ -192,6 +199,7 @@ public sealed partial class ConsoleSession
         DestinationHint = $"已停用〔{dest.DisplayName}〕。本機工時不受影響。";
         PersistReportingDestinations();
         Notify();
+        _ = RefreshCompanySnapshotAsync();
     }
 
     public async Task TestReportingDestinationAsync(string id)
@@ -275,31 +283,116 @@ public sealed partial class ConsoleSession
         return raw;
     }
 
-    public async Task RefreshCompanyAssignmentsAsync()
+    public Task RefreshCompanyAssignmentsAsync() => RefreshCompanySnapshotAsync();
+
+    public async Task RefreshCompanySnapshotAsync()
     {
         var dest = SelectedReportingDestination;
         if (_company is null || dest is null || string.IsNullOrWhiteSpace(dest.BaseUrl) || !dest.Enabled)
         {
+            CompanyMe = null;
             CompanyAssignments = [];
+            CompanyPayslip = null;
+            CompanyInfoHint = _company is null
+                ? "控制台沒有公司平台用戶端。"
+                : dest is null
+                    ? "尚未連公司工作區。到設定的「申報公司」分頁加入、測試連線並啟用。"
+                    : dest.Enabled
+                        ? "這家公司還沒有網址。"
+                        : "這家公司尚未啟用。請先測試連線通過再啟用。";
+            CompanyInfoBusy = false;
             Notify();
             return;
         }
+        CompanyInfoBusy = true;
+        CompanyInfoHint = "";
+        Notify();
         try
         {
             var token = await BearerForAsync(dest);
             if (string.IsNullOrEmpty(token))
             {
+                CompanyMe = null;
                 CompanyAssignments = [];
-                Notify();
+                CompanyPayslip = null;
+                CompanyInfoHint = string.IsNullOrWhiteSpace(dest.ApiKey)
+                    ? "請先用 GitHub 登入，或貼上公司核發的回報 API 金鑰。"
+                    : "回報 API 金鑰是空的。";
                 return;
             }
-            CompanyAssignments = await _company.AssignmentsAsync(dest.BaseUrl, token);
+            try
+            {
+                CompanyMe = await _company.MeAsync(dest.BaseUrl, token);
+            }
+            catch (CompanyPlatformException ex)
+            {
+                CompanyMe = null;
+                CompanyAssignments = [];
+                CompanyPayslip = null;
+                CompanyInfoHint = HumanizeConnectionFailure(ex.Message);
+                return;
+            }
+            if (CompanyMe is { Matched: false })
+            {
+                CompanyAssignments = [];
+                CompanyPayslip = null;
+                CompanyInfoHint = string.IsNullOrWhiteSpace(CompanyMe.Message)
+                    ? "這家公司還沒有你的人員檔，請找對方人資。"
+                    : CompanyMe.Message;
+                return;
+            }
+            try
+            {
+                CompanyAssignments = await _company.AssignmentsAsync(dest.BaseUrl, token);
+            }
+            catch (Exception ex)
+            {
+                CompanyAssignments = [];
+                CompanyInfoHint = "讀取公司派工失敗：" + HumanizeConnectionFailure(ex.Message);
+            }
+            try
+            {
+                CompanyPayslip = await _company.PayslipAsync(dest.BaseUrl, token);
+            }
+            catch (CompanyPlatformException ex)
+            {
+                CompanyPayslip = null;
+                if (string.IsNullOrEmpty(CompanyInfoHint))
+                    CompanyInfoHint = "薪資條讀不到：" + HumanizeConnectionFailure(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                CompanyPayslip = null;
+                if (string.IsNullOrEmpty(CompanyInfoHint))
+                    CompanyInfoHint = "薪資條讀不到：" + HumanizeConnectionFailure(ex.Message);
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            CompanyUploadHint = "讀取公司派工失敗：" + ex.Message;
+            CompanyInfoBusy = false;
+            Notify();
         }
-        Notify();
+    }
+
+    public string? LocalProjectNameFor(AssignmentDto assignment)
+    {
+        var map = ConsoleSettingsStore.GetCompanyProjectMap();
+        return CompanyProjectMatcher.MatchLocalName(
+            assignment,
+            WorkHoursProjects.Where(p => !p.IsUnallocated).Select(p => (p.Key, p.Name, p.GithubSlug)),
+            CompanyAssignments,
+            map);
+    }
+
+    public void OpenCompanyReportingInBrowser()
+    {
+        var dest = SelectedReportingDestination;
+        if (dest is null || string.IsNullOrWhiteSpace(dest.BaseUrl))
+        {
+            _native.Info("尚未設定申報目的地", "請在設定加入公司工作區網址。");
+            return;
+        }
+        CliUtil.OpenUrl(dest.BaseUrl.TrimEnd('/') + "/reporting");
     }
 
     public async Task SendTimesheetToCompanyAsync()
@@ -309,7 +402,7 @@ public sealed partial class ConsoleSession
         var dest = SelectedReportingDestination;
         if (dest is null || string.IsNullOrWhiteSpace(dest.BaseUrl))
         {
-            _native.Info("尚未設定申報目的地", "請在設定加入公司工作區網址，測試連線並啟用。本機 work-hours.json 仍在。");
+            _native.Info("尚未設定申報目的地", "請在設定的「申報公司」分頁加入公司工作區網址，測試連線並啟用。本機 work-hours.json 仍在。");
             return;
         }
         if (!dest.Enabled)
@@ -391,6 +484,8 @@ public sealed partial class ConsoleSession
                 CompanyUploadHint = (sent == 0 ? "" : $"已送到〔{label}〕 {sent} 筆。") + "本機專案對不到公司派工：" + string.Join("、", unmatched.Distinct()) + "。請先有派工，或確認 GitHub 倉與公司專案一致。本機 work-hours.json 仍在。";
             else
                 CompanyUploadHint = $"已送到〔{label}〕 {sent} 筆，狀態為待 PM 確認。請到公司平台「公開回報」查看。本機 work-hours.json 仍在。";
+            if (sent > 0)
+                WorkHoursPane = "company";
         }
         catch (CompanyPlatformException ex)
         {

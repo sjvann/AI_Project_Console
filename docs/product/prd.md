@@ -200,7 +200,7 @@ flowchart LR
 | PRD-CON-02 | A | `engineer` | 選一個申報目的地再「送到〔這家公司〕」 | 非背景偷傳；一次一個目的地 |
 | PRD-CON-03 | A | 系統 | 上傳以本機時段 ID 冪等 | 已核准不可覆蓋 |
 | PRD-CON-04 | A | `engineer` | 上傳不含原始碼 | 僅時段、專案識別、狀態圖、Issue 參照 |
-| PRD-CON-05 | A | `engineer` | `GET /api/v1/me/assignments` 顯示該目的地派工 | 不混別家 |
+| PRD-CON-05 | A | `engineer` | `GET /api/v1/me/assignments` 顯示該目的地派工 | 工時儀表板「公司」分頁；不混別家；標本機專案能否對上 |
 | PRD-CON-06 | A | `engineer` | 我能設定多家接收 API | 零個目的地時其餘功能照常 |
 | PRD-CON-07 | A | `engineer` | 上傳前握手，確認名冊有我 | `GET /api/v1/me`；未通過說人話 |
 | PRD-CON-08 | O | `engineer` | 長工作進行中我看得到系統在做什麼，被擋的按鈕事先停用並說明原因 | 頂欄佔用條；建置中不誤認當機；MCP 編譯同一倉時桌面也顯示。見 [架構 AD-32](architecture.md) |

@@ -924,6 +924,9 @@
                 <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "general" ? "active" : null)"
                         id="prefs-tab-general" aria-selected="@(S.PrefsTab == "general" ? "true" : "false")"
                         aria-controls="prefs-panel-general" @onclick="@(() => S.SetPrefsTab("general"))">一般</button>
+                <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "company" ? "active" : null)"
+                        id="prefs-tab-company" aria-selected="@(S.PrefsTab == "company" ? "true" : "false")"
+                        aria-controls="prefs-panel-company" @onclick="@(() => S.SetPrefsTab("company"))">申報公司</button>
                 <button type="button" role="tab" class="prefs-tab @(S.PrefsTab == "agent" ? "active" : null)"
                         id="prefs-tab-agent" aria-selected="@(S.PrefsTab == "agent" ? "true" : "false")"
                         aria-controls="prefs-panel-agent" @onclick="@(() => S.SetPrefsTab("agent"))">Agent</button>
@@ -984,55 +987,84 @@
                             }
                         </datalist>
                         <p class="hint">大型公司可填自建 Git 主機。GitHub 相容主機用 gh；其他種類先可設，任務功能尚未接時會明白停用。</p>
-                        <h3 class="prefs-sub">申報目的地（公司工作區）</h3>
-                        <p class="hint">可加多家公司。每筆預設關閉；「測試連線」通過後才能啟用。零目的地時本機工時照常。送到公司後，對方在工作區導覽「公開回報」看待 PM 確認。</p>
-                        @if (!string.IsNullOrEmpty(S.DestinationHint))
-                        {
-                            <p class="hint">@S.DestinationHint</p>
-                        }
-                        @foreach (var dest in S.ReportingDestinations)
-                        {
-                            <div class="field" style="border-top:1px solid var(--color-border, #ddd); padding-top:0.5rem; margin-top:0.5rem;">
-                                <span>@dest.DisplayName</span>
-                                <input value="@dest.BaseUrl" @oninput="e => OnDestUrl(dest, e)" placeholder="https://company.example.com" />
-                                <span>回報 API 金鑰（可選）</span>
-                                <input type="password" value="@dest.ApiKey" @oninput="e => OnDestApiKey(dest, e)" placeholder="apk_… 空白則用 GitHub 權杖" autocomplete="off" />
-                                <p class="hint">@DestStatus(dest)</p>
-                                <div class="row">
-                                    <button class="btn-sec" type="button" disabled="@S.DestinationTestBusy" @onclick="() => S.TestReportingDestinationAsync(dest.Id)">測試連線</button>
-                                    @if (dest.Enabled)
-                                    {
-                                        <button class="btn-sec" type="button" @onclick="() => S.DisableReportingDestination(dest.Id)">停用</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn-sec" type="button" disabled="@(dest.LastTestOk != true)" @onclick="() => S.EnableReportingDestination(dest.Id)">啟用這家公司</button>
-                                    }
-                                    <button class="btn-sec" type="button" @onclick="() => S.RemoveReportingDestination(dest.Id)">刪除</button>
-                                </div>
-                            </div>
-                        }
-                        <div class="field">
-                            <span>顯示名</span>
-                            <input @bind="S.NewDestinationName" placeholder="例如 Acme 工作區" />
-                        </div>
-                        <div class="field">
-                            <span>Base URL</span>
-                            <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
-                        </div>
-                        <div class="field">
-                            <span>回報 API 金鑰（可選）</span>
-                            <input type="password" @bind="S.NewDestinationApiKey" placeholder="apk_… 本機示範可從公司「公開回報」複製" autocomplete="off" />
-                        </div>
-                        <div class="row">
-                            <button class="btn-sec" type="button" @onclick="S.AddReportingDestinationDraft">加入目的地</button>
-                            <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機公司工作區</button>
-                        </div>
                         <h3 class="prefs-sub">控制台更新</h3>
                         <p class="hint">目前版本 v@(AppInfo.Version)。檢查時會詢問是否包含 RC／預發行。也可選本機安裝程式或 zip 直接套用。</p>
                         <div class="row">
                             <button class="btn-sec" type="button" disabled="@S.JobBusy" @onclick="S.CheckUpdateAsync">檢查更新</button>
                             <button class="btn-sec" type="button" disabled="@S.JobBusy" @onclick="S.ApplyUpdateFromFileAsync">從檔案更新…</button>
+                        </div>
+                    </div>
+                }
+                else if (S.PrefsTab == "company")
+                {
+                    <div id="prefs-panel-company" role="tabpanel" aria-labelledby="prefs-tab-company">
+                        <p class="hint">這裡列出你已經加入、可以送工時的公司。上面是清單，下面才是空白表單。沒有任何一家時，本機工時照常。</p>
+                        @if (!string.IsNullOrEmpty(S.DestinationHint))
+                        {
+                            <p class="hint">@S.DestinationHint</p>
+                        }
+                        <h3 class="prefs-sub">已加入</h3>
+                        @if (S.ReportingDestinations.Count == 0)
+                        {
+                            <p class="hint dest-empty">還沒有申報公司。用下方「新增一家公司」加入第一筆。</p>
+                        }
+                        else
+                        {
+                            @foreach (var dest in S.ReportingDestinations)
+                            {
+                                <article class="dest-card" aria-label="@dest.DisplayName">
+                                    <div class="dest-card-head">
+                                        <strong>@dest.DisplayName</strong>
+                                        <span class="mcp-badge @(dest.Enabled ? "on" : "muted")">@(dest.Enabled ? "已啟用" : dest.LastTestOk == true ? "已測未啟用" : "未啟用")</span>
+                                    </div>
+                                    <p class="hint">@DestStatus(dest)</p>
+                                    <div class="field">
+                                        <span>顯示名</span>
+                                        <input value="@dest.DisplayName" @oninput="e => OnDestName(dest, e)" placeholder="這家公司在控制台的名稱" />
+                                    </div>
+                                    <div class="field">
+                                        <span>工作區網址</span>
+                                        <input value="@dest.BaseUrl" @oninput="e => OnDestUrl(dest, e)" placeholder="https://company.example.com" />
+                                    </div>
+                                    <div class="field">
+                                        <span>回報金鑰</span>
+                                        <input type="password" value="@dest.ApiKey" @oninput="e => OnDestApiKey(dest, e)" placeholder="空白則用 GitHub 權杖" autocomplete="off" />
+                                    </div>
+                                    <div class="row">
+                                        <button class="btn-sec" type="button" disabled="@S.DestinationTestBusy" @onclick="() => S.TestReportingDestinationAsync(dest.Id)">測試連線</button>
+                                        @if (dest.Enabled)
+                                        {
+                                            <button class="btn-sec" type="button" @onclick="() => S.DisableReportingDestination(dest.Id)">停用</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-sec" type="button" disabled="@(dest.LastTestOk != true)" @onclick="() => S.EnableReportingDestination(dest.Id)">啟用這家公司</button>
+                                        }
+                                        <button class="btn-sec" type="button" @onclick="() => S.RemoveReportingDestination(dest.Id)">刪除</button>
+                                    </div>
+                                </article>
+                            }
+                        }
+                        <div class="dest-add">
+                            <h3 class="prefs-sub">新增一家公司</h3>
+                            <p class="hint">這是空白表單，不是第二家已連線的公司。填完按「加入這家公司」才會出現在上方清單。</p>
+                            <div class="field">
+                                <span>顯示名</span>
+                                <input @bind="S.NewDestinationName" placeholder="例如 測試公司" />
+                            </div>
+                            <div class="field">
+                                <span>工作區網址</span>
+                                <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
+                            </div>
+                            <div class="field">
+                                <span>回報金鑰</span>
+                                <input type="password" @bind="S.NewDestinationApiKey" placeholder="apk_… 可從該站「公開回報」複製" autocomplete="off" />
+                            </div>
+                            <div class="row">
+                                <button class="btn-sec" type="button" @onclick="S.AddReportingDestinationDraft">加入這家公司</button>
+                                <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機示範</button>
+                            </div>
+                            <p class="hint">本機示範只會把網址填成 http://localhost:5100，仍要自己貼金鑰、測試連線再啟用。</p>
                         </div>
                     </div>
                 }
@@ -1241,6 +1273,9 @@
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
 
+    static void OnDestName(ReportingDestination dest, ChangeEventArgs e) =>
+        dest.DisplayName = e.Value?.ToString() ?? string.Empty;
+
     static void OnDestUrl(ReportingDestination dest, ChangeEventArgs e) =>
         dest.BaseUrl = (e.Value?.ToString() ?? string.Empty).Trim().TrimEnd('/');
 
@@ -1276,7 +1311,7 @@
 
     void OnPrefsTabKey(KeyboardEventArgs e)
     {
-        var tabs = new[] { "general", "agent", "mcp", "tools", "ask" };
+        var tabs = new[] { "general", "company", "agent", "mcp", "tools", "ask" };
         var i = Array.IndexOf(tabs, S.PrefsTab);
         if (i < 0)
             return;

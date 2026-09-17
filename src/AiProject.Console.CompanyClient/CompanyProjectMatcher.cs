@@ -23,6 +23,22 @@ public static class CompanyProjectMatcher
         return null;
     }
 
+    public static string? MatchLocalName(
+        AssignmentDto assignment,
+        IEnumerable<(string Key, string Name, string GithubSlug)> localProjects,
+        IReadOnlyList<AssignmentDto> assignments,
+        IReadOnlyDictionary<string, Guid> localMap)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+        foreach (var project in localProjects)
+        {
+            var id = Resolve(project.GithubSlug, project.Name, project.Key, assignments, localMap);
+            if (id == assignment.ProjectId)
+                return string.IsNullOrWhiteSpace(project.Name) ? project.Key : project.Name;
+        }
+        return null;
+    }
+
     static bool Matches(string? githubSlug, string? projectName, string projectKey, AssignmentDto assignment)
     {
         var slug = (githubSlug ?? "").Trim();

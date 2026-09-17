@@ -102,4 +102,23 @@ public class CompanyClientTests
         var id = CompanyProjectMatcher.Resolve("acme/app", "控制台", "gh:acme/app", assignments, new Dictionary<string, Guid> { ["gh:acme/app"] = mapped });
         Assert.Equal(mapped, id);
     }
+
+    [Fact]
+    public void Match_local_name_uses_repo_then_map()
+    {
+        var projectId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        var assignments = new List<AssignmentDto>
+        {
+            new() { ProjectId = projectId, ProjectName = "控制台", Repos = ["acme/app"] },
+            new() { ProjectId = otherId, ProjectName = "別專案", Repos = ["acme/other"] },
+        };
+        var locals = new List<(string Key, string Name, string GithubSlug)>
+        {
+            ("gh:acme/app", "AI_Project_Console", "acme/app"),
+        };
+        var name = CompanyProjectMatcher.MatchLocalName(assignments[0], locals, assignments, new Dictionary<string, Guid>());
+        Assert.Equal("AI_Project_Console", name);
+        Assert.Null(CompanyProjectMatcher.MatchLocalName(assignments[1], locals, assignments, new Dictionary<string, Guid>()));
+    }
 }
