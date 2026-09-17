@@ -93,7 +93,7 @@ flowchart LR
 
 ### P1 控制台（本機）
 
-現況使用者已會選專案目錄。規劃精靈**不打斷**零目的地的現況路徑。服務列名稱與連接埠之間顯示一句用途（清單 `description` 或專案 `Description`），沒有就不填。
+現況使用者已會選專案目錄。規劃精靈**不打斷**零目的地的現況路徑。服務列與專案列名稱旁顯示一句用途（清單 `description`／`projects`、專案檔 `Description`、套件 `description` 或專案目錄 README 第一段），沒有就不填。開啟或重掃工作區時寫入 `.ai_project/product-purposes.md`。
 
 1. 外觀：色盤／深色（可跳過，用 `pine`）。
 2. 更新通道：預設官方 GitHub Release；可改檢查預發行（現況已有）。

@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>AiProject.Company.Infrastructure</RootNamespace>
+    <Description>公司工作區資料與外部接線</Description>
   </PropertyGroup>
 
   <ItemGroup>

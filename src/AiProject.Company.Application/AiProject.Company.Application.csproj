@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>AiProject.Company.Application</RootNamespace>
+    <Description>公司工作區應用服務</Description>
   </PropertyGroup>
 
   <ItemGroup>

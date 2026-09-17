@@ -113,8 +113,8 @@ public sealed record DocsScaffoldContext(
         return new DocsScaffoldContext(
             string.IsNullOrWhiteSpace(catalog.Name) ? "專案" : catalog.Name,
             catalog.Root,
-            catalog.Services.Select(s => $"{s.Label} ({s.Id})").ToList(),
-            catalog.Projects.Select(p => p.Name).ToList(),
+            catalog.Services.Select(s => string.IsNullOrWhiteSpace(s.Description) ? $"{s.Label} ({s.Id})" : $"{s.Label} ({s.Id}) — {s.Description}").ToList(),
+            catalog.Projects.Select(p => string.IsNullOrWhiteSpace(p.Description) ? p.Name : $"{p.Name} — {p.Description}").ToList(),
             readme,
             null);
     }

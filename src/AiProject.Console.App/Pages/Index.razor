@@ -345,6 +345,7 @@
                                     }
                                     <span>@p.Name</span>
                                 </span>
+                                <span class="prj-desc" title="@(string.IsNullOrEmpty(p.Description) ? null : p.Description)">@p.Description</span>
                                 <span class="meta">@ProjectMeta(p, ago)</span>
                                 <span class="badge-stale badge-@kind">@badge</span>
                                 <span class="prj-actions">

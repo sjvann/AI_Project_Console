@@ -93,6 +93,6 @@ Windows 安裝包、升版檢查清單、GitHub Release 指令：[scripts/README
 | 路徑 | 內容 |
 |------|------|
 | `%LOCALAPPDATA%\AI_Project_Console\settings.json` | 使用者偏好、歷史專案 |
-| 被開啟專案下的 `.ai_project/` | logs、pids、編譯報告、審計 |
+| 被開啟專案下的 `.ai_project/` | logs、pids、編譯報告、審計、產品用途清單 |
 
 從原始碼執行時，「檢查更新 → 立即更新」無法覆蓋開發目錄；請 `git pull` 後重編，或改用 Releases 安裝包驗證更新流程。

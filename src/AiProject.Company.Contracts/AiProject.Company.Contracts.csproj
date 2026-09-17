@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>AiProject.Company.Contracts</RootNamespace>
+    <Description>公司工作區公開契約</Description>
   </PropertyGroup>
 
   <ItemGroup>

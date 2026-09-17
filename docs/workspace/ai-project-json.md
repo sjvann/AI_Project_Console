@@ -43,7 +43,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `project` | 是 | 相對路徑，指向專案目錄、`.csproj`（副檔名可省略）、`package.json` 所在目錄，或 Python 控制台腳本（`.py`；Windows 以 `py -3` 啟動） |
 | `id` | 否 | 穩定識別；空白則由名稱產生 |
 | `label` | 否 | 畫面上的名稱 |
-| `description` | 否 | 服務列名稱旁的一句用途。沒寫則用掃描到的專案 `Description`（.csproj） |
+| `description` | 否 | 服務列名稱旁的一句用途。沒寫則用該專案掃到的用途（見下方「專案用途」） |
 | `port` | 否 | 顯示與推斷健康檢查用 |
 | `health` | 否 | 健康檢查。HTTP URL；或桌面程式用 `mutex:Local\Name`、`tcp:17888`。空白且有 port 時預設 `http://127.0.0.1:{port}/health` |
 | `openUrl` | 否 | 「開啟」用的瀏覽器網址 |
@@ -54,6 +54,25 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `dependsOn` | 否 | 另一個行程的啟動相依（見下方）。與 `hostedBy` 不同 |
 | `ready` | 否 | 等就緒用的 URL；空白則用 `health`。跨線相依請用這個，不要只看 port 占用 |
 | `readyTimeoutMs` | 否 | 等就緒逾時毫秒；空白預設 180000 |
+
+## 專案用途（所有專案）
+
+可啟動服務與函式庫、測試專案都要有一句產品功能描述。不必每個都寫進清單：掃描會從專案檔擷取。
+
+| 來源（先寫的贏） | 欄位 |
+|------------------|------|
+| 工作區 `ai-project.json` 的 `projects` | `path`（或 `project`）＋ `description`。也可用物件：`"projects": { "src/Foo": "一句用途" }` |
+| 專案檔 | .NET：`<Description>`，沒有則 `<PackageDescription>` |
+| 套件清單 | `package.json`、`pyproject.toml`、`Cargo.toml`、`pom.xml` 的 description |
+| 專案目錄 README | `README.md`（或 `README.zh-Hant.md`）標題與徽章之後的第一段 |
+
+```json
+"projects": [
+  { "path": "src/Demo.Core", "description": "核心領域模型" }
+]
+```
+
+開啟或重新掃描工作區時，控制台把目前掃到的用途寫成 `.ai_project/product-purposes.md`。這份是給人眼與 Agent 對照的快照，下次會覆寫；要改用途請改上面的權威來源，不要手改這份檔。
 
 ## 啟動相依（dependsOn）
 
@@ -105,6 +124,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `build-reports/` | 編譯成功／失敗報告 |
 | `uat-reports/` | UAT 截圖 |
 | `agent-prompts/` | 求救提示備份 |
+| `product-purposes.md` | 開啟／重掃時產生的各專案用途清單 |
 | `mcp-audit.jsonl` | MCP 對帳 |
 | `mcp-policy.json` | 專案級工具權限（可選） |
 

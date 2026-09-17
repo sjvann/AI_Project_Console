@@ -525,7 +525,9 @@ public static class ProjectScanner
                     outputType = elem.Value.Trim();
                 if (local == "ApplicationIcon" && string.IsNullOrEmpty(applicationIcon) && !string.IsNullOrWhiteSpace(elem.Value))
                     applicationIcon = elem.Value.Trim();
-                if (local == "Description" && string.IsNullOrEmpty(description) && !string.IsNullOrWhiteSpace(elem.Value))
+                if (local == "Description" && !string.IsNullOrWhiteSpace(elem.Value))
+                    description = elem.Value.Trim();
+                else if (local == "PackageDescription" && string.IsNullOrEmpty(description) && !string.IsNullOrWhiteSpace(elem.Value))
                     description = elem.Value.Trim();
                 if (local == "PackageReference")
                 {

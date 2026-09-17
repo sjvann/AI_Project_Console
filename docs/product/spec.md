@@ -170,6 +170,7 @@ GitHub 帳號變更時，人資合併到同一 `personId`，舊時段不丟。�
 ## 現況已交付（控制台，勿在規劃模組裡重做）
 
 - 掃描服務、需重編、一鍵啟停、Log、文件／GitHub Pages
+- 每個掃描到的專案一句用途（專案檔／清單／README）；開啟工作區寫入 `.ai_project/product-purposes.md`
 - GitHub：clone、提交、PR、Actions、Release
 - 需求工作台：進件、驗收條件、Issue、設計變更關卡
 - 工時：開啟專案起算、GitHub 歸戶、週月季年、CSV／Markdown 匯出、需求台對帳

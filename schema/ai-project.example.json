@@ -5,6 +5,9 @@
     { "id": "platform", "label": "Platform", "root": "AiHouse.Platform" },
     { "id": "eddss", "label": "EDDSS", "root": "EventDrivenDSS" }
   ],
+  "projects": [
+    { "path": "ModularIoTHub/src/ModularIoTHub.Core", "description": "Hub 領域與協定" }
+  ],
   "services": [
     {
       "id": "hub-telemetry",

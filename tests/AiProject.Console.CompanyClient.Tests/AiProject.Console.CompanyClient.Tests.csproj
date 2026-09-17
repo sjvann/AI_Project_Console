@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <Description>申報用戶端測試</Description>
   </PropertyGroup>
 
   <ItemGroup>

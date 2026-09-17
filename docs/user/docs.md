@@ -51,7 +51,7 @@
 - `docs/user/`、`product/`、`engineering/`、`operations/` 的標準頁
 - 若缺：`.github/workflows/docs.yml`、`.config/dotnet-tools.json`（鎖定 DocFX 2.78.5）、`docs/product/intake.json`（需求進件空殼）
 
-新頁有 YAML `title`，第一句是全形括號占位。控制台會帶入專案名稱、目前掃到的服務與編譯專案、倉根 `README.md` 前段摘錄。倉根 `README.md` **不會**搬進 `docs/`；文件地圖會連回去。
+新頁有 YAML `title`，第一句是全形括號占位。控制台會帶入專案名稱、目前掃到的服務與編譯專案（含一句用途）、倉根 `README.md` 前段摘錄。倉根 `README.md` **不會**搬進 `docs/`；文件地圖會連回去。各專案用途的執行期清單在 `.ai_project/product-purposes.md`。
 
 已齊全時會提示「文件體系已存在，未覆蓋任何檔案。」
 

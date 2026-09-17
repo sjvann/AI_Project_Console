@@ -112,7 +112,7 @@
 
 ## 關了控制台服務還在
 
-這是預期行為。請用「停止全部」或各列「停止」。狀態寫在專案 `.ai_project/`（`logs`、`pids`、`build-reports`、`uat-reports`）。
+這是預期行為。請用「停止全部」或各列「停止」。狀態寫在專案 `.ai_project/`（`logs`、`pids`、`build-reports`、`uat-reports`、`product-purposes.md`）。
 
 ## 開兩個控制台，選專案時兩個一起變
 

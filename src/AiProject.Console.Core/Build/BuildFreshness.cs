@@ -241,7 +241,8 @@ public static class BuildFreshness
             Kind: kind,
             Output: "",
             Language: info.Language,
-            IconPath: info.IconPath));
+            IconPath: info.IconPath,
+            Description: info.Description));
     }
 
     public static IReadOnlyList<BuildState> AllProjectBuildStates(ProjectCatalog catalog)

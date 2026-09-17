@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <Description>系統分析應用測試</Description>
   </PropertyGroup>
 
   <ItemGroup>

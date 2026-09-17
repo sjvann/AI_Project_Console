@@ -111,8 +111,8 @@ public static class ServiceCatalogBuilder
         var scan = SkipProjectScan(manifest)
             ? new ScanResult(root, [])
             : ProjectScanner.ScanWorkspace(root, lines);
-        var projects = scan.Projects.ToList();
-        var scanned = DedupeIds(ProjectScanner.ExternalServiceCandidates(scan).Select(FromScan).ToList());
+        var projects = ProjectPurpose.Fill(root, manifest, scan.Projects).ToList();
+        var scanned = DedupeIds(ProjectScanner.ExternalServiceCandidates(scan with { Projects = projects }).Select(FromScan).ToList());
         if (services.Count == 0)
             services = scanned;
         else if (MergeScanServices(manifest))
@@ -146,7 +146,7 @@ public static class ServiceCatalogBuilder
         if (!string.IsNullOrEmpty(scan.Error))
             summary = scan.Error;
 
-        return new ProjectCatalog
+        var catalog = new ProjectCatalog
         {
             Root = root,
             Name = name,
@@ -155,9 +155,11 @@ public static class ServiceCatalogBuilder
             StartOrder = startOrder,
             Frontend = frontend,
             Manifest = manifest,
-            Scan = scan,
+            Scan = scan with { Projects = projects },
             Summary = summary,
         };
+        ProjectPurpose.TryWrite(catalog);
+        return catalog;
     }
 
     internal static bool SkipProjectScan(JsonObject manifest)

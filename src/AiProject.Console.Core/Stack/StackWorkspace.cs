@@ -104,6 +104,7 @@ public sealed class StackWorkspace
             s.Group,
             s.HostedBy,
             s.Project,
+            s.Description,
             dependsOn = s.Dependencies.Select(d => new { d.Id, d.Optional }).ToList(),
         }));
 
@@ -123,6 +124,7 @@ public sealed class StackWorkspace
                 p.Path,
                 p.Kind,
                 p.Status,
+                p.Description,
                 badge = BuildFreshness.BadgeText(p),
                 needsRebuild = p.Status is "stale" or "unbuilt",
                 p.Reason,

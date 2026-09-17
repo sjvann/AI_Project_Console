@@ -10,7 +10,7 @@ title: 產品概觀
 
 Windows x64 本機桌面：**AI_Project 控制台**（P1）。給軟體工程師面對不同公司、不同專案，並與本機 AI 輔助編碼工具一起完成任務。選專案目錄後可：
 
-- 掃描服務與編譯專案，標出需重編
+- 掃描服務與編譯專案，標出需重編；各專案一句用途，開啟時寫入 `.ai_project/product-purposes.md`
 - 一鍵啟動／停止、看 Log、開前端
 - GitHub：clone、提交、同步、PR、Actions、Release、檢查更新
 - 需求工作台：進件關卡、驗收到報帳

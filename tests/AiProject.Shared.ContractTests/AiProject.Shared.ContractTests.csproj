@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <Description>共用契約測試</Description>
   </PropertyGroup>
 
   <ItemGroup>

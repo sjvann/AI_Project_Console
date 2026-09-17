@@ -20,7 +20,8 @@ public sealed record ProjectInfo(
     bool IsUi = false,
     string IconPath = "",
     string StackId = "",
-    string Description = "");
+    string Description = "",
+    string DescriptionSource = "");
 
 public sealed record ScanResult(
     string Root,
@@ -86,7 +87,8 @@ public sealed record BuildState(
     DateTimeOffset? NewestSourceUtc = null,
     string NewestSourcePath = "",
     string Reason = "",
-    string IconPath = "");
+    string IconPath = "",
+    string Description = "");
 
 public sealed record ConsoleAction(
     string Id,

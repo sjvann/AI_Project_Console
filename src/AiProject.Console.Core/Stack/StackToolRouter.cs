@@ -15,8 +15,8 @@ public static class StackToolRouter
     [
         new("duty_summary", "值班一眼摘要：就緒、離線、需重編。政策擋下的 MCP 呼叫不列入警報。晨會第一個工具。", ""),
         new("stack_status", "堆疊總覽：就緒數、需重編、各服務線上／離線。開發管理者晨會或值班第一個工具。", ""),
-        new("list_services", "列出 ai-project 服務 id、port、宿主。", ""),
-        new("list_projects", "列出各專案編譯徽章（最新／需重編／未建置）。needsRebuild=0 或 badge=最新 表示無需重編；不要把「已與 DLL 一致」理解成要重編。", ""),
+        new("list_services", "列出 ai-project 服務 id、port、宿主與一句用途。", ""),
+        new("list_projects", "列出各專案編譯徽章、一句用途，與需重編數字。needsRebuild=0 或 badge=最新 表示無需重編；不要把「已與 DLL 一致」理解成要重編。", ""),
         new("build_freshness", "與 list_projects 相同：編譯徽章與需重編數字。fresh／最新＝無需重編。", ""),
         new("build", "編譯。mode=stale（預設）／services／projects／one。one 時必填 path。", "mode path"),
         new("start_service", "啟動一個服務。預設先起 dependsOn 並等到就緒。skipDepends=true 只起自己；skipOptional=true 略過可選相依。", "id skipDepends skipOptional"),

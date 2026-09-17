@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>AiProject.Console.CompanyClient</RootNamespace>
+    <Description>控制台申報公司工作區的 HTTP 用戶端</Description>
   </PropertyGroup>
 
   <ItemGroup>
