@@ -165,7 +165,7 @@ public static class ProjectScanner
     public static ProjectInfo ScanProject(string csproj, string root)
     {
         var projectDir = Path.GetDirectoryName(csproj)!;
-        var (sdk, outputType, isExe, isWeb, hasApiDocs, hasUiMarkers, applicationIcon) = ParseCsprojMeta(csproj);
+        var (sdk, outputType, isExe, isWeb, hasApiDocs, hasUiMarkers, applicationIcon, description) = ParseCsprojMeta(csproj);
         var (urls, ports, launchUrl) = ParseLaunchSettings(projectDir);
         var relDir = RelPosix(root, projectDir);
         var name = Path.GetFileNameWithoutExtension(csproj);
@@ -200,7 +200,8 @@ public static class ProjectScanner
             Language: DetectLanguage(csproj),
             IsUi: isUi,
             IconPath: AppIconLocator.FindRel(root, projectDir, applicationIcon) ?? "",
-            StackId: "dotnet");
+            StackId: "dotnet",
+            Description: description);
     }
 
     public static string DetectLanguage(string projectFile) =>
@@ -502,20 +503,21 @@ public static class ProjectScanner
         return false;
     }
 
-    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb, bool HasApiDocs, bool HasUiMarkers, string ApplicationIcon) ParseCsprojMeta(string csproj)
+    private static (string Sdk, string OutputType, bool IsExe, bool IsWeb, bool HasApiDocs, bool HasUiMarkers, string ApplicationIcon, string Description) ParseCsprojMeta(string csproj)
     {
         try
         {
             var doc = XDocument.Load(csproj);
             var root = doc.Root;
             if (root is null)
-                return ("", "Library", false, false, false, false, "");
+                return ("", "Library", false, false, false, false, "", "");
             var sdk = (string?)root.Attribute("Sdk") ?? "";
             var isWeb = sdk.Contains("Microsoft.NET.Sdk.Web", StringComparison.Ordinal);
             var outputType = "Library";
             var hasApiDocs = false;
             var hasUiMarkers = false;
             var applicationIcon = "";
+            var description = "";
             foreach (var elem in root.Descendants())
             {
                 var local = LocalName(elem.Name);
@@ -523,6 +525,8 @@ public static class ProjectScanner
                     outputType = elem.Value.Trim();
                 if (local == "ApplicationIcon" && string.IsNullOrEmpty(applicationIcon) && !string.IsNullOrWhiteSpace(elem.Value))
                     applicationIcon = elem.Value.Trim();
+                if (local == "Description" && string.IsNullOrEmpty(description) && !string.IsNullOrWhiteSpace(elem.Value))
+                    description = elem.Value.Trim();
                 if (local == "PackageReference")
                 {
                     var include = (string?)elem.Attribute("Include") ?? "";
@@ -539,11 +543,11 @@ public static class ProjectScanner
             var isExe = outputType.Equals("Exe", StringComparison.OrdinalIgnoreCase)
                 || outputType.Equals("WinExe", StringComparison.OrdinalIgnoreCase)
                 || isWeb;
-            return (sdk.Trim(), outputType, isExe, isWeb, hasApiDocs, hasUiMarkers, applicationIcon);
+            return (sdk.Trim(), outputType, isExe, isWeb, hasApiDocs, hasUiMarkers, applicationIcon, description);
         }
         catch (Exception)
         {
-            return ("", "Library", false, false, false, false, "");
+            return ("", "Library", false, false, false, false, "", "");
         }
     }
 

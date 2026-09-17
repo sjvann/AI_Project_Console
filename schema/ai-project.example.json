@@ -37,6 +37,7 @@
     {
       "id": "hub-web",
       "label": "Hub Web",
+      "description": "Hub 前端",
       "project": "ModularIoTHub/src/ModularIoTHub.Api",
       "port": 8080,
       "health": "http://127.0.0.1:8080/",

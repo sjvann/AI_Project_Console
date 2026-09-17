@@ -132,6 +132,7 @@ public static class ServiceCatalogBuilder
         if (startOrder.Count == 0)
             startOrder = services.Where(s => s.HostedBy is null).Select(s => s.Id).ToList();
         services = FillIcons(root, services, projects);
+        services = FillDescriptions(services, projects);
 
         var frontend = JsonUtil.Str(manifest["frontend"]);
         if (string.IsNullOrEmpty(frontend))
@@ -292,6 +293,45 @@ public static class ServiceCatalogBuilder
         return services;
     }
 
+    internal static List<ServiceEntry> FillDescriptions(List<ServiceEntry> services, IReadOnlyList<ProjectInfo> projects)
+    {
+        var byKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in projects)
+        {
+            var fromProj = ShortPurpose(p.Description);
+            if (string.IsNullOrEmpty(fromProj))
+                continue;
+            byKey.TryAdd(ProjectKey(p.RelDir), fromProj);
+        }
+        for (var i = 0; i < services.Count; i++)
+        {
+            var svc = services[i];
+            var declared = ShortPurpose(svc.Description);
+            if (!string.IsNullOrEmpty(declared) && !SamePurpose(declared, svc.Label))
+            {
+                services[i] = svc with { Description = declared };
+                continue;
+            }
+            if (byKey.TryGetValue(ProjectKey(svc.Project), out var fromProj) && !SamePurpose(fromProj, svc.Label))
+                services[i] = svc with { Description = fromProj };
+            else
+                services[i] = svc with { Description = "" };
+        }
+        return services;
+    }
+
+    internal static string ShortPurpose(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+        var s = text.Trim();
+        var cut = s.IndexOfAny(['\r', '\n']);
+        return cut < 0 ? s : s[..cut].Trim();
+    }
+
+    static bool SamePurpose(string purpose, string label) =>
+        purpose.Equals(label, StringComparison.OrdinalIgnoreCase);
+
     internal static bool IsSameOrUnder(string path, string root)
     {
         var a = WithTrailingSep(Path.GetFullPath(path));
@@ -377,7 +417,8 @@ public static class ServiceCatalogBuilder
             OpenUrl: openUrl,
             Group: info.Group,
             AspnetUrls: aspnet,
-            Source: "scan");
+            Source: "scan",
+            Description: info.Description);
     }
 
     private static ServiceEntry? FromManifest(JsonObject item)
@@ -411,6 +452,7 @@ public static class ServiceCatalogBuilder
         var preStart = JsonUtil.Pick(JsonUtil.Str(item["preStart"]), JsonUtil.Str(item["pre_start"]), JsonUtil.Str(item["ensure"]));
         var ready = JsonUtil.Pick(JsonUtil.Str(item["ready"]), JsonUtil.Str(item["readyUrl"]), JsonUtil.Str(item["ready_url"]));
         var icon = JsonUtil.Pick(JsonUtil.Str(item["icon"])).Replace('\\', '/');
+        var description = JsonUtil.Str(item["description"]);
         if (project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             project = project[..^".csproj".Length];
         return new ServiceEntry(
@@ -429,7 +471,8 @@ public static class ServiceCatalogBuilder
             DependsOn: ReadDependsOn(item),
             Ready: string.IsNullOrEmpty(ready) ? null : ready,
             ReadyTimeoutMs: ReadReadyTimeoutMs(item),
-            IconPath: icon);
+            IconPath: icon,
+            Description: description);
     }
 
     private static IReadOnlyList<ServiceDependency> ReadDependsOn(JsonObject item)

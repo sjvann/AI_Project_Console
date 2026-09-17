@@ -43,6 +43,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `project` | 是 | 相對路徑，指向專案目錄、`.csproj`（副檔名可省略）、`package.json` 所在目錄，或 Python 控制台腳本（`.py`；Windows 以 `py -3` 啟動） |
 | `id` | 否 | 穩定識別；空白則由名稱產生 |
 | `label` | 否 | 畫面上的名稱 |
+| `description` | 否 | 服務列名稱旁的一句用途。沒寫則用掃描到的專案 `Description`（.csproj） |
 | `port` | 否 | 顯示與推斷健康檢查用 |
 | `health` | 否 | 健康檢查。HTTP URL；或桌面程式用 `mutex:Local\Name`、`tcp:17888`。空白且有 port 時預設 `http://127.0.0.1:{port}/health` |
 | `openUrl` | 否 | 「開啟」用的瀏覽器網址 |

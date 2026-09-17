@@ -19,7 +19,8 @@ public sealed record ProjectInfo(
     string Language = "",
     bool IsUi = false,
     string IconPath = "",
-    string StackId = "");
+    string StackId = "",
+    string Description = "");
 
 public sealed record ScanResult(
     string Root,
@@ -50,7 +51,8 @@ public sealed record ServiceEntry(
     IReadOnlyList<ServiceDependency>? DependsOn = null,
     string? Ready = null,
     int? ReadyTimeoutMs = null,
-    string IconPath = "")
+    string IconPath = "",
+    string Description = "")
 {
     public IReadOnlyList<ServiceDependency> Dependencies =>
         DependsOn is { Count: > 0 } ? DependsOn : [];

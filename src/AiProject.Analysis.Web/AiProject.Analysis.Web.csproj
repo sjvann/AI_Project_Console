@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <RootNamespace>AiProject.Analysis.Web</RootNamespace>
+    <Description>系統分析輔助</Description>
   </PropertyGroup>
 
   <ItemGroup>

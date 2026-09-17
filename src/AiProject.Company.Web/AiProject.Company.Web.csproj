@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <RootNamespace>AiProject.Company.Web</RootNamespace>
+    <Description>公司工作區</Description>
   </PropertyGroup>
 
   <ItemGroup>

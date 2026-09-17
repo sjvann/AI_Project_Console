@@ -158,7 +158,8 @@ button.gh-id.is-muted { color: var(--muted); }
 .group-actions { display: flex; align-items: center; gap: 2px; flex: none; }
 .group-actions .btn-link { padding-right: 6px; }
 .prj-list > .group-label { grid-column: 1 / -1; }
-.svc { display: grid; grid-template-columns: 52px 1fr 56px auto; gap: 6px; align-items: center; padding: 6px 8px; cursor: pointer; border-radius: 3px; }
+.svc { display: grid; grid-template-columns: 52px auto minmax(0, 1fr) 56px auto; gap: 6px; align-items: center; padding: 6px 8px; cursor: pointer; border-radius: 3px; }
+.svc-desc { color: var(--muted); font-size: 12px; font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .svc.sel, .svc.is-busy { background: var(--sel); }
 .svc-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .svc-label .svc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

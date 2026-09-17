@@ -273,6 +273,7 @@
                                             <span class="svc-deps" title="@S.DependsHint(svc)">依 @(string.Join("、", svc.Dependencies.Select(d => d.Id)))</span>
                                         }
                                     </span>
+                                    <span class="svc-desc" title="@(string.IsNullOrEmpty(svc.Description) ? null : svc.Description)">@svc.Description</span>
                                     <span class="hint">@(svc.Port?.ToString() ?? "-")</span>
                                     <span>
                                         @if (acts.Open)

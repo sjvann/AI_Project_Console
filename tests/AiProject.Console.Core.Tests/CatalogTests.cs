@@ -613,6 +613,61 @@ public class CatalogTests
     }
 
     [Fact]
+    public void BuildCatalog_ScanReadsCsprojDescription()
+    {
+        var root = CreateScanOnlyProject("Demo.Web", """
+        <Project Sdk="Microsoft.NET.Sdk.Web">
+          <PropertyGroup>
+            <TargetFramework>net8.0</TargetFramework>
+            <Description>公司工作區</Description>
+            <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+          </PropertyGroup>
+        </Project>
+        """, launchUrl: "", extraFile: ("Home.razor", "<h1>Hi</h1>"));
+        try
+        {
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Equal("公司工作區", Assert.Single(catalog.Services).Description);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuildCatalog_ManifestDescription_WinsOverCsproj()
+    {
+        var root = CreateTempProject();
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "src", "Demo.Api", "Demo.Api.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk.Web">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+                <OutputType>Exe</OutputType>
+                <Description>掃描到的用途</Description>
+              </PropertyGroup>
+            </Project>
+            """);
+            File.WriteAllText(Path.Combine(root, "ai-project.json"), """
+            {
+              "name": "Demo",
+              "services": [
+                { "id": "api", "label": "Api", "project": "src/Demo.Api", "port": 8080, "group": "Demo", "description": "清單上的用途" }
+              ]
+            }
+            """);
+            var catalog = ServiceCatalogBuilder.Build(root);
+            Assert.Equal("清單上的用途", Assert.Single(catalog.Services).Description);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void BuildCatalog_DesktopUiWithoutLaunchSettings_IsListed()
     {
         var root = CreateProjectWithoutLaunch("Demo.App", """

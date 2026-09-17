@@ -13,6 +13,7 @@
     <Product>AI_Project 控制台</Product>
     <Authors>sjvann</Authors>
     <Copyright>Copyright (c) 2026 sjvann. All rights reserved.</Copyright>
+    <Description>本機控制台</Description>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
