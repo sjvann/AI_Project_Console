@@ -30,7 +30,7 @@
                         <td>@row.Date</td>
                         <td>@row.ProjectName</td>
                         <td>@row.Hours</td>
-                        <td>@(row.Status == TimesheetStatus.PendingPm ? "待 PM 確認" : row.Status == TimesheetStatus.Approved ? "已核准" : "已退回")</td>
+                        <td>@row.Status.Display()</td>
                         <td>@row.ReturnReason</td>
                     </tr>
                 }

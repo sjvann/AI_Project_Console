@@ -528,7 +528,7 @@ public sealed partial class ConsoleSession
             else if (unmatched.Count > 0)
                 CompanyUploadHint = (sent == 0 ? "" : $"已送到〔{label}〕 {sent} 筆。") + "本機專案對不到公司派工：" + string.Join("、", unmatched.Distinct()) + "。請先有派工，或確認 GitHub 倉與公司專案一致。本機 work-hours.json 仍在。";
             else
-                CompanyUploadHint = $"已送到〔{label}〕 {sent} 筆，狀態為待 PM 確認。請到公司平台「公開回報」查看。本機 work-hours.json 仍在。";
+                CompanyUploadHint = $"已送到〔{label}〕 {sent} 筆，狀態為待 PM 確認。請到公司平台「公開回報 → 待確認」查看。本機 work-hours.json 仍在。";
             if (sent > 0)
                 WorkHoursPane = "company";
         }

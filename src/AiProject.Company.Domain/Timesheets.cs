@@ -7,6 +7,17 @@ public enum TimesheetStatus
     Returned = 2,
 }
 
+public static class TimesheetLabels
+{
+    public static string Display(this TimesheetStatus status) => status switch
+    {
+        TimesheetStatus.PendingPm => "待 PM 確認",
+        TimesheetStatus.Approved => "已核准",
+        TimesheetStatus.Returned => "已退回",
+        _ => status.ToString(),
+    };
+}
+
 public sealed class Timesheet : ITenantScoped
 {
     public Guid Id { get; private set; }

@@ -54,15 +54,14 @@ else if (_model is not null)
     else if (_tab == "reporting")
     {
         <section class="card stack">
-            <h2>公開回報接收口</h2>
-            <p class="hint">公司工作區用這組 HTTPS 契約收工時，不限控制台。把 Base URL 交給工程師加成申報目的地。入帳、待確認、金鑰在 <a href="/reporting">公開回報</a>。</p>
+            <h2>公開回報</h2>
+            <p class="hint">這裡只給管理員一個捷徑。入帳在「待確認」，網址在「連線」，憑證在「金鑰」。</p>
             <div class="toolbar">
-                <code class="copy-target">@_baseUrl</code>
-                <button type="button" class="btn-sec" @onclick="CopyReportingUrl">複製 Base URL</button>
-                <a class="btn-primary" href="/reporting">開啟接收匣</a>
+                <a class="btn-primary" href="/reporting">待確認</a>
+                <a class="btn-sec" href="/reporting?tab=connect">連線資訊</a>
+                <a class="btn-sec" href="/reporting?tab=keys">金鑰</a>
             </div>
-            <p class="hint">端點：<code>GET /api/v1/me</code>、<code>POST /api/v1/timesheets/upload</code>、<code>GET /api/v1/me/assignments</code>。標頭 <code>X-Company-Api-Version: 1</code>。</p>
-            <Flash Text="@_reportingMessage" />
+            <p class="hint">Base URL：<code>@_baseUrl</code></p>
         </section>
     }
     else if (_tab == "theme")
@@ -160,7 +159,6 @@ else if (_model is not null)
     string _fxNote = "";
     string _fxMessage = "";
     string _baseUrl = "";
-    string _reportingMessage = "";
 
     IEnumerable<string> CompanyCurrencyChoices =>
         Currencies.Common.Contains(_currency, StringComparer.OrdinalIgnoreCase)
@@ -185,19 +183,6 @@ else if (_model is not null)
     {
         _baseUrl = Nav.BaseUri.TrimEnd('/');
         await ReloadAsync();
-    }
-
-    async Task CopyReportingUrl()
-    {
-        try
-        {
-            await Js.InvokeVoidAsync("navigator.clipboard.writeText", _baseUrl);
-            _reportingMessage = "已複製 Base URL。請工程師加到控制台申報目的地。";
-        }
-        catch
-        {
-            _reportingMessage = "無法自動複製，請手動選取上方網址。";
-        }
     }
 
     async Task ReloadAsync()

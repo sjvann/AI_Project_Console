@@ -22,6 +22,8 @@ h3 { font-size: 14px; margin: 0 0 6px; }
 .hint, .empty { color: var(--muted); }
 .card, .kpi, .proj-card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
 .stack { display: flex; flex-direction: column; gap: 8px; }
+ul.stack { list-style: none; padding: 0; margin: 0; }
+ul.stack > li { display: flex; flex-direction: column; gap: 2px; }
 .form-narrow { max-width: 28rem; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .page-head h1 { margin: 0; }
@@ -56,10 +58,21 @@ button.proj-card { width: 100%; text-align: left; cursor: pointer; font: inherit
 .table-wrap { overflow: auto; }
 .grid { width: 100%; border-collapse: collapse; background: var(--panel); }
 .grid th, .grid td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.grid .date, .grid .num { white-space: nowrap; }
+.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+.card > .table-wrap { margin: 8px -14px -12px; }
+.card > .table-wrap .grid { background: transparent; }
+.card > .table-wrap .grid th, .card > .table-wrap .grid td { border-left: none; border-right: none; }
+.card > .table-wrap .grid th:first-child, .card > .table-wrap .grid td:first-child { padding-left: 14px; }
+.card > .table-wrap .grid th:last-child, .card > .table-wrap .grid td:last-child { padding-right: 14px; }
+.card > .table-wrap .grid thead th { background: var(--bg); }
+.card > .table-wrap .grid tr:last-child td { border-bottom: none; }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 12px; }
 .form-grid .full { grid-column: 1 / -1; }
 .workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 22rem); gap: 16px; align-items: start; }
+.workbench.is-rail-first { grid-template-columns: minmax(220px, 22rem) minmax(0, 1fr); }
+.workbench > * { min-width: 0; }
 .workbench .rail { position: sticky; top: 12px; }
 .matrix { overflow: auto; min-width: 960px; border: 1px solid var(--border); background: var(--panel); }
 .matrix-group { width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--border); padding: 6px 8px; font-weight: 700; cursor: pointer; color: inherit; }
@@ -104,7 +117,7 @@ button.proj-card { width: 100%; text-align: left; cursor: pointer; font: inherit
 .meta-line { display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
 @media (max-width: 900px) {
     .gantt-row, .gantt-axis { grid-template-columns: 1fr; }
-    .split, .workbench { grid-template-columns: 1fr; }
+    .split, .workbench, .workbench.is-rail-first { grid-template-columns: 1fr; }
     .workbench .rail { position: static; }
     .matrix { min-width: 0; }
     .pnl-grid { grid-template-columns: 1fr; }

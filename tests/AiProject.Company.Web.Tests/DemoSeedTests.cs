@@ -280,4 +280,29 @@ public class DemoSeedTests : IClassFixture<DemoSeedApiFactory>
         Assert.Contains("你沒有查看公開回報入帳的權限", html, StringComparison.Ordinal);
         Assert.DoesNotContain(CompanyDemoSeed.DemoReportingApiKey, html);
     }
+
+    [Fact]
+    public async Task Person_work_tab_uses_wide_hours_column()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var wang = (await scope.ServiceProvider.GetRequiredService<IPersonRepository>().ListAsync())
+            .First(p => p.DisplayName == "王工程");
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var login = await client.PostAsync("/login/account", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "owner",
+            ["password"] = "AiProject-Owner-2026",
+        }));
+        Assert.Equal(HttpStatusCode.Redirect, login.StatusCode);
+        var page = await client.GetAsync($"/people/{wang.Id}?tab=work");
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.True(page.IsSuccessStatusCode, html);
+        Assert.Contains("is-rail-first", html, StringComparison.Ordinal);
+        Assert.Contains("近期工時", html, StringComparison.Ordinal);
+        Assert.Contains("目前派工", html, StringComparison.Ordinal);
+        Assert.Contains("table-wrap", html, StringComparison.Ordinal);
+        Assert.Contains("pill pill-ok", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Approved<", html);
+        Assert.DoesNotContain(">PendingPm<", html);
+    }
 }

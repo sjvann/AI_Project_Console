@@ -8,6 +8,18 @@ public enum AssignmentRole
     Pm = 3,
 }
 
+public static class AssignmentLabels
+{
+    public static string Display(this AssignmentRole role) => role switch
+    {
+        AssignmentRole.Analyst => "分析師",
+        AssignmentRole.Engineer => "工程師",
+        AssignmentRole.Lead => "Lead",
+        AssignmentRole.Pm => "專案經理",
+        _ => role.ToString(),
+    };
+}
+
 public enum AssignmentSource
 {
     Manual = 0,

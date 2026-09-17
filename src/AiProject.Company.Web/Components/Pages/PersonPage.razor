@@ -70,8 +70,8 @@ else
     }
     else
     {
-        <div class="workbench">
-            <section class="card">
+        <div class="workbench is-rail-first">
+            <aside class="rail card">
                 <h2>目前派工</h2>
                 @if (_assignments.Count == 0)
                 {
@@ -79,14 +79,17 @@ else
                 }
                 else
                 {
-                    <ul>
+                    <ul class="stack">
                         @foreach (var a in _assignments)
                         {
-                            <li>@ProjectName(a.ProjectId) · @a.Role · @a.Start–@a.End · @a.PlannedHoursPerWeek 時/週</li>
+                            <li>
+                                <strong>@ProjectName(a.ProjectId)</strong>
+                                <span class="hint">@a.Role.Display() · @a.Start.ToString("yyyy-MM-dd")–@a.End.ToString("yyyy-MM-dd") · @a.PlannedHoursPerWeek.ToString("0.##") 時/週</span>
+                            </li>
                         }
                     </ul>
                 }
-            </section>
+            </aside>
             <section class="card">
                 <h2>近期工時</h2>
                 @if (_hours.Count == 0)
@@ -95,20 +98,29 @@ else
                 }
                 else
                 {
-                    <table class="grid">
-                        <thead><tr><th>日期</th><th>專案</th><th>小時</th><th>狀態</th></tr></thead>
-                        <tbody>
-                        @foreach (var h in _hours)
-                        {
-                            <tr>
-                                <td>@h.WorkDate</td>
-                                <td>@ProjectName(h.ProjectId)</td>
-                                <td>@h.Hours.ToString("0.##")</td>
-                                <td>@h.Status</td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
+                    <div class="table-wrap">
+                        <table class="grid">
+                            <thead>
+                                <tr>
+                                    <th class="date">日期</th>
+                                    <th>專案</th>
+                                    <th class="num">小時</th>
+                                    <th>狀態</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var h in _hours)
+                            {
+                                <tr>
+                                    <td class="date">@h.WorkDate.ToString("yyyy-MM-dd")</td>
+                                    <td>@ProjectName(h.ProjectId)</td>
+                                    <td class="num @HourTone(h.Hours)">@h.Hours.ToString("0.##")</td>
+                                    <td><span class="@StatusPill(h.Status)">@h.Status.Display()</span></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
                 }
             </section>
         </div>
@@ -117,6 +129,7 @@ else
 
 @code {
     [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery] public string? Tab { get; set; }
     Person? _person;
     string _name = "";
     string _email = "";
@@ -142,7 +155,12 @@ else
     IReadOnlyList<Timesheet> _hours = [];
     Dictionary<Guid, string> _projectNames = [];
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (Tab == "work")
+            _tab = "work";
+        await ReloadAsync();
+    }
 
     async Task ReloadAsync()
     {
@@ -180,6 +198,15 @@ else
     }
 
     string ProjectName(Guid id) => _projectNames.TryGetValue(id, out var n) ? n : id.ToString()[..8];
+
+    static string HourTone(decimal hours) => hours >= 10 ? "is-overload" : hours >= 8 ? "is-follow-yellow" : "";
+
+    static string StatusPill(TimesheetStatus status) => status switch
+    {
+        TimesheetStatus.Approved => "pill pill-ok",
+        TimesheetStatus.PendingPm => "pill pill-wait",
+        _ => "pill pill-danger",
+    };
 
     void Reveal()
     {
