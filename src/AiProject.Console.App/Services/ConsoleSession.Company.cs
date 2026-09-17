@@ -14,6 +14,7 @@ public sealed partial class ConsoleSession
     public string NewDestinationName { get; set; } = "";
     public string NewDestinationUrl { get; set; } = "";
     public string NewDestinationApiKey { get; set; } = "";
+    public bool ShowAddDestinationForm { get; private set; }
     public string DestinationHint { get; private set; } = "";
     public bool DestinationTestBusy { get; private set; }
 
@@ -84,6 +85,7 @@ public sealed partial class ConsoleSession
             ?? ReportingDestinations.FirstOrDefault(d => d.Enabled)?.Id
             ?? ReportingDestinations.FirstOrDefault()?.Id
             ?? "";
+        ShowAddDestinationForm = ReportingDestinations.Count == 0;
         Notify();
     }
 
@@ -128,10 +130,30 @@ public sealed partial class ConsoleSession
         NewDestinationName = "";
         NewDestinationUrl = "";
         NewDestinationApiKey = "";
+        ShowAddDestinationForm = false;
         DestinationHint = string.IsNullOrWhiteSpace(dest.ApiKey)
-            ? "已加入。請先「測試連線」，通過後再啟用。"
-            : "已加入（使用回報 API 金鑰）。請先「測試連線」，通過後再啟用。";
+            ? $"已加入〔{dest.DisplayName}〕。清單裡現在有 {ReportingDestinations.Count} 家。請先「測試連線」，通過後再啟用。"
+            : $"已加入〔{dest.DisplayName}〕（使用回報 API 金鑰）。清單裡現在有 {ReportingDestinations.Count} 家。請先「測試連線」，通過後再啟用。";
         PersistReportingDestinations();
+        Notify();
+    }
+
+    public void BeginAddReportingDestination()
+    {
+        ShowAddDestinationForm = true;
+        DestinationHint = ReportingDestinations.Count == 0
+            ? ""
+            : "填第二家（或第 N 家）的網址與金鑰。每家獨立測試、啟用；送工時時一次選一家。";
+        Notify();
+    }
+
+    public void CancelAddReportingDestination()
+    {
+        ShowAddDestinationForm = ReportingDestinations.Count == 0;
+        NewDestinationName = "";
+        NewDestinationUrl = "";
+        NewDestinationApiKey = "";
+        DestinationHint = "";
         Notify();
     }
 
@@ -143,6 +165,7 @@ public sealed partial class ConsoleSession
         if (existing is not null)
         {
             SelectedReportingDestinationId = existing.Id;
+            ShowAddDestinationForm = false;
             DestinationHint = "本機公司工作區已在清單裡。到 http://localhost:5100 用 pm 登入，開啟「公開回報」複製示範金鑰貼上，再測試連線。";
             Notify();
             return;
@@ -159,6 +182,8 @@ public sealed partial class ConsoleSession
         ReportingDestinations.RemoveAll(d => d.Id == id);
         if (SelectedReportingDestinationId == id)
             SelectedReportingDestinationId = ReportingDestinations.FirstOrDefault()?.Id ?? "";
+        if (ReportingDestinations.Count == 0)
+            ShowAddDestinationForm = true;
         DestinationHint = "";
         PersistReportingDestinations();
         Notify();

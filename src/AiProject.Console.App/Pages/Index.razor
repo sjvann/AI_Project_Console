@@ -998,18 +998,18 @@
                 else if (S.PrefsTab == "company")
                 {
                     <div id="prefs-panel-company" role="tabpanel" aria-labelledby="prefs-tab-company">
-                        <p class="hint">這裡列出你已經加入、可以送工時的公司。上面是清單，下面才是空白表單。沒有任何一家時，本機工時照常。</p>
+                        <p class="hint">同一位工程師可以對<strong>多家公司</strong>申報，每家是清單裡的一張卡片。送工時時一次只送到選定的那一家；不同專案可以分屬不同公司。</p>
                         @if (!string.IsNullOrEmpty(S.DestinationHint))
                         {
                             <p class="hint">@S.DestinationHint</p>
                         }
-                        <h3 class="prefs-sub">已加入</h3>
                         @if (S.ReportingDestinations.Count == 0)
                         {
-                            <p class="hint dest-empty">還沒有申報公司。用下方「新增一家公司」加入第一筆。</p>
+                            <p class="hint dest-empty">還沒有任何一家。先加入第一家，之後可用「再加一家公司」加第二家、第三家。</p>
                         }
                         else
                         {
+                            <h3 class="prefs-sub">清單（@S.ReportingDestinations.Count 家）</h3>
                             @foreach (var dest in S.ReportingDestinations)
                             {
                                 <article class="dest-card" aria-label="@dest.DisplayName">
@@ -1045,27 +1045,41 @@
                                 </article>
                             }
                         }
-                        <div class="dest-add">
-                            <h3 class="prefs-sub">新增一家公司</h3>
-                            <p class="hint">這是空白表單，不是第二家已連線的公司。填完按「加入這家公司」才會出現在上方清單。</p>
-                            <div class="field">
-                                <span>顯示名</span>
-                                <input @bind="S.NewDestinationName" placeholder="例如 測試公司" />
+                        @if (S.ShowAddDestinationForm)
+                        {
+                            <div class="dest-add">
+                                <h3 class="prefs-sub">@(S.ReportingDestinations.Count == 0 ? "加入第一家公司" : "再加一家公司")</h3>
+                                <p class="hint">@(S.ReportingDestinations.Count == 0 ? "填這家公司工作區的網址。加入後要測試連線並啟用，才能送工時。" : "這會變成清單裡的下一張卡片，與上面已有的公司並列，互不取代。")</p>
+                                <div class="field">
+                                    <span>顯示名</span>
+                                    <input @bind="S.NewDestinationName" placeholder="例如 另一家客戶的工作區" />
+                                </div>
+                                <div class="field">
+                                    <span>工作區網址</span>
+                                    <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
+                                </div>
+                                <div class="field">
+                                    <span>回報金鑰</span>
+                                    <input type="password" @bind="S.NewDestinationApiKey" placeholder="apk_… 可從該站「公開回報」複製" autocomplete="off" />
+                                </div>
+                                <div class="row">
+                                    <button class="btn-primary" type="button" @onclick="S.AddReportingDestinationDraft">加入清單</button>
+                                    <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機示範</button>
+                                    @if (S.ReportingDestinations.Count > 0)
+                                    {
+                                        <button class="btn-sec" type="button" @onclick="S.CancelAddReportingDestination">取消</button>
+                                    }
+                                </div>
+                                <p class="hint">本機示範網址是 http://localhost:5100。金鑰仍要從該站「公開回報」複製。</p>
                             </div>
-                            <div class="field">
-                                <span>工作區網址</span>
-                                <input @bind="S.NewDestinationUrl" placeholder="https://company.example.com" />
-                            </div>
-                            <div class="field">
-                                <span>回報金鑰</span>
-                                <input type="password" @bind="S.NewDestinationApiKey" placeholder="apk_… 可從該站「公開回報」複製" autocomplete="off" />
-                            </div>
-                            <div class="row">
-                                <button class="btn-sec" type="button" @onclick="S.AddReportingDestinationDraft">加入這家公司</button>
+                        }
+                        else
+                        {
+                            <div class="row dest-add-actions">
+                                <button class="btn-primary" type="button" @onclick="S.BeginAddReportingDestination">再加一家公司</button>
                                 <button class="btn-sec" type="button" @onclick="S.AddLocalCompanySampleDestination">加入本機示範</button>
                             </div>
-                            <p class="hint">本機示範只會把網址填成 http://localhost:5100，仍要自己貼金鑰、測試連線再啟用。</p>
-                        </div>
+                        }
                     </div>
                 }
                 else if (S.PrefsTab == "agent")

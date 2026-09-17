@@ -278,6 +278,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .dest-empty { margin: 4px 0 12px; }
 .dest-add { margin-top: 4px; padding: 12px; border: 1px dashed var(--border); border-radius: 8px; background: var(--row-alt); }
 .dest-add .row { margin-top: 8px; }
+.dest-add-actions { margin: 12px 0 4px; }
 .field { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
 .field.field-top { align-items: start; }
 .field.field-top > span { padding-top: 6px; }
