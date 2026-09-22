@@ -319,6 +319,7 @@ public sealed partial class ConsoleSession : IDisposable
     public string? GitPulseEmptyMeta => GitHubNextAction.EmptyPulseMeta(GitRepoKnown);
     public bool HasUncommitted => GitBrief is { DirtyCount: > 0 };
     public IReadOnlyList<GitBranchInfo> BranchList { get; private set; } = [];
+    public string? BranchDialogCurrent => GitBranchInfo.CurrentName(BranchList, GitBrief?.Branch);
     public string NewBranchName { get; set; } = "";
     public string BranchDialogHint { get; private set; } = "";
     public AvailableUpdate? UpdateAvailable { get; private set; }
@@ -3247,6 +3248,8 @@ public sealed partial class ConsoleSession : IDisposable
         BranchDialogHint = _resumeIssueAfterBranch is not null
             ? "為此任務建立功能分支。未提交的改動會跟著走；建立後請提交、發布，再回到任務視窗按「建立 PR」。"
             : "";
+        BranchList = [];
+        await RefreshGitStatusAsync().ConfigureAwait(false);
         Dialog = "branch";
         Notify();
         await RefreshBranchListAsync().ConfigureAwait(false);
@@ -3325,6 +3328,7 @@ public sealed partial class ConsoleSession : IDisposable
             BranchDialogHint = "讀取分支…";
             Notify();
             BranchList = await GitHubService.ListBranchesAsync(Catalog.Root).ConfigureAwait(false);
+            await RefreshGitStatusAsync().ConfigureAwait(false);
             BranchDialogHint = BranchList.Count == 0
                 ? "找不到分支。"
                 : HasUncommitted

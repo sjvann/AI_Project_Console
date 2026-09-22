@@ -20,6 +20,22 @@ public class DailyWorkflowTests
     }
 
     [Fact]
+    public void GitBranchInfo_CurrentName_PrefersListOverStaleBrief()
+    {
+        var list = new GitBranchInfo[]
+        {
+            new("develop", false, false, "origin/develop", "db93e5961"),
+            new("variant/nursing-home", true, false, "origin/variant/nursing-home", "2154a14a8"),
+        };
+        Assert.Equal("variant/nursing-home", GitBranchInfo.CurrentName(list, "develop"));
+        Assert.Equal("develop", GitBranchInfo.CurrentName([], "develop"));
+        Assert.Null(GitBranchInfo.CurrentName([], null));
+        Assert.Equal("develop", GitBranchInfo.CurrentName(
+            [new GitBranchInfo("develop", false, false, null, "aaa")],
+            "develop"));
+    }
+
+    [Fact]
     public void GitBriefStatus_LeaveBlockReason_RequiresCleanAndPublished()
     {
         Assert.Null(new GitBriefStatus("main", 0, 0, 0).LeaveBlockReason());
@@ -427,6 +443,7 @@ public class DailyWorkflowTests
             var listed = await GitHubService.ListBranchesAsync(root, fetchRemote: false);
             Assert.Contains(listed, b => b.Name == "main");
             Assert.Contains(listed, b => b.Name == "feat/switch" && b.IsCurrent);
+            Assert.Equal(brief.Branch, GitBranchInfo.CurrentName(listed, "stale-brief"));
 
             File.WriteAllText(Path.Combine(root, "a.txt"), "dirty");
             var dirty = await Assert.ThrowsAsync<InvalidOperationException>(() => GitHubService.SwitchBranchAsync(root, "main"));
