@@ -12,14 +12,15 @@ public static class ServiceActionPolicy
 {
     public static ServiceActionFlags ForRow(ServiceEntry svc, bool online, bool self)
     {
-        var open = online && !string.IsNullOrEmpty(svc.OpenUrl);
+        var hasUrl = !string.IsNullOrEmpty(svc.OpenUrl);
+        // 離線也可「開啟」：先起自己與 dependsOn，再開瀏覽器（隨宿主仍須宿主在線）。
         if (self)
-            return new(open, false, false, false, true, false);
+            return new(hasUrl, false, false, false, true, false);
         if (!string.IsNullOrEmpty(svc.HostedBy))
-            return new(open, false, false, false, false, true);
+            return new(online && hasUrl, false, false, false, false, true);
         if (online)
-            return new(open, false, true, true, false, false);
-        return new(false, true, false, false, false, false);
+            return new(hasUrl, false, true, true, false, false);
+        return new(hasUrl, true, false, false, false, false);
     }
 
     public static ServiceActionFlags ForGroup(IEnumerable<(ServiceEntry Svc, bool Online, bool Self)> members)

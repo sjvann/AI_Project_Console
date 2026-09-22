@@ -157,9 +157,32 @@ public static class ServiceCatalogBuilder
             Manifest = manifest,
             Scan = scan with { Projects = projects },
             Summary = summary,
+            GroupDescriptions = ReadGroupDescriptions(manifest),
         };
         ProjectPurpose.TryWrite(catalog);
         return catalog;
+    }
+
+    /// <summary>
+    /// 讀 <c>groups</c>／<c>serviceGroups</c>：[{ "id"|"name", "description"|"label" }]。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> ReadGroupDescriptions(JsonObject manifest)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var node = manifest["groups"] ?? manifest["serviceGroups"] ?? manifest["service_groups"];
+        if (node is not JsonArray arr)
+            return map;
+        foreach (var item in arr)
+        {
+            if (item is not JsonObject obj)
+                continue;
+            var id = JsonUtil.Pick(JsonUtil.Str(obj["id"]), JsonUtil.Str(obj["name"]), JsonUtil.Str(obj["key"]));
+            var desc = JsonUtil.Pick(JsonUtil.Str(obj["description"]), JsonUtil.Str(obj["label"]), JsonUtil.Str(obj["summary"]));
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(desc))
+                continue;
+            map[id.Trim()] = desc.Trim();
+        }
+        return map;
     }
 
     internal static bool SkipProjectScan(JsonObject manifest)

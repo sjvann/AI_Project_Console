@@ -403,7 +403,9 @@ public sealed partial class ConsoleSession : IDisposable
     private readonly HashSet<string> _collapsedDocFolders = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<ServiceGroupNode> ServiceGroupRoots =>
-        Catalog is null ? [] : ServiceGroupTree.Build(Catalog.Services);
+        Catalog is null
+            ? []
+            : ServiceGroupTree.Build(Catalog.Services, Catalog.GroupDescriptions);
 
     public IEnumerable<ServiceGroupNode> VisibleServiceGroupNodes() =>
         ServiceGroupTree.WalkVisible(ServiceGroupRoots, IsServiceGroupCollapsed);
@@ -2494,21 +2496,13 @@ public sealed partial class ConsoleSession : IDisposable
         }).ConfigureAwait(false);
     }
 
-    public void OpenGroupUrls(string key)
+    public Task OpenGroupUrlsAsync(string key, bool skipOptional = false)
     {
         var node = ServiceGroupTree.Find(ServiceGroupRoots, key);
         if (node is null)
-            return;
-        var targets = node.Descendants().Where(s => !string.IsNullOrEmpty(s.OpenUrl)).ToList();
-        MarkServiceActivity(targets, ServiceActivityMap.Opening, withHosted: false);
-        var opened = 0;
-        foreach (var svc in targets)
-        {
-            CliUtil.OpenUrl(svc.OpenUrl);
-            opened++;
-        }
-        if (opened == 0)
-            _native.Info("無 URL", "沒有可開啟的 openUrl。");
+            return Task.CompletedTask;
+        var targets = ServiceOpenEnsure.WithOpenUrl(node.Descendants());
+        return OpenServicesAsync(targets, skipOptional, $"開啟群組 {node.Name}…");
     }
 
     public async Task StartOneAsync(ServiceEntry svc, bool skipOptional = false, bool skipDepends = false)
@@ -2634,10 +2628,10 @@ public sealed partial class ConsoleSession : IDisposable
         }).ConfigureAwait(false);
     }
 
-    public void OpenUrls(bool frontendsOnly)
+    public Task OpenUrlsAsync(bool frontendsOnly, bool skipOptional = false)
     {
         if (!RequireCatalog())
-            return;
+            return Task.CompletedTask;
         var catalog = Catalog!;
         List<ServiceEntry> targets;
         if (frontendsOnly)
@@ -2645,30 +2639,98 @@ public sealed partial class ConsoleSession : IDisposable
             var svc = string.IsNullOrEmpty(catalog.Frontend) ? null : ServiceCatalogBuilder.ById(catalog, catalog.Frontend);
             targets = svc is not null && !string.IsNullOrEmpty(svc.OpenUrl)
                 ? [svc]
-                : catalog.Services.Where(s => !string.IsNullOrEmpty(s.OpenUrl)).Take(1).ToList();
+                : ServiceOpenEnsure.WithOpenUrl(catalog.Services).Take(1).ToList();
         }
         else
-            targets = catalog.Services.Where(s => !string.IsNullOrEmpty(s.OpenUrl)).ToList();
-        MarkServiceActivity(targets, ServiceActivityMap.Opening, withHosted: false);
-        var opened = 0;
-        foreach (var svc in targets)
+            targets = ServiceOpenEnsure.WithOpenUrl(catalog.Services).ToList();
+        return OpenServicesAsync(targets, skipOptional, frontendsOnly ? "開啟前端…" : "開啟全部 URL…");
+    }
+
+    public Task OpenServiceUrlAsync(ServiceEntry svc, bool skipOptional = false)
+    {
+        if (string.IsNullOrEmpty(svc.OpenUrl))
+            return Task.CompletedTask;
+        return OpenServicesAsync([svc], skipOptional, $"開啟 {svc.Label}…");
+    }
+
+    /// <summary>
+    /// 先起目標與 dependsOn（已就緒略過），再開有 openUrl 且自身未失敗的項目。
+    /// </summary>
+    private async Task OpenServicesAsync(
+        IReadOnlyList<ServiceEntry> targets,
+        bool skipOptional,
+        string jobLabel)
+    {
+        if (targets.Count == 0)
         {
-            if (!string.IsNullOrEmpty(svc.OpenUrl))
+            _native.Info("無 URL", "沒有可開啟的 openUrl。");
+            return;
+        }
+        if (!RequireCatalog())
+            return;
+
+        var catalog = Catalog!;
+        var runtime = Runtime!;
+        var startIds = targets
+            .Where(s => string.IsNullOrEmpty(s.HostedBy) && !IsSelfService(s))
+            .Select(s => s.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        MarkServiceActivity(targets, ServiceActivityMap.Opening, withHosted: false);
+
+        if (startIds.Count == 0)
+        {
+            foreach (var svc in targets)
+                CliUtil.OpenUrl(svc.OpenUrl);
+            return;
+        }
+
+        var plan = ServiceStartPlanner.ForTargets(catalog, startIds, skipOptional);
+        var toStart = plan.Order.Count > 0 ? plan.Order : targets.Where(s => startIds.Contains(s.Id)).ToList();
+        if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
+            return;
+
+        await RunJobAsync(jobLabel, async () =>
+        {
+            var results = await ProcessSupervisor.StartTargetsAsync(
+                catalog,
+                runtime,
+                startIds,
+                skipOptional: skipOptional,
+                onStatus: status =>
+                {
+                    JobText = status;
+                    Notify();
+                }).ConfigureAwait(false);
+            ApplyStartResults(results);
+
+            var opened = 0;
+            var blocked = new List<string>();
+            foreach (var svc in targets)
             {
+                if (string.IsNullOrEmpty(svc.OpenUrl))
+                    continue;
+                if (!string.IsNullOrEmpty(svc.HostedBy) || IsSelfService(svc))
+                {
+                    CliUtil.OpenUrl(svc.OpenUrl);
+                    opened++;
+                    continue;
+                }
+                if (!ServiceOpenEnsure.CanOpenUrl(svc.Id, results))
+                {
+                    blocked.Add(svc.Label);
+                    continue;
+                }
                 CliUtil.OpenUrl(svc.OpenUrl);
                 opened++;
             }
-        }
-        if (opened == 0)
-            _native.Info("無 URL", "沒有可開啟的 openUrl。");
-    }
 
-    public void OpenServiceUrl(ServiceEntry svc)
-    {
-        if (string.IsNullOrEmpty(svc.OpenUrl))
-            return;
-        MarkServiceActivity([svc], ServiceActivityMap.Opening, withHosted: false);
-        CliUtil.OpenUrl(svc.OpenUrl);
+            if (opened == 0 && blocked.Count > 0)
+                return $"無法開啟：{string.Join("、", blocked)}";
+            if (blocked.Count > 0)
+                return $"已開啟 {opened} 個；略過失敗：{string.Join("、", blocked)}";
+            return null;
+        }).ConfigureAwait(false);
     }
 
     public void Doctor()

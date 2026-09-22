@@ -5,16 +5,25 @@ namespace AiProject.Console.Core.Tests;
 public class ServiceActionPolicyTests
 {
     [Fact]
-    public void ForRow_Offline_ShowsStartNotRestartOrStop()
+    public void ForRow_Offline_ShowsOpenAndStartWhenUrlPresent()
     {
         var flags = ServiceActionPolicy.ForRow(Svc("api", "http://localhost/"), online: false, self: false);
 
-        Assert.False(flags.Open);
+        Assert.True(flags.Open);
         Assert.True(flags.Start);
         Assert.False(flags.Restart);
         Assert.False(flags.Stop);
         Assert.False(flags.SelfHint);
         Assert.False(flags.HostedHint);
+    }
+
+    [Fact]
+    public void ForRow_Offline_NoUrl_ShowsStartOnly()
+    {
+        var flags = ServiceActionPolicy.ForRow(Svc("api"), online: false, self: false);
+
+        Assert.False(flags.Open);
+        Assert.True(flags.Start);
     }
 
     [Fact]
@@ -56,7 +65,22 @@ public class ServiceActionPolicyTests
     }
 
     [Fact]
-    public void ForGroup_AllOffline_ShowsStart()
+    public void ForGroup_AllOffline_ShowsOpenAndStartWhenUrlPresent()
+    {
+        var flags = ServiceActionPolicy.ForGroup(
+        [
+            (Svc("a", "http://localhost/a"), false, false),
+            (Svc("b", "http://localhost/b"), false, false),
+        ]);
+
+        Assert.True(flags.Open);
+        Assert.True(flags.Start);
+        Assert.False(flags.Restart);
+        Assert.False(flags.Stop);
+    }
+
+    [Fact]
+    public void ForGroup_AllOffline_NoUrls_ShowsStartOnly()
     {
         var flags = ServiceActionPolicy.ForGroup(
         [
@@ -66,8 +90,6 @@ public class ServiceActionPolicyTests
 
         Assert.False(flags.Open);
         Assert.True(flags.Start);
-        Assert.False(flags.Restart);
-        Assert.False(flags.Stop);
     }
 
     [Fact]
@@ -85,12 +107,12 @@ public class ServiceActionPolicyTests
     }
 
     [Fact]
-    public void ForGroup_Open_OnlyWhenOnlineMemberHasUrl()
+    public void ForGroup_Open_WhenMemberHasUrlEvenIfOffline()
     {
         var flags = ServiceActionPolicy.ForGroup(
         [
-            (Svc("a", "http://localhost/a"), true, false),
-            (Svc("b"), false, false),
+            (Svc("a", "http://localhost/a"), false, false),
+            (Svc("b"), true, false),
         ]);
 
         Assert.True(flags.Open);
@@ -100,15 +122,15 @@ public class ServiceActionPolicyTests
     }
 
     [Fact]
-    public void ForGroup_Mixed_ShowsStartAndStop()
+    public void ForGroup_Open_OnlyWhenOnlineMemberHasUrl()
     {
         var flags = ServiceActionPolicy.ForGroup(
         [
-            (Svc("a", "http://localhost/a"), false, false),
-            (Svc("b"), true, false),
+            (Svc("a", "http://localhost/a"), true, false),
+            (Svc("b"), false, false),
         ]);
 
-        Assert.False(flags.Open);
+        Assert.True(flags.Open);
         Assert.True(flags.Start);
         Assert.True(flags.Restart);
         Assert.True(flags.Stop);

@@ -110,8 +110,8 @@
             <div class="menu @(openMenu == "urls" ? "open" : null)">
                 <button class="btn-sec" @onclick="@(() => Toggle("urls"))">開啟前端</button>
                 <div class="menu-list">
-                    <button @onclick="@(() => { S.OpenUrls(true); openMenu = null; })">開啟前端</button>
-                    <button @onclick="@(() => { S.OpenUrls(false); openMenu = null; })">開啟全部 URL</button>
+                    <button @onclick="@(() => { _ = S.OpenUrlsAsync(true); openMenu = null; })">開啟前端</button>
+                    <button @onclick="@(() => { _ = S.OpenUrlsAsync(false); openMenu = null; })">開啟全部 URL</button>
                 </div>
             </div>
             <button class="btn-primary" @onclick="S.OpenUatDialog">UAT 求救</button>
@@ -224,15 +224,19 @@
                             var svcCollapsed = S.IsServiceGroupCollapsed(node.Key);
                             var groupActs = S.ActionsFor(node);
                             <div class="group-row" style="padding-left: @(4 + node.Depth * 14)px">
-                                <button type="button" class="group-label @(svcCollapsed ? "collapsed" : null)" title="展開／收合" aria-expanded="@(!svcCollapsed)" @onclick="@(() => S.ToggleServiceGroup(node.Key))">
+                                <button type="button" class="group-label @(svcCollapsed ? "collapsed" : null)" title="@(string.IsNullOrEmpty(node.Description) ? "展開／收合" : node.Description)" aria-expanded="@(!svcCollapsed)" @onclick="@(() => S.ToggleServiceGroup(node.Key))">
                                     <span class="group-chevron" aria-hidden="true"></span>
                                     <span>@node.Name</span>
+                                    @if (!string.IsNullOrEmpty(node.Description) && node.Depth == 0)
+                                    {
+                                        <span class="group-desc hint">@node.Description</span>
+                                    }
                                     <span class="group-count">@node.ServiceCount</span>
                                 </button>
                                 <span class="group-actions">
                                     @if (groupActs.Open)
                                     {
-                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "開啟此群組全部網址")" @onclick:stopPropagation="true" @onclick="@(() => S.OpenGroupUrls(node.Key))">開啟</button>
+                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "開啟此群組：先起離線服務與相依，再開網址。Alt：略過可選相依")" @onclick:stopPropagation="true" @onclick="@(e => S.OpenGroupUrlsAsync(node.Key, skipOptional: e.AltKey))">開啟</button>
                                     }
                                     @if (groupActs.Start)
                                     {
@@ -278,7 +282,7 @@
                                     <span>
                                         @if (acts.Open)
                                         {
-                                            <button type="button" class="btn-link" disabled="@S.JobBusy" @onclick:stopPropagation="true" @onclick="@(() => S.OpenServiceUrl(svc))">開啟</button>
+                                            <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "開啟：先起自己與相依再開瀏覽器。Alt：略過可選相依")" @onclick:stopPropagation="true" @onclick="@(e => S.OpenServiceUrlAsync(svc, skipOptional: e.AltKey))">開啟</button>
                                         }
                                         @if (acts.SelfHint)
                                         {

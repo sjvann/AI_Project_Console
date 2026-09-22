@@ -152,6 +152,7 @@ button.gh-id.is-muted { color: var(--muted); }
 .group-chevron { width: 0; height: 0; border-style: solid; border-width: 5px 0 5px 6px; border-color: transparent transparent transparent currentColor; transform: rotate(90deg); }
 .group-label.collapsed .group-chevron { transform: rotate(0deg); }
 .group-count { margin-left: auto; font-weight: 600; font-size: 11px; opacity: .75; }
+.group-desc { font-weight: 500; font-size: 11px; opacity: .85; max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px 4px; }
 .group-row .group-label { width: auto; flex: none; min-width: 0; padding: 0; }
 .group-row .group-count { margin-left: 0; flex: none; }

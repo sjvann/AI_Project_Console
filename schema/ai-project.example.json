@@ -5,6 +5,12 @@
     { "id": "platform", "label": "Platform", "root": "AiHouse.Platform" },
     { "id": "eddss", "label": "EDDSS", "root": "EventDrivenDSS" }
   ],
+  "groups": [
+    { "id": "Hub", "description": "IoT Hub 核心服務" },
+    { "id": "Platform", "description": "平台主機與前端" },
+    { "id": "EDDSS", "description": "事件驅動決策" },
+    { "id": "Lab", "description": "介接通測具" }
+  ],
   "projects": [
     { "path": "ModularIoTHub/src/ModularIoTHub.Core", "description": "Hub 領域與協定" }
   ],

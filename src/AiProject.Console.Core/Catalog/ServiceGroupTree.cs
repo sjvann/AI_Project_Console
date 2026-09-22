@@ -5,6 +5,7 @@ public sealed class ServiceGroupNode
     public required string Key { get; init; }
     public required string Name { get; init; }
     public required int Depth { get; init; }
+    public string Description { get; init; } = "";
     public IReadOnlyList<ServiceGroupNode> Children { get; init; } = [];
     public IReadOnlyList<ServiceEntry> Services { get; init; } = [];
 
@@ -33,7 +34,9 @@ public static class ServiceGroupTree
         return parts.Length == 0 ? [DefaultGroup] : parts;
     }
 
-    public static IReadOnlyList<ServiceGroupNode> Build(IEnumerable<ServiceEntry> services)
+    public static IReadOnlyList<ServiceGroupNode> Build(
+        IEnumerable<ServiceEntry> services,
+        IReadOnlyDictionary<string, string>? groupDescriptions = null)
     {
         var items = services as IList<ServiceEntry> ?? services.ToList();
         var inferTops = InferableTopGroups(items);
@@ -59,7 +62,18 @@ public static class ServiceGroupTree
             }
             parent!.Services.Add(svc);
         }
-        return roots.Select(n => n.Freeze()).ToList();
+        return roots.Select(n => n.Freeze(groupDescriptions)).ToList();
+    }
+
+    internal static string? DescriptionFor(string key, string name, IReadOnlyDictionary<string, string>? descriptions)
+    {
+        if (descriptions is null || descriptions.Count == 0)
+            return null;
+        if (descriptions.TryGetValue(key, out var byKey) && !string.IsNullOrWhiteSpace(byKey))
+            return byKey.Trim();
+        if (descriptions.TryGetValue(name, out var byName) && !string.IsNullOrWhiteSpace(byName))
+            return byName.Trim();
+        return null;
     }
 
     internal static IReadOnlyList<string> ResolveParts(ServiceEntry svc, ISet<string> inferTops)
@@ -192,12 +206,13 @@ public static class ServiceGroupTree
         public Dictionary<string, MutableNode> ChildMap { get; } = new(StringComparer.Ordinal);
         public List<ServiceEntry> Services { get; } = [];
 
-        public ServiceGroupNode Freeze() => new()
+        public ServiceGroupNode Freeze(IReadOnlyDictionary<string, string>? groupDescriptions = null) => new()
         {
             Key = key,
             Name = name,
             Depth = depth,
-            Children = ChildList.Select(c => c.Freeze()).ToList(),
+            Description = DescriptionFor(key, name, groupDescriptions) ?? "",
+            Children = ChildList.Select(c => c.Freeze(groupDescriptions)).ToList(),
             Services = Services,
         };
     }

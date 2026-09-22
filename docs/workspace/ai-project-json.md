@@ -51,9 +51,22 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `group` | 否 | 左側分組標題。可用 `Lab/HL7` 表示次群組（`/` 分段，也接受 `\`）。未寫斜線則先當單層；若同一群組裡有兩種以上共用名稱開頭（例如兩個 HL7…、兩個 SFTP…），畫面會自動拆次群組。要固定層級請寫路徑 |
 | `hostedBy` | 否 | 掛在另一個服務的 id 上，不單獨啟動 |
 | `preStart` | 否 | 相對工作區根的腳本；也可用 `ensure`。啟動該服務前先跑，失敗則不起行程。**禁止**用來啟動另一條產品線。依副檔名分流：`.py` 用 `py -3`／`python`／`python3`；`.ps1` 用 powershell／pwsh；`.sh` 用 bash |
-| `dependsOn` | 否 | 另一個行程的啟動相依（見下方）。與 `hostedBy` 不同 |
+| `dependsOn` | 否 | 另一個行程的啟動相依（見下方）。與 `hostedBy` 不同。**開啟**與**啟動**都會先起相依 |
 | `ready` | 否 | 等就緒用的 URL；空白則用 `health`。跨線相依請用這個，不要只看 port 占用 |
 | `readyTimeoutMs` | 否 | 等就緒逾時毫秒；空白預設 180000 |
+
+## 群組說明（groups）
+
+可選。頂層服務群組名稱旁顯示一句話，方便辨識（例如 Clinic vs Solution）：
+
+```json
+"groups": [
+  { "id": "Clinic", "description": "第一線臨床畫面（櫃檯／個案工作區）" },
+  { "id": "Solution", "description": "可換端點的工具與中介（含 EHR Launch／抽審）" }
+]
+```
+
+也可用 `serviceGroups`／`service_groups`。`id`（或 `name`／`key`）對齊 `services[].group` 的頂層段；`description`（或 `label`／`summary`）為短說明。未宣告的群組不顯示說明。
 
 ## 專案用途（所有專案）
 
@@ -96,9 +109,11 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 "dependsOn": [{ "id": "fhir-host", "optional": true }]
 ```
 
-`optional: true`＝軟相依：本機預設先起；使用者要接外部服務時可略過（服務列「啟動」按住 Alt 略過可選相依，按住 Shift 只起自己）。
+`optional: true`＝軟相依：本機預設先起；使用者要接外部服務時可略過（服務列「啟動」或「開啟」按住 Alt 略過可選相依；「啟動」按住 Shift 只起自己）。
 
 控制台會遞迴展開、偵測循環、把 `hostedBy` 別名解析成真正宿主。不要把這種跨線關係寫進 `startOrder` 或 `preStart`。
+
+**開啟**（有 `openUrl`）：先對目標跑與啟動相同的相依展開與就緒等待，成功後再開瀏覽器；硬相依失敗則不開 URL。
 
 ## 啟動順序與前端
 

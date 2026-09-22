@@ -102,6 +102,37 @@ public class ServiceGroupTreeTests
         Assert.Equal(2, roots[0].Services.Count);
     }
 
+    [Fact]
+    public void Build_AppliesGroupDescriptions_ToTopLevel()
+    {
+        var roots = ServiceGroupTree.Build(
+        [
+            Svc("care", "Clinic"),
+            Svc("qb", "Solution"),
+        ],
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Clinic"] = "第一線臨床畫面",
+            ["Solution"] = "工具與中介",
+        });
+
+        Assert.Equal("第一線臨床畫面", roots[0].Description);
+        Assert.Equal("工具與中介", roots[1].Description);
+    }
+
+    [Fact]
+    public void DescriptionFor_MatchesKeyOrName()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Lab"] = "測具",
+            ["Clinic"] = "第一線",
+        };
+        Assert.Equal("測具", ServiceGroupTree.DescriptionFor("Lab", "Lab", map));
+        Assert.Equal("第一線", ServiceGroupTree.DescriptionFor("Clinic", "Clinic", map));
+        Assert.Null(ServiceGroupTree.DescriptionFor("Lab/HL7", "HL7", map));
+    }
+
     private static ServiceEntry Svc(string id, string group, string? label = null) =>
         new(id, label ?? id, id, id, 80, "", "", group);
 }

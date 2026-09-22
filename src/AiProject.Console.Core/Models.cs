@@ -70,6 +70,9 @@ public sealed class ProjectCatalog
     public required JsonObject Manifest { get; init; }
     public required ScanResult Scan { get; init; }
     public string Summary { get; init; } = "";
+    /// <summary>群組 id／頂層名稱 → 短說明（來自 manifest <c>groups</c>）。</summary>
+    public IReadOnlyDictionary<string, string> GroupDescriptions { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed record BuildState(
