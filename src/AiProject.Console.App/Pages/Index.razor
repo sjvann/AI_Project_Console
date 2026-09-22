@@ -104,14 +104,14 @@
     {
     <div class="card">
         <div class="row">
-            <button class="btn-primary" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "啟動全部離線服務")" @onclick="S.StartAllAsync">啟動</button>
-            <button class="btn-danger" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "停止全部線上服務")" @onclick="S.StopAllAsync">停止全部</button>
+            <button class="btn-primary" disabled="@S.ServiceLifecycleBusy" title="@(S.ServiceLifecycleBusy ? S.ServiceLifecycleBusyTitle : "啟動全部離線服務")" @onclick="S.StartAllAsync">啟動</button>
+            <button class="btn-danger" disabled="@S.ServiceLifecycleBusy" title="@(S.ServiceLifecycleBusy ? S.ServiceLifecycleBusyTitle : "停止全部線上服務")" @onclick="S.StopAllAsync">停止全部</button>
             <span class="sep"></span>
             <div class="menu @(openMenu == "urls" ? "open" : null)">
-                <button class="btn-sec" @onclick="@(() => Toggle("urls"))">開啟前端</button>
+                <button class="btn-sec" disabled="@S.ServiceLifecycleBusy" title="@(S.ServiceLifecycleBusy ? S.ServiceLifecycleBusyTitle : "開啟前端或全部 URL")" @onclick="@(() => Toggle("urls"))">開啟前端</button>
                 <div class="menu-list">
-                    <button @onclick="@(() => { _ = S.OpenUrlsAsync(true); openMenu = null; })">開啟前端</button>
-                    <button @onclick="@(() => { _ = S.OpenUrlsAsync(false); openMenu = null; })">開啟全部 URL</button>
+                    <button disabled="@S.ServiceLifecycleBusy" @onclick="@(() => { _ = S.OpenUrlsAsync(true); openMenu = null; })">開啟前端</button>
+                    <button disabled="@S.ServiceLifecycleBusy" @onclick="@(() => { _ = S.OpenUrlsAsync(false); openMenu = null; })">開啟全部 URL</button>
                 </div>
             </div>
             <button class="btn-primary" @onclick="S.OpenUatDialog">UAT 求救</button>
@@ -223,6 +223,8 @@
                         {
                             var svcCollapsed = S.IsServiceGroupCollapsed(node.Key);
                             var groupActs = S.ActionsFor(node);
+                            var groupLocked = S.GroupActionsLocked(node);
+                            var groupLockTitle = S.GroupActionsLockTitle(node);
                             <div class="group-row" style="padding-left: @(4 + node.Depth * 14)px">
                                 <button type="button" class="group-label @(svcCollapsed ? "collapsed" : null)" title="@(string.IsNullOrEmpty(node.Description) ? "展開／收合" : node.Description)" aria-expanded="@(!svcCollapsed)" @onclick="@(() => S.ToggleServiceGroup(node.Key))">
                                     <span class="group-chevron" aria-hidden="true"></span>
@@ -236,19 +238,19 @@
                                 <span class="group-actions">
                                     @if (groupActs.Open)
                                     {
-                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "開啟此群組：先起離線服務與相依，再開網址。Alt：略過可選相依")" @onclick:stopPropagation="true" @onclick="@(e => S.OpenGroupUrlsAsync(node.Key, skipOptional: e.AltKey))">開啟</button>
+                                        <button type="button" class="btn-link" disabled="@groupLocked" title="@(groupLocked ? groupLockTitle : "開啟此群組：先起離線服務與相依，再開網址。Alt：略過可選相依")" @onclick:stopPropagation="true" @onclick="@(e => S.OpenGroupUrlsAsync(node.Key, skipOptional: e.AltKey))">開啟</button>
                                     }
                                     @if (groupActs.Start)
                                     {
-                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "啟動此群組離線服務")" @onclick:stopPropagation="true" @onclick="@(() => S.StartGroupAsync(node.Key))">啟動</button>
+                                        <button type="button" class="btn-link" disabled="@groupLocked" title="@(groupLocked ? groupLockTitle : "啟動此群組離線服務")" @onclick:stopPropagation="true" @onclick="@(() => S.StartGroupAsync(node.Key))">啟動</button>
                                     }
                                     @if (groupActs.Restart)
                                     {
-                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "重啟此群組線上服務")" @onclick:stopPropagation="true" @onclick="@(() => S.RestartGroupAsync(node.Key))">重啟</button>
+                                        <button type="button" class="btn-link" disabled="@groupLocked" title="@(groupLocked ? groupLockTitle : "重啟此群組線上服務")" @onclick:stopPropagation="true" @onclick="@(() => S.RestartGroupAsync(node.Key))">重啟</button>
                                     }
                                     @if (groupActs.Stop)
                                     {
-                                        <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "停止此群組線上服務")" @onclick:stopPropagation="true" @onclick="@(() => S.StopGroupAsync(node.Key))">停止</button>
+                                        <button type="button" class="btn-link" disabled="@groupLocked" title="@(groupLocked ? groupLockTitle : "停止此群組線上服務")" @onclick:stopPropagation="true" @onclick="@(() => S.StopGroupAsync(node.Key))">停止</button>
                                     }
                                 </span>
                             </div>
@@ -260,6 +262,8 @@
                                 var on = self || S.Health.GetValueOrDefault(svc.Id);
                                 var acts = S.ActionsFor(svc);
                                 var activity = S.ServiceActivityText(svc);
+                                var rowLocked = S.RowActionsLocked(svc);
+                                var rowLockTitle = S.RowActionsLockTitle(svc);
                                 <div class="svc @(S.SelectedServiceId == svc.Id ? "sel" : null) @(activity is not null ? "is-busy" : null)" style="padding-left: @(8 + (node.Depth + 1) * 14)px" @onclick="@(() => S.SelectService(svc.Id))">
                                     <span class="@(on ? "status-on" : "status-off")">@(self ? "本機" : on ? "線上" : "離線")</span>
                                     <span class="svc-label">
@@ -282,7 +286,7 @@
                                     <span>
                                         @if (acts.Open)
                                         {
-                                            <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "開啟：先起自己與相依再開瀏覽器。Alt：略過可選相依")" @onclick:stopPropagation="true" @onclick="@(e => S.OpenServiceUrlAsync(svc, skipOptional: e.AltKey))">開啟</button>
+                                            <button type="button" class="btn-link" disabled="@rowLocked" title="@(rowLocked ? rowLockTitle : "開啟：先起自己與相依再開瀏覽器。Alt：略過可選相依")" @onclick:stopPropagation="true" @onclick="@(e => S.OpenServiceUrlAsync(svc, skipOptional: e.AltKey))">開啟</button>
                                         }
                                         @if (acts.SelfHint)
                                         {
@@ -296,15 +300,15 @@
                                         {
                                             @if (acts.Start)
                                             {
-                                                <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : (S.HasDepends(svc) ? "啟動（含相依）。Alt：略過可選相依；Shift：只起自己" : "啟動"))" @onclick:stopPropagation="true" @onclick="@(e => S.StartOneAsync(svc, skipOptional: e.AltKey, skipDepends: e.ShiftKey))">啟動</button>
+                                                <button type="button" class="btn-link" disabled="@rowLocked" title="@(rowLocked ? rowLockTitle : (S.HasDepends(svc) ? "啟動（含相依）。Alt：略過可選相依；Shift：只起自己" : "啟動"))" @onclick:stopPropagation="true" @onclick="@(e => S.StartOneAsync(svc, skipOptional: e.AltKey, skipDepends: e.ShiftKey))">啟動</button>
                                             }
                                             @if (acts.Restart)
                                             {
-                                                <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "重啟")" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
+                                                <button type="button" class="btn-link" disabled="@rowLocked" title="@(rowLocked ? rowLockTitle : "重啟")" @onclick:stopPropagation="true" @onclick="@(() => S.RestartOneAsync(svc))">重啟</button>
                                             }
                                             @if (acts.Stop)
                                             {
-                                                <button type="button" class="btn-link" disabled="@S.JobBusy" title="@(S.JobBusy ? S.BusyReason : "停止")" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
+                                                <button type="button" class="btn-link" disabled="@rowLocked" title="@(rowLocked ? rowLockTitle : "停止")" @onclick:stopPropagation="true" @onclick="@(() => S.StopOneAsync(svc))">停止</button>
                                             }
                                         }
                                         @if (S.StartErrorFor(svc) is { } startErr)

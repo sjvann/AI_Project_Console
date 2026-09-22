@@ -33,6 +33,20 @@ public static class ProcessSupervisor
     public static async Task<bool> ProbeHealthAsync(ProjectCatalog catalog, ServiceEntry svc) =>
         ServiceCatalogBuilder.IsCurrentConsole(catalog, svc) || await ProbeHealthAsync(svc).ConfigureAwait(false);
 
+    /// <summary>平行探測全部服務。離線 HTTP 各有超時，串行會讓 20 幾個服務卡住輪詢數十秒。</summary>
+    public static async Task<Dictionary<string, bool>> ProbeAllHealthAsync(ProjectCatalog catalog)
+    {
+        var services = catalog.Services;
+        var tasks = new Task<bool>[services.Count];
+        for (var i = 0; i < services.Count; i++)
+            tasks[i] = ProbeHealthAsync(catalog, services[i]);
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < services.Count; i++)
+            health[services[i].Id] = results[i];
+        return health;
+    }
+
     public static async Task<bool> ProbeHealthAsync(ServiceEntry svc)
     {
         var url = (svc.Health ?? "").Trim();

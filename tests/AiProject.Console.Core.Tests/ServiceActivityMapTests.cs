@@ -168,14 +168,42 @@ public class ServiceActivityMapTests
     }
 
     [Fact]
-    public void Reconcile_OpeningAlwaysClears()
+    public void Reconcile_KeepsOpeningUntilExplicitClear()
     {
         var map = new Dictionary<string, string> { ["api"] = ServiceActivityMap.Opening };
 
-        var cleared = ServiceActivityMap.Reconcile(map, new Dictionary<string, bool>());
+        var cleared = ServiceActivityMap.Reconcile(map, new Dictionary<string, bool> { ["api"] = true });
+
+        Assert.Equal(0, cleared);
+        Assert.Equal(ServiceActivityMap.Opening, map["api"]);
+    }
+
+    [Fact]
+    public void ClearMatching_OnlyRemovesRequestedActivityOnThoseIds()
+    {
+        var map = new Dictionary<string, string>
+        {
+            ["api"] = ServiceActivityMap.Opening,
+            ["web"] = ServiceActivityMap.Opening,
+            ["worker"] = ServiceActivityMap.Starting,
+        };
+
+        var cleared = ServiceActivityMap.ClearMatching(map, ["api", "worker"], ServiceActivityMap.Opening);
 
         Assert.Equal(1, cleared);
-        Assert.Empty(map);
+        Assert.False(map.ContainsKey("api"));
+        Assert.Equal(ServiceActivityMap.Opening, map["web"]);
+        Assert.Equal(ServiceActivityMap.Starting, map["worker"]);
+    }
+
+    [Fact]
+    public void Has_DetectsActivityWithoutClearing()
+    {
+        var map = new Dictionary<string, string> { ["api"] = ServiceActivityMap.Opening };
+
+        Assert.True(ServiceActivityMap.Has(map, ServiceActivityMap.Opening));
+        Assert.False(ServiceActivityMap.Has(map, ServiceActivityMap.Starting));
+        Assert.Equal(ServiceActivityMap.Opening, map["api"]);
     }
 
     [Fact]

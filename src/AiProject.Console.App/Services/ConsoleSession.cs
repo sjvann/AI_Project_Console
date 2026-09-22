@@ -423,6 +423,42 @@ public sealed partial class ConsoleSession : IDisposable
             return (s, self || Health.GetValueOrDefault(s.Id), self);
         }));
 
+    /// <summary>佔用中，或列上還掛著「開啟中」——開啟在進佔用條之前就會標記，這時列上按鈕也要先停用。</summary>
+    public bool ServiceLifecycleBusy =>
+        JobBusy || ServiceActivityMap.Has(ServiceActivities, ServiceActivityMap.Opening);
+
+    public string ServiceLifecycleBusyTitle =>
+        JobBusy
+            ? BusyReason
+            : ServiceActivityMap.Label(ServiceActivityMap.Opening) ?? "忙碌中";
+
+    public bool RowActionsLocked(ServiceEntry svc) =>
+        ServiceLifecycleBusy || ServiceActivityText(svc) is not null;
+
+    public string RowActionsLockTitle(ServiceEntry svc) =>
+        ServiceLifecycleBusy
+            ? ServiceLifecycleBusyTitle
+            : ServiceActivityText(svc) ?? "忙碌中";
+
+    public bool GroupActionsLocked(ServiceGroupNode node) =>
+        ServiceLifecycleBusy || GroupActivityText(node) is not null;
+
+    public string GroupActionsLockTitle(ServiceGroupNode node) =>
+        ServiceLifecycleBusy
+            ? ServiceLifecycleBusyTitle
+            : GroupActivityText(node) ?? "忙碌中";
+
+    public string? GroupActivityText(ServiceGroupNode node)
+    {
+        foreach (var svc in node.Descendants())
+        {
+            var text = ServiceActivityText(svc);
+            if (text is not null)
+                return text;
+        }
+        return null;
+    }
+
     public IReadOnlyList<IAgentBackend> AgentBackends => AgentBackendRegistry.All;
 
     public IAgentBackend CurrentAgent => AgentBackendRegistry.Get(AgentProvider);
@@ -2668,6 +2704,11 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (!RequireCatalog())
             return;
+        if (ServiceLifecycleBusy)
+        {
+            WarnBusy();
+            return;
+        }
 
         var catalog = Catalog!;
         var runtime = Runtime!;
@@ -2677,60 +2718,67 @@ public sealed partial class ConsoleSession : IDisposable
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         MarkServiceActivity(targets, ServiceActivityMap.Opening, withHosted: false);
-
-        if (startIds.Count == 0)
+        try
         {
-            foreach (var svc in targets)
-                CliUtil.OpenUrl(svc.OpenUrl);
-            return;
-        }
-
-        var plan = ServiceStartPlanner.ForTargets(catalog, startIds, skipOptional);
-        var toStart = plan.Order.Count > 0 ? plan.Order : targets.Where(s => startIds.Contains(s.Id)).ToList();
-        if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
-            return;
-
-        await RunJobAsync(jobLabel, async () =>
-        {
-            var results = await ProcessSupervisor.StartTargetsAsync(
-                catalog,
-                runtime,
-                startIds,
-                skipOptional: skipOptional,
-                onStatus: status =>
-                {
-                    JobText = status;
-                    Notify();
-                }).ConfigureAwait(false);
-            ApplyStartResults(results);
-
-            var opened = 0;
-            var blocked = new List<string>();
-            foreach (var svc in targets)
+            await Task.Yield();
+            if (startIds.Count == 0)
             {
-                if (string.IsNullOrEmpty(svc.OpenUrl))
-                    continue;
-                if (!string.IsNullOrEmpty(svc.HostedBy) || IsSelfService(svc))
-                {
+                foreach (var svc in targets)
                     CliUtil.OpenUrl(svc.OpenUrl);
-                    opened++;
-                    continue;
-                }
-                if (!ServiceOpenEnsure.CanOpenUrl(svc.Id, results))
-                {
-                    blocked.Add(svc.Label);
-                    continue;
-                }
-                CliUtil.OpenUrl(svc.OpenUrl);
-                opened++;
+                return;
             }
 
-            if (opened == 0 && blocked.Count > 0)
-                return $"無法開啟：{string.Join("、", blocked)}";
-            if (blocked.Count > 0)
-                return $"已開啟 {opened} 個；略過失敗：{string.Join("、", blocked)}";
-            return null;
-        }).ConfigureAwait(false);
+            var plan = ServiceStartPlanner.ForTargets(catalog, startIds, skipOptional);
+            var toStart = plan.Order.Count > 0 ? plan.Order : targets.Where(s => startIds.Contains(s.Id)).ToList();
+            if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
+                return;
+
+            await RunJobAsync(jobLabel, async () =>
+            {
+                var results = await ProcessSupervisor.StartTargetsAsync(
+                    catalog,
+                    runtime,
+                    startIds,
+                    skipOptional: skipOptional,
+                    onStatus: status =>
+                    {
+                        JobText = status;
+                        Notify();
+                    }).ConfigureAwait(false);
+                ApplyStartResults(results);
+
+                var opened = 0;
+                var blocked = new List<string>();
+                foreach (var svc in targets)
+                {
+                    if (string.IsNullOrEmpty(svc.OpenUrl))
+                        continue;
+                    if (!string.IsNullOrEmpty(svc.HostedBy) || IsSelfService(svc))
+                    {
+                        CliUtil.OpenUrl(svc.OpenUrl);
+                        opened++;
+                        continue;
+                    }
+                    if (!ServiceOpenEnsure.CanOpenUrl(svc.Id, results))
+                    {
+                        blocked.Add(svc.Label);
+                        continue;
+                    }
+                    CliUtil.OpenUrl(svc.OpenUrl);
+                    opened++;
+                }
+
+                if (opened == 0 && blocked.Count > 0)
+                    return $"無法開啟：{string.Join("、", blocked)}";
+                if (blocked.Count > 0)
+                    return $"已開啟 {opened} 個；略過失敗：{string.Join("、", blocked)}";
+                return null;
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            ClearServiceActivity(targets, ServiceActivityMap.Opening);
+        }
     }
 
     public void Doctor()
@@ -5306,6 +5354,12 @@ public sealed partial class ConsoleSession : IDisposable
         Notify();
     }
 
+    private void ClearServiceActivity(IEnumerable<ServiceEntry> targets, string activity)
+    {
+        if (ServiceActivityMap.ClearMatching(ServiceActivities, targets.Select(t => t.Id), activity) > 0)
+            Notify();
+    }
+
     private void AppendLogTail(bool full = false)
     {
         if (Catalog is null || Runtime is null)
@@ -5573,22 +5627,16 @@ public sealed partial class ConsoleSession : IDisposable
                 {
                     if (_occupancyOwned)
                         PublishOccupancyProgress();
-                    if (ServiceActivityMap.ClearOpening(ServiceActivities) > 0)
-                    { }
                     Notify();
                     await Task.Delay(200, _cts.Token).ConfigureAwait(false);
                     continue;
                 }
 
-                if (ServiceActivityMap.ClearOpening(ServiceActivities) > 0)
-                    Notify();
                 healthEvery++;
                 if (healthEvery % 3 == 0 && Catalog is not null)
                 {
                     var catalog = Catalog;
-                    var health = new Dictionary<string, bool>();
-                    foreach (var svc in catalog.Services)
-                        health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(catalog, svc).ConfigureAwait(false);
+                    var health = await ProcessSupervisor.ProbeAllHealthAsync(catalog).ConfigureAwait(false);
                     Health.Clear();
                     foreach (var kv in health)
                         Health[kv.Key] = kv.Value;

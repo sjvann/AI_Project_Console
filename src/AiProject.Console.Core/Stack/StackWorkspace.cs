@@ -446,13 +446,8 @@ public sealed class StackWorkspace
         });
     }
 
-    public async Task<Dictionary<string, bool>> ProbeHealthAsync()
-    {
-        var health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        foreach (var svc in Catalog.Services)
-            health[svc.Id] = await ProcessSupervisor.ProbeHealthAsync(Catalog, svc).ConfigureAwait(false);
-        return health;
-    }
+    public Task<Dictionary<string, bool>> ProbeHealthAsync() =>
+        ProcessSupervisor.ProbeAllHealthAsync(Catalog);
 
     ServiceEntry RequireService(string id)
     {

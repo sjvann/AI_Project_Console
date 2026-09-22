@@ -41,6 +41,44 @@ public class ProcessSupervisorHealthTests
     }
 
     [Fact]
+    public async Task ProbeAllHealth_RunsInParallelAndKeepsIds()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var root = Path.Combine(Path.GetTempPath(), "probe-all-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var catalog = new ProjectCatalog
+            {
+                Root = root,
+                Name = "t",
+                Services =
+                [
+                    new ServiceEntry("on", "On", "On", "On", null, "tcp:" + port, "", "g"),
+                    new ServiceEntry("off", "Off", "Off", "Off", null, "tcp:" + (port == 1 ? 2 : 1), "", "g"),
+                ],
+                Projects = [],
+                StartOrder = [],
+                Frontend = "",
+                Manifest = new JsonObject(),
+                Scan = new ScanResult(root, []),
+            };
+
+            var health = await ProcessSupervisor.ProbeAllHealthAsync(catalog);
+
+            Assert.True(health["on"]);
+            Assert.False(health["off"]);
+        }
+        finally
+        {
+            listener.Stop();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void DeadStartedIds_MarksStalePidAndHostedChild()
     {
         var root = Path.Combine(Path.GetTempPath(), "ai-pid-" + Guid.NewGuid().ToString("N"));

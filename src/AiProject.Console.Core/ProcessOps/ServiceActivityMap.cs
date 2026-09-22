@@ -59,6 +59,32 @@ public static class ServiceActivityMap
         return n;
     }
 
+    /// <summary>只清指定 id 上仍是 <paramref name="activity"/> 的列，避免誤清啟動中／停止中。</summary>
+    public static int ClearMatching(IDictionary<string, string> map, IEnumerable<string> ids, string activity)
+    {
+        var n = 0;
+        foreach (var id in ids)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            if (!map.TryGetValue(id, out var current) || current != activity)
+                continue;
+            map.Remove(id);
+            n++;
+        }
+        return n;
+    }
+
+    public static bool Has(IReadOnlyDictionary<string, string> map, string activity)
+    {
+        foreach (var value in map.Values)
+        {
+            if (value == activity)
+                return true;
+        }
+        return false;
+    }
+
     public static int ClearFailed(IDictionary<string, string> map, IReadOnlyDictionary<string, string> errors)
     {
         var n = 0;
@@ -73,6 +99,7 @@ public static class ServiceActivityMap
     /// <summary>
     /// 健康檢查已對上預期狀態，或啟動／重啟已失敗時清掉過渡標記。
     /// 重啟要等再度上線才清；不要用「工作結束當下」的舊健康狀態提前清掉。
+    /// 「開啟中」由開啟動作自己清：輪詢可能卡在一輪健康檢查，不能把瀏覽器還沒開完的列提前抹掉。
     /// <paramref name="deadStarted"/>：本控制台寫過 pid、行程已死——桌面程式沒 HTTP 時也要結束「啟動中…」。
     /// </summary>
     public static int Reconcile(
@@ -102,7 +129,7 @@ public static class ServiceActivityMap
             {
                 Starting or Restarting => on,
                 Stopping => !on,
-                Opening => true,
+                Opening => false,
                 _ => true,
             };
             if (!done)
