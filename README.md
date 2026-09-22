@@ -8,7 +8,7 @@
 
 本機桌面程式 · 卡住時把說明交給本機 Agent（預設 [Cursor](https://cursor.com/)）
 
-[![版本 0.6.15](https://img.shields.io/badge/version-0.6.15-0b6e56?style=for-the-badge)](docs/user/whats-new.md)
+[![版本 0.6.16](https://img.shields.io/badge/version-0.6.16-0b6e56?style=for-the-badge)](docs/user/whats-new.md)
 [![Windows x64](https://img.shields.io/badge/Windows-x64-1aa37c?style=for-the-badge)](https://github.com/sjvann/AI_Project_Console/releases)
 [![使用文件](https://img.shields.io/badge/docs-GitHub%20Pages-0b6e56?style=for-the-badge)](https://sjvann.github.io/AI_Project_Console/)
 [![保留一切權利](https://img.shields.io/badge/license-All%20Rights%20Reserved-d4a017?style=for-the-badge)](docs/legal/copyright.md)
@@ -102,7 +102,7 @@
 </tr>
 </table>
 
-現行出貨：**0.6.15**（Windows x64）。[現行版本](docs/user/whats-new.md) · [版權與授權](docs/legal/copyright.md)（公開可見，**保留一切權利**，不是開源授權）。
+現行出貨：**0.6.16**（Windows x64）。[現行版本](docs/user/whats-new.md) · [版權與授權](docs/legal/copyright.md)（公開可見，**保留一切權利**，不是開源授權）。
 
 <details>
 <summary><strong>從原始碼執行（維護者）</strong></summary>
