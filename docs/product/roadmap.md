@@ -10,8 +10,8 @@ title: 路線圖
 
 - Windows x64 安裝包：掃描、需重編、啟停、Log、前端 URL
 - GitHub：clone、提交、同步、PR、Actions、Release、檢查更新
-- 需求工作台與進件關卡
-- 工時儀表、CSV／Markdown 匯出、需求台對帳
+- 需求工作台：開 GitHub Issue、暫停／收回、驗收
+- 工時儀表、CSV／Markdown 匯出
 - Agent 求救、MCP、審計、專案問答（多來源 OpenAI 相容端點）
 - 被管專案的 DocFX／GitHub Pages 輔助
 

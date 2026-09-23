@@ -5664,9 +5664,6 @@ public sealed partial class ConsoleSession : IDisposable
         IntakeBusy = false;
         Collaborators = [];
         GovernanceIssues = [];
-        HoursInbox = [];
-        HoursInboxHint = "";
-        ReviewerDraft = "";
         ClearIssueLists();
         ClearDocsState();
     }

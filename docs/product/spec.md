@@ -154,7 +154,7 @@ GitHub 帳號變更時，人資合併到同一 `personId`，舊時段不丟。�
 
 - 掃描服務、需重編、一鍵啟停、Log、文件／GitHub Pages
 - GitHub：clone、提交、PR、Actions、Release
-- 需求工作台：進件、驗收條件、Issue、設計變更關卡
+- 需求工作台：開 GitHub Issue、指派、暫停／收回、驗收結案
 - 工時：開啟專案起算、GitHub 歸戶、週月季年、CSV／Markdown 匯出、需求台對帳
 - Agent／MCP 與審計、專案問答（多來源）
 

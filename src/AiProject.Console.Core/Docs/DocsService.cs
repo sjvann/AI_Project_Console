@@ -889,9 +889,9 @@ public static class DocsService
                 "名詞",
                 Intro(ctx, "列出專案裡會反覆出現的詞。")),
             "product/intake.md" => Page(
-                "需求與變更",
-                "需求與變更",
-                Intro(ctx, "寫需求與設計變更怎麼進件、拆任務、驗收。新需求從無到有（UI 附草圖）；設計變更改既有行為（填現況／期望／影響，上傳分析／設計文件，UI 附剪圖）。進件表在 docs/product/intake.json。")),
+                "進件",
+                "進件",
+                Intro(ctx, "寫怎麼把問題開成 GitHub Issue：標題、說明、可選指派與截圖。進件表在 docs/product/intake.json。")),
             "engineering/architecture.md" => Page(
                 "架構",
                 "架構",
@@ -992,7 +992,7 @@ public static class DocsService
               href: product/overview.md
             - name: 名詞
               href: product/glossary.md
-            - name: 需求與變更
+            - name: 進件
               href: product/intake.md
         - name: 工程
           items:

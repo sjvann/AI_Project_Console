@@ -19,7 +19,7 @@ title: 詞彙
 | **MCP** | Agent 呼叫控制台的通道（查狀態、編譯、啟停） |
 | **專案問答** | 控制台內對談，用你設定的 OpenAI 相容端點＋本機唯讀工具，不外開 IDE |
 | **ai-project.json** | 可選的工作區清單。沒有也能掃描；多倉或服務對不上時再補 |
-| **進件** | 需求工作台裡的需求（REQ）或設計變更（ECR），發出後變 GitHub Issue |
+| **進件** | 需求工作台裡開出的 GitHub Issue（本機表在 `docs/product/intake.json`） |
 
 ## 三層產品（規劃為主）
 

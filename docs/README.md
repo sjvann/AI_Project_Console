@@ -11,7 +11,7 @@
 | 角色 | 目標 | 從這裡開始 |
 |------|------|------------|
 | **一般使用者** | 操作控制台、跑本機堆疊 | [現行版本](user/whats-new.md) · [安裝與第一次使用](user/getting-started.md) |
-| **專案經理** | 需求／設計變更、發出任務、驗收 | [需求工作台](user/intake.md) |
+| **專案經理** | 開 GitHub Issue、指派、驗收 | [需求工作台](user/intake.md) |
 | **工作區負責人** | 讓控制台正確掃到多個倉／服務 | [工作區設定（ai-project.json）](workspace/ai-project-json.md) |
 | **團隊導入** | 帶新人走完掃描 → 編譯 → 啟動 → 求救 | [90 分鐘導入](team/trial-90min.md) |
 | **要用 Agent** | 求救後端、MCP、專案問答 | [Agent 後端](agent/backends.md) |

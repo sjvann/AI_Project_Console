@@ -32,7 +32,7 @@ _disableNextArticle: true
 <section class="home-section" aria-labelledby="home-buyers">
 <h2 id="home-buyers">給軟體公司決策者</h2>
 <div class="home-cards">
-  <a class="home-card" href="docs/salekit/one-pager.md"><strong>現況可買</strong><span>本機控制台：堆疊真相、進件關卡、工時對帳、Agent 閉環。90 分鐘用自己的倉試完。</span></a>
+  <a class="home-card" href="docs/salekit/one-pager.md"><strong>現況可買</strong><span>本機控制台：堆疊真相、開 GitHub Issue、工時對帳、Agent 閉環。90 分鐘用自己的倉試完。</span></a>
   <a class="home-card" href="docs/product/vision.md"><strong>規劃中</strong><span>公司平台（Blazor Web App）：人員與外包、派工、專案與客戶、預算、薪資、戰情室。尚未出貨，見產品規格。</span></a>
 </div>
 </section>

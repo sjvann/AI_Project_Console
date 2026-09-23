@@ -13,7 +13,7 @@ Windows x64 本機桌面：**AI_Project 控制台**。選專案目錄後可：
 - 掃描服務與編譯專案，標出需重編
 - 一鍵啟動／停止、看 Log、開前端
 - GitHub：clone、提交、同步、PR、Actions、Release、檢查更新
-- 需求工作台：進件關卡、驗收到報帳
+- 需求工作台：開 GitHub Issue、指派、驗收結案
 - 工時從開啟專案起算，可匯出 CSV／Markdown
 - Agent 求救、MCP 回呼、審計
 - 專案問答：OpenAI 相容多來源（本機 Ollama／LM Studio，或 OpenAI／Groq／OpenRouter），只讀堆疊事實

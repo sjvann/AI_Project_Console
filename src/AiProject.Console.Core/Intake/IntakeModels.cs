@@ -4,11 +4,17 @@ namespace AiProject.Console.Core.Intake;
 
 public static class IntakeKinds
 {
+    public const string Issue = "issue";
     public const string Requirement = "requirement";
     public const string DesignChange = "design-change";
 
     public static string Label(string? kind) =>
-        kind == DesignChange ? "設計變更" : "需求";
+        kind switch
+        {
+            DesignChange => "設計變更",
+            Requirement => "需求",
+            _ => "Issue",
+        };
 }
 
 public static class IntakeHolds
@@ -34,45 +40,51 @@ public sealed class IntakeVisual
 public static class IntakeStages
 {
     public const string Draft = "draft";
-    public const string DesignReady = "design";
-    public const string Split = "split";
     public const string Issued = "issued";
     public const string Doing = "doing";
+    public const string Accepted = "accepted";
+
+    public const string DesignReady = "design";
+    public const string Split = "split";
     public const string Verify = "verify";
     public const string Review = "review";
     public const string Merged = "merged";
     public const string Released = "released";
     public const string Deployed = "deployed";
-    public const string Accepted = "accepted";
     public const string Billed = "billed";
 
     public static IReadOnlyList<(string Id, string Label)> All { get; } =
     [
         (Draft, "草稿"),
-        (DesignReady, "設計就緒"),
-        (Split, "已拆解"),
         (Issued, "已發出"),
         (Doing, "實作中"),
-        (Verify, "驗證中"),
-        (Review, "可審查"),
-        (Merged, "已入主線"),
-        (Released, "已發行"),
-        (Deployed, "已部署"),
         (Accepted, "已驗收"),
-        (Billed, "已報帳"),
     ];
+
+    public static string Canonical(string? stage) =>
+        stage switch
+        {
+            Issued => Issued,
+            Doing => Doing,
+            Accepted or Billed => Accepted,
+            Verify or Review or Merged or Released or Deployed => Doing,
+            DesignReady or Split or Draft => Draft,
+            _ => Draft,
+        };
 
     public static string Label(string? stage)
     {
-        var found = All.FirstOrDefault(s => s.Id == stage);
+        var id = Canonical(stage);
+        var found = All.FirstOrDefault(s => s.Id == id);
         return string.IsNullOrEmpty(found.Label) ? "草稿" : found.Label;
     }
 
     public static int IndexOf(string? stage)
     {
+        var id = Canonical(stage);
         for (var i = 0; i < All.Count; i++)
         {
-            if (All[i].Id == stage)
+            if (All[i].Id == id)
                 return i;
         }
         return 0;
@@ -112,7 +124,7 @@ public sealed class IntakeWorkItem
 public sealed class IntakeRecord
 {
     public string Id { get; set; } = "";
-    public string Kind { get; set; } = IntakeKinds.Requirement;
+    public string Kind { get; set; } = IntakeKinds.Issue;
     public string Title { get; set; } = "";
     public string Body { get; set; } = "";
     public string ProductLine { get; set; } = "";
@@ -146,6 +158,19 @@ public sealed class IntakeRecord
     public bool IsDesignChange => Kind == IntakeKinds.DesignChange;
 
     [JsonIgnore]
+    public string Assignee
+    {
+        get => Items.Count > 0 ? Items[0].Assignee : "";
+        set => EnsurePrimaryItem().Assignee = value ?? "";
+    }
+
+    [JsonIgnore]
+    public string AssigneeText => string.IsNullOrWhiteSpace(Assignee) ? "未指派" : Assignee.Trim();
+
+    [JsonIgnore]
+    public IntakeWorkItem PrimaryItem => EnsurePrimaryItem();
+
+    [JsonIgnore]
     public bool IsPaused => Hold == IntakeHolds.Paused;
 
     [JsonIgnore]
@@ -165,6 +190,41 @@ public sealed class IntakeRecord
 
     [JsonIgnore]
     public int ClosedIssueGuess => Items.Count(i => i.HasIssue && string.Equals(i.PrState, "MERGED", StringComparison.OrdinalIgnoreCase));
+
+    [JsonIgnore]
+    public bool CountsAsIssued => IssuedCount > 0 && !IsRecalled;
+
+    [JsonIgnore]
+    public bool CountsAsPendingAcceptance => CountsAsIssued && string.IsNullOrEmpty(AcceptedAt);
+
+    public IntakeWorkItem EnsurePrimaryItem()
+    {
+        if (Items.Count == 0)
+        {
+            Items.Add(new IntakeWorkItem
+            {
+                Id = "WI-" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant(),
+            });
+        }
+        var item = Items[0];
+        if (!string.IsNullOrWhiteSpace(Title))
+            item.Title = Title;
+        if (!string.IsNullOrWhiteSpace(GithubSlug))
+            item.GithubSlug = GithubSlug;
+        return item;
+    }
+
+    public void MergeAttachments()
+    {
+        if (Crops.Count == 0)
+            return;
+        foreach (var crop in Crops.Where(c => !string.IsNullOrWhiteSpace(c.Path)))
+        {
+            if (!Sketches.Any(s => string.Equals(s.Path, crop.Path, StringComparison.OrdinalIgnoreCase)))
+                Sketches.Add(crop);
+        }
+        Crops.Clear();
+    }
 }
 
 public sealed class IntakeDocument

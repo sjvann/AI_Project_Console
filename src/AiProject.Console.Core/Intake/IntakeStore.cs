@@ -44,19 +44,19 @@ public static class IntakeStore
         File.WriteAllText(path, JsonSerializer.Serialize(document, JsonOpts) + Environment.NewLine);
     }
 
-    public static IntakeRecord NewRecord(string kind, string requester = "")
+    public static IntakeRecord NewRecord(string requester = "")
     {
-        var prefix = kind == IntakeKinds.DesignChange ? "ECR" : "REQ";
         var day = DateTime.Now.ToString("yyyyMMdd");
-        return new IntakeRecord
+        var record = new IntakeRecord
         {
-            Id = $"{prefix}-{day}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}",
-            Kind = kind == IntakeKinds.DesignChange ? IntakeKinds.DesignChange : IntakeKinds.Requirement,
+            Id = $"ISS-{day}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}",
+            Kind = IntakeKinds.Issue,
             OpenedOn = DateTime.Now.ToString("yyyy-MM-dd"),
             Requester = requester,
             Stage = IntakeStages.Draft,
-            Items = [],
+            Items = [NewWorkItem()],
         };
+        return record;
     }
 
     public static IntakeWorkItem NewWorkItem() =>

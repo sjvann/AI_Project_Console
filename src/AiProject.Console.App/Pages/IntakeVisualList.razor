@@ -20,8 +20,8 @@ else
                 {
                     <span class="intake-visual-miss">@visual.Path</span>
                 }
-                <textarea @bind="visual.Note" @bind:after="S.PersistIntake" placeholder="@(NoteRequired ? "這張要改什麼（必填）" : "可選說明")"></textarea>
-                <button type="button" class="btn-sec btn-compact" @onclick="@(() => S.RemoveIntakeVisual(Kind, visual.Path))">移除</button>
+                <textarea @bind="visual.Note" @bind:after="S.PersistIntake" placeholder="可選說明"></textarea>
+                <button type="button" class="btn-sec btn-compact" @onclick="@(() => S.RemoveIntakeVisual(visual.Path))">移除</button>
             </div>
         }
     </div>
@@ -29,11 +29,5 @@ else
 
 @code {
     [Parameter, EditorRequired]
-    public string Kind { get; set; } = "sketch";
-
-    [Parameter, EditorRequired]
     public List<IntakeVisual> Items { get; set; } = [];
-
-    [Parameter]
-    public bool NoteRequired { get; set; }
 }
