@@ -94,3 +94,4 @@ MCP 維持控制台本機（現況）。公司平台**不**把薪資工具暴露
 - 備份由我們（SaaS）或後期自架客戶負責。
 - 版本與控制台獨立發版；接收 API 要相容至少一個控制台大版本。
 - 控制台發版不綁任何一家公司；工作區公布自己的接收 Base URL（或由仲介成交事件寫入控制台可發現的目的地）。
+- P1 桌面資產：Windows `*-win-x64-setup.exe`；macOS／Linux 由 GitHub Actions Pack Unix 產出對應 RID 的 zip（可另附 `.deb`）。Unix 正式檔禁止用 Windows 交叉編譯 zip。見 [macOS／Linux 安裝包](../maintainer/pack-unix.md)。Apple 公證尚未完成。

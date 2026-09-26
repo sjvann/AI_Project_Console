@@ -23,7 +23,7 @@ _disableNextArticle: true
 <section class="home-section" aria-labelledby="home-start">
 <h2 id="home-start">三分鐘開始</h2>
 <ol class="home-steps">
-  <li>從 <a href="https://github.com/sjvann/AI_Project_Console/releases">Releases</a> 下載 <code>*-win-x64-setup.exe</code> 或 zip。Windows 10／11 需 <a href="https://developer.microsoft.com/microsoft-edge/webview2/">WebView2</a>（通常已內建）。</li>
+  <li>從 <a href="https://github.com/sjvann/AI_Project_Console/releases">Releases</a> 下載對應平台安裝包：Windows <code>*-win-x64-setup.exe</code> 或 zip；macOS <code>*-osx-arm64.zip</code>；Linux zip 或 <code>.deb</code>。Windows 10／11 需 <a href="https://developer.microsoft.com/microsoft-edge/webview2/">WebView2</a>（通常已內建）。macOS 未公證時請右鍵打開。</li>
   <li>開啟控制台，按「選擇專案目錄…」或「從 GitHub 開啟…」。</li>
   <li>有「需重編」先「建置 → 編譯過期項目」，再按「啟動」，然後「開啟前端」。</li>
 </ol>

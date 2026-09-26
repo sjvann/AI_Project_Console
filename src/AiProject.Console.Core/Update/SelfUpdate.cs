@@ -77,7 +77,39 @@ public static class SelfUpdate
             // ignore
         }
 
+        if (FindContainingMacApp(dir) is not null)
+            return InstallKind.Installed;
+        if (File.Exists(Path.Combine(dir, AppInfo.InstalledMarkerName)))
+            return InstallKind.Installed;
+
         return InstallKind.Portable;
+    }
+
+    public static string? FindContainingMacApp(string? dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir))
+            return null;
+        DirectoryInfo? cur;
+        try
+        {
+            cur = new DirectoryInfo(Path.GetFullPath(dir));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < 8 && cur is not null; i++, cur = cur.Parent)
+        {
+            if (cur.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+                return cur.FullName;
+            if (cur.Name.Equals("MacOS", StringComparison.OrdinalIgnoreCase)
+                && cur.Parent?.Name.Equals("Contents", StringComparison.OrdinalIgnoreCase) == true
+                && cur.Parent.Parent?.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase) == true)
+                return cur.Parent.Parent.FullName;
+        }
+
+        return null;
     }
 
     public static UpdateApplyMode ResolveApplyMode(AvailableUpdate update, InstallKind kind)
@@ -206,7 +238,7 @@ public static class SelfUpdate
     public static string LaunchApply(string downloadedPath, UpdateApplyMode mode, string? installDir = null, bool silent = true)
     {
         var target = Path.GetFullPath(installDir ?? AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : "AI_Project_Console");
+        var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : AppInfo.UnixExeName);
         if (mode == UpdateApplyMode.Installer)
         {
             StartInstaller(downloadedPath, target, silent);
@@ -327,7 +359,7 @@ public static class SelfUpdate
         if (kind == InstallKind.Development)
             return DevelopmentHint(update);
         var rid = RuntimeId();
-        return $"Release {update.Tag} 沒有適用於 {rid} 的安裝檔（需要檔名含 {rid} 且以 -setup.exe 或 .zip 結尾）。\n\n自動更新因此改開 GitHub 頁。請用 GitHub 操作台發行此控制台時附加安裝包。\n{update.HtmlUrl}";
+        return $"Release {update.Tag} 沒有適用於 {rid} 的安裝檔（需要檔名含 {rid} 且以 -setup.exe 或 .zip 結尾）。\n\n自動更新因此改開 GitHub 頁。Windows 請用 GitHub 操作台附加安裝包；macOS／Linux 請跑 Pack Unix 工作流程。\n{update.HtmlUrl}";
     }
 
     public static string CannotApplyLocalFileHint(InstallKind kind, string path)
@@ -335,7 +367,7 @@ public static class SelfUpdate
         if (kind == InstallKind.Development)
             return "目前是從原始碼／開發目錄執行，無法用安裝檔覆蓋。\n請 git pull 後重新編譯，或改用已安裝／zip 版。";
         var name = Path.GetFileName(path);
-        return $"無法從「{name}」安裝。請選擇安裝程式（.exe）或 zip 壓縮包。";
+        return $"無法從「{name}」安裝。請選擇安裝程式（Windows 的 .exe）或對應平台的 zip 壓縮包。";
     }
 
     public static bool IsSetupAsset(string name, string runtimeId) =>
@@ -362,10 +394,11 @@ public static class SelfUpdate
         var scriptPath = Path.GetFullPath(script);
         if (!OperatingSystem.IsWindows())
         {
+            TryMarkUnixExecutable(scriptPath);
             var started = Process.Start(new ProcessStartInfo
             {
                 FileName = "/bin/bash",
-                Arguments = "\"" + scriptPath + "\"",
+                Arguments = ShQuote(scriptPath),
                 UseShellExecute = false,
                 CreateNoWindow = true,
             });
@@ -387,22 +420,106 @@ public static class SelfUpdate
         return File.Exists(system) ? system : "powershell.exe";
     }
 
-    private static string WriteSwapScript(string extractDir, string targetDir, int pid, string exePath)
+    public static string BuildPortableSwapScript(string extractDir, string targetDir, int pid, string exePath)
     {
-        var script = Path.Combine(StagingDirectory(), "apply.ps1");
+        if (OperatingSystem.IsWindows())
+            return BuildWindowsPortableSwapScript(extractDir, targetDir, pid, exePath);
+        return BuildUnixPortableSwapScript(extractDir, targetDir, pid, exePath);
+    }
+
+    internal static string BuildWindowsPortableSwapScript(string extractDir, string targetDir, int pid, string exePath)
+    {
         var src = PsQuote(extractDir);
         var dst = PsQuote(targetDir);
         var exe = PsQuote(exePath);
-        File.WriteAllText(script,
+        return
             "$ErrorActionPreference = 'Stop'\r\n" +
             "while (Get-Process -Id " + pid + " -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }\r\n" +
             "Start-Sleep -Seconds 1\r\n" +
             "Copy-Item -Path (Join-Path " + src + " '*') -Destination " + dst + " -Recurse -Force\r\n" +
-            "Start-Process -FilePath " + exe + "\r\n");
+            "Start-Process -FilePath " + exe + "\r\n";
+    }
+
+    internal static string BuildUnixPortableSwapScript(string extractDir, string targetDir, int pid, string exePath)
+    {
+        var src = ShQuote(extractDir);
+        var dst = ShQuote(targetDir);
+        var exe = ShQuote(exePath);
+        var bundle = ShQuote(AppInfo.MacAppBundleName);
+        var unixExe = ShQuote(AppInfo.UnixExeName);
+        return
+            "#!/usr/bin/env bash\n" +
+            "set -euo pipefail\n" +
+            "pid=" + pid + "\n" +
+            "src=" + src + "\n" +
+            "dst=" + dst + "\n" +
+            "exe=" + exe + "\n" +
+            "bundle=" + bundle + "\n" +
+            "unix_exe=" + unixExe + "\n" +
+            "while kill -0 \"$pid\" 2>/dev/null; do sleep 1; done\n" +
+            "sleep 1\n" +
+            "app=\n" +
+            "if [ -d \"$src/$bundle\" ]; then app=\"$src/$bundle\"; fi\n" +
+            "if [ -z \"$app\" ]; then\n" +
+            "  for cand in \"$src\"/*.app; do\n" +
+            "    [ -d \"$cand\" ] || continue\n" +
+            "    app=\"$cand\"\n" +
+            "    break\n" +
+            "  done\n" +
+            "fi\n" +
+            "if [ -n \"$app\" ]; then\n" +
+            "  dest_app=\"$dst\"\n" +
+            "  while [ \"$dest_app\" != \"/\" ] && [ \"$dest_app\" != \".\" ]; do\n" +
+            "    case \"$dest_app\" in\n" +
+            "      *.app) break ;;\n" +
+            "    esac\n" +
+            "    dest_app=$(dirname \"$dest_app\")\n" +
+            "  done\n" +
+            "  case \"$dest_app\" in\n" +
+            "    *.app) ;;\n" +
+            "    *) dest_app=$(dirname \"$dst\")/$bundle ;;\n" +
+            "  esac\n" +
+            "  rm -rf \"$dest_app\"\n" +
+            "  mv \"$app\" \"$dest_app\"\n" +
+            "  exe=\"$dest_app/Contents/MacOS/$unix_exe\"\n" +
+            "else\n" +
+            "  cp -R \"$src\"/. \"$dst\"/\n" +
+            "fi\n" +
+            "if [ -f \"$exe\" ]; then\n" +
+            "  chmod +x \"$exe\"\n" +
+            "  nohup \"$exe\" >/dev/null 2>&1 &\n" +
+            "fi\n";
+    }
+
+    private static string WriteSwapScript(string extractDir, string targetDir, int pid, string exePath)
+    {
+        var script = Path.Combine(StagingDirectory(), OperatingSystem.IsWindows() ? "apply.ps1" : "apply.sh");
+        File.WriteAllText(script, BuildPortableSwapScript(extractDir, targetDir, pid, exePath));
+        TryMarkUnixExecutable(script);
         return script;
     }
 
+    public static void TryMarkUnixExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return;
+        try
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            // ignore: zip 或檔案系統不支援 Unix mode
+        }
+    }
+
     private static string PsQuote(string path) => "'" + path.Replace("'", "''") + "'";
+
+    internal static string ShQuote(string path) => "'" + path.Replace("'", "'\\''") + "'";
 
     private static string StagingDirectory()
     {

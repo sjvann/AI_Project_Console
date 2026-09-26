@@ -19,8 +19,10 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 | 項目 | 誰需要 | 說明 |
 |------|--------|------|
-| Windows 10／11（64 位元） | 所有人 | 目前正式安裝包是 Windows x64 |
-| [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | 所有人 | Win10／11 通常已內建；若視窗打不開再裝 |
+| Windows 10／11（64 位元）、macOS 13+ 或 Linux x64／ARM64 | 擇一 | 從 Releases 下載對應 RID 的安裝包 |
+| [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | Windows | Win10／11 通常已內建；若視窗打不開再裝 |
+| WebKit（系統內建） | macOS | 未公證時第一次請對 `.app` 右鍵「打開」，或 `xattr -cr AI_Project_Console.app` |
+| GTK 3 與 WebKitGTK | Linux | Ubuntu／Debian：`sudo apt install libgtk-3-0 libnotify4 libwebkit2gtk-4.1-0`（沒有 4.1 則裝 `libwebkit2gtk-4.0-0`） |
 | [.NET SDK](https://dotnet.microsoft.com/download) | 工作區有 .NET 專案時 | 控制台本身已內含執行環境；**被管理的 .NET 專案**仍需要 `dotnet`。沒裝時環境體檢可協助安裝 |
 | [Node.js LTS](https://nodejs.org/) | 有 `package.json`／前端專案時 | 體檢偵測到會提示；可一鍵用 winget 安裝 |
 | [Python](https://www.python.org/downloads/) | 有 `pyproject.toml`、`requirements.txt` 或 Python 專案時 | 同上。安裝時請勾選 Add to PATH |
@@ -33,20 +35,34 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 ## 安裝
 
-### 方式 A：安裝程式（建議）
+### Windows：安裝程式（建議）
 
 1. 打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases)
 2. 下載 `AI_Project_Console-*-win-x64-setup.exe`
 3. 執行安裝程式。會裝到目前使用者的 Local AppData，並加入開始選單；可選桌面捷徑。若 Windows 顯示「已保護您的電腦」，見 [常見問題：SmartScreen](troubleshooting.md#smartscreen)
 4. 從開始選單開啟「AI_Project 控制台」
 
-### 方式 B：免安裝壓縮包
+### Windows：免安裝壓縮包
 
 1. 下載 `AI_Project_Console-*-win-x64.zip`
 2. 解壓到固定資料夾（不要放會被清掉的暫存目錄）
 3. 執行 `AI_Project_Console.exe`
 
-兩種方式都能用設定裡的「檢查更新」。安裝版會用安裝程式覆蓋；zip 版會下載新壓縮包後覆蓋檔案。也可以「從檔案更新…」選已下載的 setup／zip。
+### macOS
+
+1. 下載 `AI_Project_Console-*-osx-arm64.zip`（Apple Silicon）或 `*-osx-x64.zip`（Intel）
+2. 解壓後把 `AI_Project_Console.app` 拖到「應用程式」
+3. 第一次開啟：對圖示**右鍵 → 打開**（未向 Apple 公證）。若仍被擋，在終端機對 `.app` 執行 `xattr -cr` 後再打開
+4. 見 [常見問題：Gatekeeper](troubleshooting.md#gatekeeper)
+
+### Linux
+
+1. 下載 `AI_Project_Console-*-linux-x64.zip` 或 `*-linux-arm64.zip`（也可使用對應的 `.deb`）
+2. zip：解壓後執行 `./AI_Project_Console`，或跑 `./install.sh` 裝到使用者目錄並加入應用程式選單
+3. `.deb`：`sudo apt install ./AI_Project_Console-*-linux-*.deb`
+4. 若視窗打不開，先安裝 GTK 3 與 WebKitGTK（見上表）
+
+Windows 的安裝版會用安裝程式覆蓋；zip／macOS／Linux 會下載新壓縮包後覆蓋檔案。也可以「從檔案更新…」選已下載的 setup／zip。
 
 ### 從原始碼執行
 
@@ -97,8 +113,8 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 | 你的安裝方式 | 按「立即更新」會怎樣 |
 |--------------|----------------------|
-| 安裝程式（資料夾內有 `unins*.exe`） | 下載 setup、靜默裝到目前目錄、重開控制台 |
-| zip 免安裝 | 下載 zip，程式結束後覆蓋並重開 |
+| Windows 安裝程式（資料夾內有 `unins*.exe`） | 下載 setup、靜默裝到目前目錄、重開控制台 |
+| macOS `.app`、Linux 已執行 `install.sh`／`.deb`、或 zip 免安裝 | 下載對應 RID 的 zip，程式結束後覆蓋並重開 |
 | `dotnet run`／從原始碼 | 不能覆蓋開發目錄；請 `git pull` 後重編，或改用 Releases |
 
 最新 Release 若沒有對應的 `*-setup.exe`／zip，「立即更新」會改開 GitHub 頁。發行此控制台時請用 GitHub 操作台附加安裝包。

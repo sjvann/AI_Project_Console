@@ -1,4 +1,4 @@
-# Windows 安裝包與 GitHub Release
+# Windows／macOS／Linux 安裝包與 GitHub Release
 
 這份是**控制台維護者**的發版清單。一般使用者請看 [使用文件](https://sjvann.github.io/AI_Project_Console/)（原稿 [docs/](../docs/README.md)），從 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 安裝即可。摘要見 [docs/maintainer/release.md](../docs/maintainer/release.md)。
 
@@ -58,9 +58,19 @@ powershell -ExecutionPolicy Bypass -File scripts/pack-win.ps1 -Version 0.3.8
 dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-macOS / Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。
+macOS / Linux **不要**在 Windows 把 `-r` 改掉就上傳 Release。交叉編譯可以確認 Photino 原生庫有進輸出，但 zip 會丢掉執行權限。正式資產請跑 [Pack Unix](../docs/maintainer/pack-unix.md)：
 
-也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節打包，並把兩個檔附上 Release。畫面會顯示步驟與紀錄（編譯可能要數分鐘）。沒有 `*-win-x64-setup.exe` 時，已安裝使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。
+```powershell
+gh workflow run pack-unix.yml -f version=0.3.8 -f upload_release=true
+```
+
+本機（非正式檔）可用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/pack-unix.ps1 -Version 0.3.8 -Runtime osx-arm64
+```
+
+也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節 **Windows** 打包，並把兩個檔附上 Release。畫面會顯示步驟與紀錄（編譯可能要數分鐘）。沒有 `*-win-x64-setup.exe` 時，已安裝 Windows 使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。macOS／Linux 使用者依對應 RID 的 zip。
 
 ## 4. 建立 GitHub Release
 
@@ -74,8 +84,10 @@ gh release create v0.3.8 --title "v0.3.8 AI_Project 控制台" --notes @"
 
 - **AI_Project_Console-0.3.8-win-x64-setup.exe**：安裝程式（開始選單捷徑，可選桌面捷徑；安裝到目前使用者的 Local AppData）
 - **AI_Project_Console-0.3.8-win-x64.zip**：免安裝壓縮包，解壓後執行 ``AI_Project_Console.exe``
+- **AI_Project_Console-0.3.8-osx-arm64.zip**／**osx-x64.zip**：macOS `.app`（請用 GitHub Actions Pack Unix 產出，不要用 Windows 交叉編譯 zip）
+- **AI_Project_Console-0.3.8-linux-x64.zip**／**linux-arm64.zip**：Linux 免安裝包；另可有 `.deb`
 
-Windows 10/11 需已安裝 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（系統通常已內建）。
+Windows 10/11 需已安裝 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（系統通常已內建）。macOS 未公證時請右鍵打開。Linux 需 GTK 3 與 WebKitGTK。
 "@ dist\AI_Project_Console-0.3.8-win-x64-setup.exe dist\AI_Project_Console-0.3.8-win-x64.zip
 ```
 

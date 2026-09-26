@@ -79,7 +79,7 @@ Pulse 有未提交時會直接出現「提交…」。
 
 | 動作 | 說明 |
 |------|------|
-| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 `*-win-x64-setup.exe`／zip。過程會開進度視窗（步驟＋紀錄）；編譯可能要數分鐘 |
+| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 Windows 的 `*-win-x64-setup.exe`／zip。macOS／Linux 請另外跑 GitHub Actions Pack Unix。過程會開進度視窗（步驟＋紀錄）；編譯可能要數分鐘 |
 | **Release 列表** | `gh release list` |
 | **開啟 Releases** | 瀏覽器開 GitHub Releases |
 | **開啟倉庫** | 瀏覽器開倉庫首頁 |
@@ -89,4 +89,4 @@ Pulse 有未提交時會直接出現「提交…」。
 
 這些項目在操作台「遠端協作」與「發行與 CI」。推送（含「提交後再 push」）之後，Pulse 會監看這次 CI。目前分支若有 PR（或不是預設分支），Pulse 也會顯示檢查是否通過。設定裡可勾「發布前先跑本機測試」。
 
-發行**此控制台**自己的安裝包：在操作台按「發行 Release…」。會執行 `scripts/pack-win.ps1`、把 setup.exe 與 zip 附上；若該 tag 已存在則改為補上傳資產。發行過程會開進度視窗，依序顯示寫入版號、檢查 Inno Setup、編譯、壓縮、編譯安裝程式、上傳 GitHub；編譯通常要 1–3 分鐘，請看步驟與紀錄，不要以為當機。手動指令見 [scripts/README.md](../../scripts/README.md)。
+發行**此控制台**自己的安裝包：在操作台按「發行 Release…」。會執行 `scripts/pack-win.ps1`、把 Windows setup.exe 與 zip 附上；若該 tag 已存在則改為補上傳資產。macOS／Linux 資產請跑 [Pack Unix](../maintainer/pack-unix.md)。發行過程會開進度視窗，依序顯示寫入版號、檢查 Inno Setup、編譯、壓縮、編譯安裝程式、上傳 GitHub；編譯通常要 1–3 分鐘，請看步驟與紀錄，不要以為當機。手動指令見 [scripts/README.md](../../scripts/README.md)。

@@ -1,3 +1,4 @@
+using AiProject.Console.Core;
 using AiProject.Console.Core.Update;
 
 namespace AiProject.Console.Core.Tests;
@@ -106,6 +107,68 @@ public class SelfUpdateTests
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    [Fact]
+    public void DetectInstallKind_RecognizesMacAppBundle()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-app-" + Guid.NewGuid().ToString("N"));
+        var macos = Path.Combine(root, "AI_Project_Console.app", "Contents", "MacOS");
+        Directory.CreateDirectory(macos);
+        try
+        {
+            Assert.Equal(InstallKind.Installed, SelfUpdate.DetectInstallKind(macos));
+            Assert.Equal(
+                Path.Combine(root, "AI_Project_Console.app"),
+                SelfUpdate.FindContainingMacApp(macos));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DetectInstallKind_RecognizesUnixInstallMarker()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ai-console-unix-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, AppInfo.InstalledMarkerName), "1");
+            Assert.Equal(InstallKind.Installed, SelfUpdate.DetectInstallKind(dir));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ParseLatest_PicksOsxZip()
+    {
+        var update = SelfUpdate.ParseLatest(SampleJson, "0.3.2", "osx-arm64");
+        Assert.NotNull(update);
+        Assert.Null(update!.SetupAsset);
+        Assert.Equal("AI_Project_Console-0.4.0-osx-arm64.zip", update.ZipAsset?.Name);
+        Assert.Equal(UpdateApplyMode.PortableZip, SelfUpdate.ResolveApplyMode(update, InstallKind.Installed));
+        Assert.Equal(UpdateApplyMode.PortableZip, SelfUpdate.ResolveApplyMode(update, InstallKind.Portable));
+    }
+
+    [Fact]
+    public void BuildUnixPortableSwapScript_ReplacesAppBundle()
+    {
+        var script = SelfUpdate.BuildUnixPortableSwapScript(
+            "/tmp/extract",
+            "/Applications/AI_Project_Console.app/Contents/MacOS",
+            4242,
+            "/Applications/AI_Project_Console.app/Contents/MacOS/AI_Project_Console");
+        Assert.Contains("#!/usr/bin/env bash", script, StringComparison.Ordinal);
+        Assert.Contains("pid=4242", script, StringComparison.Ordinal);
+        Assert.Contains("AI_Project_Console.app", script, StringComparison.Ordinal);
+        Assert.Contains("chmod +x", script, StringComparison.Ordinal);
+        Assert.Contains("nohup", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-Process", script, StringComparison.Ordinal);
     }
 
     [Fact]

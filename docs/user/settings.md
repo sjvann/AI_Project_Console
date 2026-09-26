@@ -2,7 +2,7 @@
 
 標題列「設定」打開偏好設定。分五個分頁。多數項目按「儲存」才寫入；「啟動時還原上次專案」「同時開啟 Agent」在主畫面勾選也會立刻記住。
 
-設定檔位置（Windows）：`%LOCALAPPDATA%\AI_Project_Console\settings.json`。工時紀錄在同一資料夾的 `work-hours.json`（依專案切開時段；匯出的工時單是另外選資料夾寫入的 Markdown／CSV）。
+設定檔位置（Windows）：`%LOCALAPPDATA%\AI_Project_Console\settings.json`。macOS／Linux：`~/.config/AI_Project_Console/settings.json`（若有 `XDG_CONFIG_HOME` 則在該目錄下）。工時紀錄在同一資料夾的 `work-hours.json`（依專案切開時段；匯出的工時單是另外選資料夾寫入的 Markdown／CSV）。
 
 ## 一般
 
@@ -13,7 +13,7 @@
 | 載入專案時開啟 Agent | 選好目錄後一併打開目前後端的工作區 |
 | 發布前先跑本機測試 | 發布（push）或提交後再推之前，先跑一次完整測試。沒過就不推。詳細案例請在 IDE 跑 |
 | 預設認證主機／種類 | 登入打哪一台 Git（`github.com` 或企業主機）。GitHub 相容才能開 Issue；其他種類可先設定 |
-| **檢查更新** | 查 GitHub Releases 是否有新版。會先問要不要包含 RC／預發行。已安裝版會下載 setup 並啟動安裝程式；若最新 Release 沒有安裝包則改開 GitHub 頁 |
+| **檢查更新** | 查 GitHub Releases 是否有新版。會先問要不要包含 RC／預發行。Windows 已安裝版會下載 setup 並啟動安裝程式；macOS／Linux 與 zip 版下載對應 RID 的 zip 後覆蓋。若最新 Release 沒有該平台安裝檔則改開 GitHub 頁 |
 | **從檔案更新…** | 選本機 `*-setup.exe` 或 zip，略過下載直接安裝。從原始碼執行時不能覆蓋開發目錄 |
 | 公司接收 API（申報目的地） | **規劃**可新增多家：顯示名＋該公司自架平台的 HTTPS Base URL。**現況**先填一個網址。工時儀表板「狀態圖」可對選定目的地申報；本機 `work-hours.json` 仍保留。未設定時控制台其餘功能照常 |
 

@@ -24,7 +24,7 @@ title: 採購 FAQ
 
 ## 只會 .NET 嗎？
 
-正式安裝包是 Windows x64。被管理的 .NET 專案仍需本機 SDK。多倉用工作區清單。控制台本身是 .NET 10。公司平台規劃同樣是 .NET 10 Blazor Web App。
+正式安裝包是 Windows x64、macOS（arm64／x64）、Linux（x64／arm64）。被管理的 .NET 專案仍需本機 SDK。多倉用工作區清單。控制台本身是 .NET 10。公司平台規劃同樣是 .NET 10 Blazor Web App。Mac 包尚未 Apple 公證，第一次請右鍵打開。
 
 ## 外包怎麼管？現在有嗎？
 

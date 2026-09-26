@@ -8,7 +8,7 @@ title: 路線圖
 
 ## 已交付（控制台 0.6.18，現況）
 
-- Windows x64 安裝包：掃描、需重編、啟停、Log、前端 URL
+- Windows x64、macOS、Linux 安裝包：掃描、需重編、啟停、Log、前端 URL
 - GitHub：clone、提交、同步、PR、Actions、Release、檢查更新
 - 需求工作台：開 GitHub Issue、暫停／收回、驗收
 - 工時儀表、CSV／Markdown 匯出

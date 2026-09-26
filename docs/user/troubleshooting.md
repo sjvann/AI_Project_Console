@@ -15,10 +15,25 @@
 
 請不要為此關閉 Microsoft Defender SmartScreen。維護者如何用 Azure Artifact Signing 簽署安裝包，見 [程式碼簽署](../maintainer/code-signing.md)。
 
+## macOS Gatekeeper 擋下應用程式
+
+<a id="gatekeeper"></a>
+
+從 Releases 下載的 `.app` **尚未**向 Apple 公證。第一次開啟時系統可能顯示「無法確認開發者」。這不是防毒判定。
+
+若你確認檔案來自本專案的 [GitHub Releases](https://github.com/sjvann/AI_Project_Console/releases)：
+
+1. 對 `AI_Project_Console.app` **右鍵 → 打開**，再按打開
+2. 或在終端機執行 `xattr -cr /Applications/AI_Project_Console.app` 後再開啟
+
+請不要為此關閉 Gatekeeper。公證完成前這段流程不會消失。
+
 ## 程式打不開或視窗是白的
 
 - Windows 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)。系統通常已內建；企業映像若拔掉元件，請向 IT 重裝。
-- zip 版請解壓後執行 `AI_Project_Console.exe`，不要在壓縮檔總管裡直接開。
+- macOS 請用對應晶片的 zip（Apple Silicon 用 `osx-arm64`），並依 [Gatekeeper](#gatekeeper) 第一次打開。
+- Linux 需 GTK 3 與 WebKitGTK（`libwebkit2gtk-4.1-0` 或 `libwebkit2gtk-4.0-0`）。zip 請解壓後執行 `./AI_Project_Console`，不要在壓縮檔瀏覽器裡直接開。
+- Windows zip 版請解壓後執行 `AI_Project_Console.exe`，不要在壓縮檔總管裡直接開。
 - 從原始碼執行需要 [.NET 10 SDK](https://dotnet.microsoft.com/download)。一般使用者請改用 [Releases](https://github.com/sjvann/AI_Project_Console/releases)。
 
 ## 沒有服務
@@ -96,7 +111,7 @@
 
 - 開發模式（`dotnet run`）不能用「立即更新」覆蓋。
 - 橫幅被「稍後再說」略過後，同一版號不會再煩你，直到更新的 tag。
-- 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少 `*-win-x64-setup.exe`。請用 GitHub 操作台「發行 Release…」打包並補上安裝包。
+- 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少你這個平台的安裝檔（Windows 要 `*-win-x64-setup.exe`；macOS／Linux 要檔名含目前 RID 的 `.zip`）。Windows 請用 GitHub 操作台「發行 Release…」補上；macOS／Linux 請跑 Pack Unix 工作流程。
 - 發行進度停在「編譯 Windows 執行檔」：這一步可能要 1–3 分鐘，視窗會顯示已過時間與紀錄。找不到 Inno Setup 會立刻失敗並附上安裝連結。
 - 可到設定按「檢查更新」（會問是否包含 RC）。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。也可「從檔案更新…」選已下載的 setup／zip。
 

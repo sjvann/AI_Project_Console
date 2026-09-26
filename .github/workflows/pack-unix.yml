@@ -1,0 +1,157 @@
+name: Pack Unix
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版號（例如 0.6.16，不含 v）
+        required: true
+        type: string
+      upload_release:
+        description: 附加到既有 GitHub Release v{version}（不覆寫 Windows 資產檔名）
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - "scripts/pack-unix.sh"
+      - "scripts/pack-unix.ps1"
+      - "scripts/verify-unix-package.sh"
+      - "installer/macos/**"
+      - "installer/linux/**"
+      - ".github/workflows/pack-unix.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pack-unix-${{ github.ref }}-${{ inputs.version || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.set.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - id: set
+        name: Resolve version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            ver=$(grep -oP 'public const string Version = "\K[^"]+' src/AiProject.Console.Core/AppInfo.cs | head -n 1)
+            echo "value=$ver" >> "$GITHUB_OUTPUT"
+          fi
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [osx-arm64, osx-x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Pack
+        run: bash scripts/pack-unix.sh --version "${{ needs.version.outputs.value }}" --runtime "${{ matrix.rid }}"
+
+      - name: Verify
+        run: bash scripts/verify-unix-package.sh --version "${{ needs.version.outputs.value }}" --runtime "${{ matrix.rid }}"
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}
+          path: |
+            dist/AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}.zip
+            dist/AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}.zip.sha256
+          if-no-files-found: error
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Pack
+        run: bash scripts/pack-unix.sh --version "${{ needs.version.outputs.value }}" --runtime "${{ matrix.rid }}"
+
+      - name: Verify
+        run: bash scripts/verify-unix-package.sh --version "${{ needs.version.outputs.value }}" --runtime "${{ matrix.rid }}"
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}
+          path: |
+            dist/AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}.zip
+            dist/AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}.zip.sha256
+            dist/AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}.deb
+            dist/AI_Project_Console-${{ needs.version.outputs.value }}-${{ matrix.rid }}.deb.sha256
+          if-no-files-found: error
+
+  upload:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_release }}
+    needs: [version, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if ! gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "找不到 Release $tag。請先建立 Windows Release，再勾選 upload_release。" >&2
+            exit 1
+          fi
+          shopt -s nullglob
+          files=(dist/AI_Project_Console-$VERSION-osx-*.zip dist/AI_Project_Console-$VERSION-linux-*.zip dist/AI_Project_Console-$VERSION-linux-*.deb dist/AI_Project_Console-$VERSION-*.sha256)
+          gh release upload "$tag" "${files[@]}" --repo "${{ github.repository }}" --clobber
+          notes=$(gh release view "$tag" --repo "${{ github.repository }}" --json body -q .body)
+          if echo "$notes" | grep -q "osx-arm64.zip"; then
+            echo "Release 說明已含 Unix 資產。"
+            exit 0
+          fi
+          extra=$(cat <<EOF
+
+          ### macOS／Linux
+
+          - **AI_Project_Console-$VERSION-osx-arm64.zip**：Apple Silicon。解壓後把 AI_Project_Console.app 拖到「應用程式」。未公證時請右鍵「打開」，或執行 xattr -cr AI_Project_Console.app。
+          - **AI_Project_Console-$VERSION-osx-x64.zip**：Intel Mac，安裝方式同上。
+          - **AI_Project_Console-$VERSION-linux-x64.zip**：解壓後執行 ./AI_Project_Console 或 ./install.sh。需 GTK 3 與 WebKitGTK。
+          - **AI_Project_Console-$VERSION-linux-arm64.zip**：ARM64 Linux，方式同上。
+          - **AI_Project_Console-$VERSION-linux-*.deb**：Debian／Ubuntu 安裝包（若有附上）。
+
+          Apple Developer ID 公證尚未完成；Gatekeeper 會提示無法驗證開發者。
+          EOF
+          )
+          printf '%s\n%s\n' "$notes" "$extra" > /tmp/release-notes.md
+          gh release edit "$tag" --repo "${{ github.repository }}" --notes-file /tmp/release-notes.md

@@ -8,7 +8,7 @@ title: 產品概觀
 
 ## 現況（已出貨）
 
-Windows x64 本機桌面：**AI_Project 控制台**。選專案目錄後可：
+Windows、macOS、Linux 本機桌面：**AI_Project 控制台**。選專案目錄後可：
 
 - 掃描服務與編譯專案，標出需重編
 - 一鍵啟動／停止、看 Log、開前端
