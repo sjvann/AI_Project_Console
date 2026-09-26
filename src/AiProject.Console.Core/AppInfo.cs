@@ -10,6 +10,9 @@ public static class AppInfo
     public const string ManifestName = "ai-project.json";
     public const string RuntimeDirName = ".ai_project";
     public const string ExeName = "AI_Project_Console.exe";
+    public const string UnixExeName = "AI_Project_Console";
+    public const string MacAppBundleName = "AI_Project_Console.app";
+    public const string InstalledMarkerName = "console-installed.marker";
     public const string AppUserModelId = "sjvann.AIProjectConsole";
 
     public static string WindowTitle(string? workspaceName = null) =>

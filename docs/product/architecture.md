@@ -179,7 +179,7 @@ Domain 無 EF／HTTP。Application 開頭授權。規則不進 `.razor`。產品
 
 - **Binds:** P1–P4 發行與營運
 - **Prevents:** 「自架後期」造成兩套不相容的部署；我們雲用私有分支、客戶拿到另一個安裝器
-- **Rule:** P1 出 Windows 桌面安裝包（現況 Inno Setup `*-win-x64-setup.exe`；目標宿主切換後檔名規則不變）。P2／P3／P4 各出 **Docker 映像 + 主機安裝器／compose**。我們營運多租戶與客戶自架**使用同一發行產物**，差在設定：`Hosting:Mode = SaaS | SelfHosted`、連線字串、憑證、備份責任方。自架不是後期才發明的路徑，是同一通道的一種運營者。P4 仍是門檻產品（AD-30），但產物形態與 P2／P3 相同。
+- **Rule:** P1 出桌面安裝包：Windows 為 Inno Setup `*-win-x64-setup.exe`（目標宿主切換後此檔名規則不變）；macOS 為 `*-osx-arm64.zip`／`*-osx-x64.zip`（內含 `.app`）；Linux 為 `*-linux-x64.zip`／`*-linux-arm64.zip`（可另附 `.deb`）。Unix 正式資產由 GitHub Actions 原生 runner 打包，禁止把 Windows 交叉編譯 zip 當發行檔。P2／P3／P4 各出 **Docker 映像 + 主機安裝器／compose**。我們營運多租戶與客戶自架**使用同一發行產物**，差在設定：`Hosting:Mode = SaaS | SelfHosted`、連線字串、憑證、備份責任方。自架不是後期才發明的路徑，是同一通道的一種運營者。P4 仍是門檻產品（AD-30），但產物形態與 P2／P3 相同。
 
 ### AD-13 — 一需求公司一個工作區 `[ADOPTED]`
 
@@ -225,12 +225,12 @@ Domain 無 EF／HTTP。Application 開頭授權。規則不進 `.razor`。產品
 
   | 產品 | tag 前綴 | 資產（至少） |
   |------|-----------|--------------|
-  | P1 控制台 | `console-v*` | `*-win-x64-setup.exe`、checksum |
+  | P1 控制台 | `console-v*` | `*-win-x64-setup.exe`、`*-osx-*.zip`、`*-linux-*.zip`、checksum |
   | P2 工作區 | `workspace-v*` | Docker 映像摘要、compose／主機安裝器、checksum |
   | P3 分析 | `analysis-v*` | 同上 |
   | P4 仲介 | `marketplace-v*` | 同上 |
 
-  過渡期現況控制台仍用倉庫 `releases/latest` 與 `AI_Project_Console-*-win-x64-setup.exe`（見 [發版](../maintainer/release.md)）。切通道時必須讓舊安裝包仍能找到下一版資產。不可覆寫舊 tag。
+  過渡期現況控制台仍用倉庫 `releases/latest` 與 `AI_Project_Console-*-win-x64-setup.exe`（Windows）以及對應 RID 的 zip（macOS／Linux）（見 [發版](../maintainer/release.md)、[macOS／Linux 安裝包](../maintainer/pack-unix.md)）。切通道時必須讓舊安裝包仍能找到下一版資產。不可覆寫舊 tag。
 
 ### AD-20 — 共用 UpdateClient `[ADOPTED]`
 
@@ -332,7 +332,7 @@ Domain 無 EF／HTTP。Application 開頭授權。規則不進 `.razor`。產品
 | 桌面宿主（現況／過渡） | Photino.Blazor | **4.0.13**（現況 App） |
 | 資料 | PostgreSQL；測試 SQLite | PostgreSQL **16+** |
 | API 描述 | OpenAPI | `Microsoft.AspNetCore.OpenApi` 10.x；`Microsoft.OpenApi` 2.x（現況 Company.Web） |
-| 桌面安裝 | Inno Setup 6／7；`*-win-x64-setup.exe` | 現況 [scripts/README.md](../../scripts/README.md) |
+| 桌面安裝 | Windows：Inno Setup 6／7 `*-win-x64-setup.exe`；macOS：`.app` zip；Linux：zip／`.deb` | [scripts/README.md](../../scripts/README.md)、[pack-unix.md](../maintainer/pack-unix.md) |
 | Web 安裝 | Docker + compose；可選 Windows／Linux 主機安裝器 | `[ASSUMPTION]` 映像登錄公開或 GHCR，隨 GitHub Release 發 digest |
 | 更新 | GitHub Releases API | 共用 UpdateClient（AD-19、AD-20） |
 | 識別 | 公司帳戶／GitHub／API 金鑰 | AD-25 |
@@ -359,7 +359,7 @@ WASM 或 Auto 不當 MVP 預設。
 4. 「檢查更新」仍能解讀 GitHub Release 資產。
 5. Core 測試不引用宿主套件。
 
-macOS／Linux 桌面列 Deferred；現況正式資產是 win-x64。
+macOS／Linux 正式 zip／`.deb` 由 GitHub Actions 原生 runner 產出。**未完成：** Apple Developer ID 公證（Gatekeeper 需右鍵打開）。K1 通過條件仍以 Windows x64 為準。
 
 **佔用（軌道 O，與宿主遷移正交）：** Photino 或 Avalonia 都必須滿足 AD-32～AD-34。K1 spike 的主路徑檢查應能看見佔用條；未做 O 不擋 K1 開工，但 K1 通過條件第 2 條在 O 合併後改為「建置中畫面仍可捲動、取消收得到」。
 
@@ -454,7 +454,7 @@ P4 預設我們營運公開多租戶；自架仲介不是第一刀（法律與 K
 
 ## 8. GitHub Release 自動更新
 
-現況 P1：啟動後查 `releases/latest`，有新版橫幅；已安裝則下載 `*-win-x64-setup.exe` 開安裝程式（[settings.md](../user/settings.md)、[SelfUpdate.cs](../../src/AiProject.Console.Core/Update/SelfUpdate.cs)）。
+現況 P1：啟動後查 `releases/latest`，有新版橫幅；Windows 已安裝則下載 `*-win-x64-setup.exe` 開安裝程式；macOS／Linux 下載對應 RID 的 zip 後覆蓋（[settings.md](../user/settings.md)、[SelfUpdate.cs](../../src/AiProject.Console.Core/Update/SelfUpdate.cs)）。
 
 家族規則：
 
@@ -541,7 +541,7 @@ tests/
 | 項目 | 為什麼可以等 |
 |------|----------------|
 | 官方 Avalonia Blazor Hybrid | 無官方套件；K1 自製或留守 Photino |
-| P1 macOS／Linux 正式安裝包 | 現況資產是 win-x64 |
+| Apple Developer ID 公證 | 無憑證與 notarytool；結構驗證在 Actions 已做，Gatekeeper 流程已文件化 |
 | 離線主管平板（WASM／Auto） | 非預設 |
 | 契約套件獨立 NuGet／拆倉 | AD-29 |
 | P4 客戶自架仲介 | KYC／法律；第一刀我們營運 |

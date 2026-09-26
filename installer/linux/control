@@ -1,0 +1,12 @@
+Package: ai-project-console
+Version: __VERSION__
+Section: devel
+Priority: optional
+Architecture: __ARCH__
+Maintainer: sjvann <https://github.com/sjvann/AI_Project_Console>
+Depends: libc6 (>= 2.31), libgtk-3-0, libnotify4, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-0
+Installed-Size: __SIZE__
+Homepage: https://github.com/sjvann/AI_Project_Console
+Description: AI_Project 控制台
+ 本機桌面程式：掃描服務與需重編項目、一鍵啟動、GitHub 操作與工時。
+ 安裝後請從應用程式選單開啟，或執行 ai-project-console。

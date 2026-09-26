@@ -8,7 +8,7 @@ title: 路線圖
 
 ## 已交付（控制台 0.6.16，現況）— P1
 
-- Windows x64 安裝包：掃描、需重編、啟停、Log、前端 URL
+- Windows x64、macOS、Linux 安裝包：掃描、需重編、啟停、Log、前端 URL
 - 「開啟」先起服務與相依再開瀏覽器；硬相依失敗則不開
 - 各專案一句用途；開啟時寫入 `.ai_project/product-purposes.md`
 - 建置／啟動佔用列（可取消）；工作區佔用鎖避免雙視窗互搶

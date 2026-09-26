@@ -15,6 +15,7 @@
     <Copyright>Copyright (c) 2026 sjvann. All rights reserved.</Copyright>
     <Description>本機控制台</Description>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64;osx-arm64;osx-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <!-- Windows 會擋未簽名的 Debug apphost（dotnet run → 存取被拒）。改由已簽名的 dotnet.exe 載入 DLL。 -->

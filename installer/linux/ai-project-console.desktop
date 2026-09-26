@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AI_Project 控制台
+Comment=本機堆疊控制台：掃描、編譯、一鍵啟動
+Exec=__EXEC__
+Icon=__ICON__
+Terminal=false
+Categories=Development;
+StartupWMClass=AI_Project_Console

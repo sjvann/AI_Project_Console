@@ -10,6 +10,8 @@
 
 [![版本 0.6.16](https://img.shields.io/badge/version-0.6.16-0b6e56?style=for-the-badge)](docs/user/whats-new.md)
 [![Windows x64](https://img.shields.io/badge/Windows-x64-1aa37c?style=for-the-badge)](https://github.com/sjvann/AI_Project_Console/releases)
+[![macOS](https://img.shields.io/badge/macOS-arm64%20%7C%20x64-1aa37c?style=for-the-badge)](https://github.com/sjvann/AI_Project_Console/releases)
+[![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-1aa37c?style=for-the-badge)](https://github.com/sjvann/AI_Project_Console/releases)
 [![使用文件](https://img.shields.io/badge/docs-GitHub%20Pages-0b6e56?style=for-the-badge)](https://sjvann.github.io/AI_Project_Console/)
 [![保留一切權利](https://img.shields.io/badge/license-All%20Rights%20Reserved-d4a017?style=for-the-badge)](docs/legal/copyright.md)
 
@@ -63,7 +65,7 @@
 <img src="assets/brand/readme-steps.png" alt="三步驟：下載安裝包、選擇專案目錄、編譯後啟動" width="100%">
 </div>
 
-1. 從 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 下載 `*-win-x64-setup.exe`（或 zip 免安裝包）。Windows 10／11 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（通常已內建）。
+1. 從 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 下載對應平台的安裝包：Windows `*-win-x64-setup.exe`（或 zip）；macOS `*-osx-arm64.zip`／`osx-x64.zip`；Linux `*-linux-x64.zip`／`.deb`。Windows 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（通常已內建）。macOS 未公證時請右鍵打開。Linux 需 GTK 3 與 WebKitGTK。
 2. 開啟控制台 → **選擇專案目錄…**（或「從 GitHub 開啟…」）。
 3. 有「需重編」先 **建置 → 編譯過期項目**，再按 **啟動**，然後 **開啟前端**。
 

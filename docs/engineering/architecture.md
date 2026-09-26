@@ -11,7 +11,7 @@ title: 工程架構
 - .NET 10、Photino.Blazor 桌面視窗、Blazor UI（過渡宿主；目標見產品架構 AD-9／AD-10）
 - 核心在 `AiProject.Console.Core`（掃描、建置、GitHub、工時、進件、文件）
 - MCP 在 `AiProject.Console.Mcp`（或產品 exe `--mcp`）
-- 正式安裝包：Windows x64 self-contained，GitHub Release 自動更新，見 [發版](../maintainer/release.md)
+- 正式安裝包：Windows x64、macOS、Linux self-contained，GitHub Release 自動更新，見 [發版](../maintainer/release.md) 與 [macOS／Linux 安裝包](../maintainer/pack-unix.md)
 
 ## 規劃：四套產品、同一核心
 

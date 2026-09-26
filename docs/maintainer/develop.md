@@ -36,7 +36,7 @@ Debug 建置不產生 `AI_Project_Console.exe`（改由 `dotnet.exe` 載入 DLL�
 dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-macOS／Linux 將 `-r` 改為 `osx-arm64` 或 `linux-x64`。此路徑不會出現在 GitHub Releases 的 Windows 安裝包流程裡。
+macOS／Linux 正式包由 GitHub Actions 產出，見 [macOS／Linux 安裝包](pack-unix.md)。此路徑的 `dotnet publish -r osx-arm64` 僅供開發，不會出現在 GitHub Releases 的 Windows 安裝包流程裡。
 
 ## 方案結構
 
@@ -84,7 +84,7 @@ dotnet run --project src/AiProject.Company.Web
 
 ## 打包與 Release
 
-Windows 安裝包、升版檢查清單、GitHub Release 指令：[scripts/README.md](../../scripts/README.md) 與 [發版](release.md)。用 Azure Artifact Signing（舊稱 Trusted Signing）簽署安裝包、以及之後上 Microsoft Store：[程式碼簽署與 Microsoft Store](code-signing.md)。
+Windows 安裝包、升版檢查清單、GitHub Release 指令：[scripts/README.md](../../scripts/README.md) 與 [發版](release.md)。macOS／Linux：[macOS／Linux 安裝包](pack-unix.md)。用 Azure Artifact Signing（舊稱 Trusted Signing）簽署 Windows 安裝包、以及之後上 Microsoft Store：[程式碼簽署與 Store](code-signing.md)。
 
 圖示原始檔在 `assets/brand/`。工作列圖示依賴穩定的 `AppInfo.AppUserModelId`（`sjvann.AIProjectConsole`），不要隨便改。
 
