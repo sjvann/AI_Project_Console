@@ -470,8 +470,19 @@ public class DocsServiceTests
     public void TitleOf_ReadsFrontMatter()
     {
         Assert.Equal("安裝", DocsService.TitleOf("user/x.md", "---\ntitle: 安裝\n---\n\n# 別的\n"));
+        Assert.Equal("安裝", DocsService.TitleOf("user/x.md", "---\r\ntitle: \"安裝\"\r\n---\r\n"));
         Assert.Equal("標題", DocsService.TitleOf("a.md", "# 標題\n"));
         Assert.Equal("a", DocsService.TitleOf("user/a.md", ""));
+    }
+
+    [Fact]
+    public void TitleOf_FrontMatterWithoutTitle_UsesHeadingQuickly()
+    {
+        var body = "---\r\n" + string.Join("\r\n", Enumerable.Range(0, 80).Select(i => "item: " + i)) + "\r\n---\r\n\r\n# 真正標題\r\n";
+        var started = Environment.TickCount64;
+        var title = DocsService.TitleOf("big.md", body);
+        Assert.InRange(Environment.TickCount64 - started, 0, 200);
+        Assert.Equal("真正標題", title);
     }
 
     static string NewTemp()

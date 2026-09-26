@@ -109,7 +109,7 @@ git 狀態、提交、CI、PR 已改到 Pulse，摘要列不再重複。
 
 每一列：專案名、一句用途、類型／語言／上次編譯、狀態徽章、**編譯**。編譯失敗那一列會多 **編譯求救**。右側是建置／測試輸出，顯示 `{已完成}/{預計}`。工具列也有同一顆 **編譯求救**（沒有失敗時停用）。報告也寫在 `.ai_project/build-reports/`。
 
-用途對**每一個**掃描到的專案都要有，不限可啟動服務。來源順序：`ai-project.json` 的 `projects` → 專案檔 `Description`／`PackageDescription` → `package.json`／`pyproject.toml`／`Cargo.toml`／`pom.xml` 的 description → 該專案目錄 README 第一段。開啟或按「重新掃描」時，控制台會寫一份清單到 `.ai_project/product-purposes.md`（執行期檔，不進 git）。缺用途的專案會列在該檔「尚未提供」。
+用途對**每一個**掃描到的專案都要有，不限可啟動服務。來源順序：`ai-project.json` 的 `projects` → 專案檔 `Description`／`PackageDescription` → `package.json`／`pyproject.toml`／`Cargo.toml`／`pom.xml` 的 description。沒有這些欄就留空，不讀 README。開啟或按「重新掃描」時，控制台會寫一份清單到 `.ai_project/product-purposes.md`（執行期檔，不進 git）。缺用途的專案會列在該檔「尚未提供」。
 
 | 徽章 | 意思 |
 |------|------|

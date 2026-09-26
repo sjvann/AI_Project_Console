@@ -77,7 +77,7 @@ public class ProjectPurposeTests
     }
 
     [Fact]
-    public void Fill_ReadmeFirstParagraph_WhenNoProjectDescription()
+    public void Fill_SkipsReadme_WhenProjectHasNoDescription()
     {
         var root = NewRoot();
         try
@@ -98,8 +98,11 @@ public class ProjectPurposeTests
             """);
             var catalog = ServiceCatalogBuilder.Build(root);
             var project = Assert.Single(catalog.Projects);
-            Assert.Equal("這是給報表用的共用函式庫。", project.Description);
-            Assert.Equal(ProjectPurpose.SourceReadme, project.DescriptionSource);
+            Assert.Equal("", project.Description);
+            Assert.Equal("", project.DescriptionSource);
+            var text = File.ReadAllText(Path.Combine(root, ".ai_project", "product-purposes.md"));
+            Assert.Contains("尚未提供", text);
+            Assert.DoesNotContain("這是給報表用的共用函式庫。", text);
         }
         finally
         {
@@ -174,21 +177,6 @@ public class ProjectPurposeTests
         {
             TryDelete(root);
         }
-    }
-
-    [Fact]
-    public void FirstParagraph_SkipsHeadingAndBadges()
-    {
-        var text = ProjectPurpose.FirstParagraph("""
-        # Title
-
-        ![build](https://example.com/badge.svg)
-
-        第一段用途說明。
-
-        第二段不該出現。
-        """);
-        Assert.Equal("第一段用途說明。", text);
     }
 
     static string NewRoot()

@@ -76,8 +76,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 |------------------|------|
 | 工作區 `ai-project.json` 的 `projects` | `path`（或 `project`）＋ `description`。也可用物件：`"projects": { "src/Foo": "一句用途" }` |
 | 專案檔 | .NET：`<Description>`，沒有則 `<PackageDescription>` |
-| 套件清單 | `package.json`、`pyproject.toml`、`Cargo.toml`、`pom.xml` 的 description |
-| 專案目錄 README | `README.md`（或 `README.zh-Hant.md`）標題與徽章之後的第一段 |
+| 套件清單 | `package.json`、`pyproject.toml`、`Cargo.toml`、`pom.xml` 的 description。沒有這個欄、或檔案超過 1MB，就留空，不繼續把檔讀完，也不讀 README |
 
 ```json
 "projects": [

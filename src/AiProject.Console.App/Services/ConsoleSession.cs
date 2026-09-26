@@ -1367,7 +1367,11 @@ public sealed partial class ConsoleSession : IDisposable
             if (!await TryStopCurrentProjectForSwitchAsync(root).ConfigureAwait(false))
                 return;
 
-            var catalog = ServiceCatalogBuilder.Build(root);
+            // 與 RefreshWorkspaceAsync 相同：掃描不可佔 UI 執行緒。
+            // AION 等多倉工作區掃 144+ 專案約數秒，同步 Build 會讓 Photino 無回應（AppHang）。
+            JobText = "正在載入專案…";
+            Notify();
+            var catalog = await Task.Run(() => ServiceCatalogBuilder.Build(root)).ConfigureAwait(false);
             _iconUrlCache.Clear();
             Catalog = catalog;
             Runtime = new ProjectRuntime(catalog.Root);
@@ -4363,7 +4367,7 @@ public sealed partial class ConsoleSession : IDisposable
         {
             GithubConfigResolver.WriteManifest(Catalog, GithubDraft);
             _iconUrlCache.Clear();
-            Catalog = ServiceCatalogBuilder.Build(Catalog.Root);
+            Catalog = await Task.Run(() => ServiceCatalogBuilder.Build(Catalog.Root)).ConfigureAwait(false);
         }
         else
             GithubConfigResolver.SaveLocal(Catalog.Root, GithubDraft);

@@ -1,14 +1,14 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using AiProject.Console.Core.Util;
 
 namespace AiProject.Console.Core.Catalog;
 
 /// <summary>
-/// 每個掃描到的專案都要有一句產品功能描述。清單可覆寫；否則從專案檔／套件清單／README 擷取。
+/// 每個掃描到的專案一句產品功能描述。清單可覆寫；否則只讀專案檔或套件清單上的 description 欄。
+/// 沒有該欄就留空，不讀 README、也不把檔案讀完——大型工作區會因此在開啟時停住。
 /// 開啟或重掃工作區時寫入 <c>.ai_project/product-purposes.md</c>。
 /// </summary>
 public static class ProjectPurpose
@@ -20,12 +20,9 @@ public static class ProjectPurpose
     public const string SourcePyproject = "pyproject.toml";
     public const string SourceCargo = "Cargo.toml";
     public const string SourcePom = "pom.xml";
-    public const string SourceReadme = "README";
 
-    static readonly string[] ReadmeNames =
-    [
-        "README.md", "README.zh-Hant.md", "README.zh.md", "readme.md",
-    ];
+    /// <summary>超過此大小視為沒有一句用途，避免為了找描述把整份檔讀進記憶體。</summary>
+    const int MaxDescriptionFileBytes = 1024 * 1024;
 
     public static string RelPath => AppInfo.RuntimeDirName + "/" + FileName;
 
@@ -76,7 +73,7 @@ public static class ProjectPurpose
         sb.AppendLine("# 產品功能描述");
         sb.AppendLine();
         sb.AppendLine("此檔由 AI_Project 控制台在開啟或重新掃描工作區時產生，下次會覆寫，請不要手改。");
-        sb.AppendLine("權威來源：各專案檔的 `Description`／套件 `description`、專案目錄 README 第一段，或工作區 `ai-project.json` 的 `projects`。");
+        sb.AppendLine("權威來源：各專案檔的 `Description`／套件 `description`，或工作區 `ai-project.json` 的 `projects`。沒有該欄就留空，不讀 README。");
         sb.AppendLine();
         sb.AppendLine($"工作區：**{name}**。已有描述 {have}／{list.Count}。");
         sb.AppendLine();
@@ -193,10 +190,6 @@ public static class ProjectPurpose
         if (!string.IsNullOrEmpty(pom))
             return (pom, SourcePom);
 
-        var readme = ReadReadmePurpose(dir);
-        if (!string.IsNullOrEmpty(readme))
-            return (readme, SourceReadme);
-
         return ("", "");
     }
 
@@ -213,9 +206,22 @@ public static class ProjectPurpose
         return Path.GetFullPath(Path.Combine(root, project.RelDir.Replace('/', Path.DirectorySeparatorChar)));
     }
 
+    static bool CanReadDescriptionFile(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists && info.Length <= MaxDescriptionFileBytes;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     static string ReadJsonDescription(string path)
     {
-        if (!File.Exists(path))
+        if (!CanReadDescriptionFile(path))
             return "";
         try
         {
@@ -232,11 +238,11 @@ public static class ProjectPurpose
 
     static string ReadTomlDescription(string path, string section)
     {
-        if (!File.Exists(path))
+        if (!CanReadDescriptionFile(path))
             return "";
         try
         {
-            string? current = null;
+            var inSection = false;
             foreach (var raw in File.ReadLines(path))
             {
                 var line = raw.Trim();
@@ -244,10 +250,13 @@ public static class ProjectPurpose
                     continue;
                 if (line.StartsWith('[') && line.EndsWith(']'))
                 {
-                    current = line.Trim('[', ']').Trim();
+                    if (inSection)
+                        return "";
+                    var name = line.Trim('[', ']').Trim();
+                    inSection = string.Equals(name, section, StringComparison.OrdinalIgnoreCase);
                     continue;
                 }
-                if (!string.Equals(current, section, StringComparison.OrdinalIgnoreCase))
+                if (!inSection)
                     continue;
                 if (!line.StartsWith("description", StringComparison.OrdinalIgnoreCase))
                     continue;
@@ -266,7 +275,7 @@ public static class ProjectPurpose
 
     static string ReadPomDescription(string path)
     {
-        if (!File.Exists(path))
+        if (!CanReadDescriptionFile(path))
             return "";
         try
         {
@@ -279,80 +288,6 @@ public static class ProjectPurpose
         {
             return "";
         }
-    }
-
-    static string ReadReadmePurpose(string dir)
-    {
-        foreach (var name in ReadmeNames)
-        {
-            var path = Path.Combine(dir, name);
-            if (!File.Exists(path))
-                continue;
-            try
-            {
-                var text = File.ReadAllText(path, Encoding.UTF8);
-                var paragraph = FirstParagraph(text);
-                var purpose = ServiceCatalogBuilder.ShortPurpose(paragraph);
-                if (!string.IsNullOrEmpty(purpose))
-                    return purpose;
-            }
-            catch (Exception)
-            {
-                continue;
-            }
-        }
-        return "";
-    }
-
-    internal static string FirstParagraph(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return "";
-        var s = text.TrimStart('\uFEFF').Replace("\r\n", "\n").Replace('\r', '\n');
-        if (s.StartsWith("---", StringComparison.Ordinal))
-        {
-            var end = s.IndexOf("\n---", 3, StringComparison.Ordinal);
-            if (end >= 0)
-            {
-                var after = end + 4;
-                if (after < s.Length && s[after] == '\n')
-                    after++;
-                s = after < s.Length ? s[after..] : "";
-            }
-        }
-
-        var lines = new List<string>();
-        foreach (var raw in s.Split('\n'))
-        {
-            var line = raw.Trim();
-            if (lines.Count == 0)
-            {
-                if (string.IsNullOrEmpty(line))
-                    continue;
-                if (line.StartsWith('#'))
-                    continue;
-                if (line.StartsWith("<!--"))
-                    continue;
-                if (line.StartsWith("[!", StringComparison.Ordinal) || line.StartsWith("![", StringComparison.Ordinal))
-                    continue;
-                if (line.StartsWith("<img", StringComparison.OrdinalIgnoreCase))
-                    continue;
-            }
-            if (string.IsNullOrEmpty(line))
-                break;
-            if (line.StartsWith('#'))
-                break;
-            lines.Add(StripMarkdown(line));
-        }
-        return string.Join(" ", lines.Where(x => !string.IsNullOrWhiteSpace(x)));
-    }
-
-    static string StripMarkdown(string line)
-    {
-        var s = Regex.Replace(line, @"!\[[^\]]*\]\([^)]*\)", "");
-        s = Regex.Replace(s, @"\[([^\]]+)\]\([^)]*\)", "$1");
-        s = s.Replace("**", "").Replace("__", "").Replace("*", "").Replace("`", "");
-        return s.Trim();
     }
 
     static string Unquote(string value)

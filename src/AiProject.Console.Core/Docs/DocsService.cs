@@ -676,15 +676,62 @@ public static class DocsService
     {
         if (!string.IsNullOrEmpty(content))
         {
-            var fm = Regex.Match(content, @"^---\s*\r?\n(?:.*\r?\n)*?title:\s*(.+)\r?\n(?:.*\r?\n)*?---", RegexOptions.IgnoreCase);
-            if (fm.Success)
-                return fm.Groups[1].Value.Trim().Trim('"', '\'');
+            // 不用正則：`(?:.*\r?\n)*` 在 CRLF 上會指數回溯。沒有 title: 的 front matter（BMAD 文件）會讓開啟專案的 UI 執行緒停住。
+            var fm = ReadFrontMatterTitle(content);
+            if (!string.IsNullOrEmpty(fm))
+                return fm;
             var heading = Regex.Match(content, @"^#\s+(.+)$", RegexOptions.Multiline);
             if (heading.Success)
                 return heading.Groups[1].Value.Trim();
         }
         var name = Path.GetFileNameWithoutExtension(relPath.Replace('\\', '/'));
         return string.IsNullOrEmpty(name) ? relPath : name;
+    }
+
+    /// <summary>只看開頭的 YAML front matter。沒有 <c>title:</c> 或沒有收束的 <c>---</c> 就回 null。</summary>
+    static string? ReadFrontMatterTitle(string content)
+    {
+        var span = content.AsSpan();
+        if (span.Length > 0 && span[0] == '\uFEFF')
+            span = span[1..];
+        if (!span.StartsWith("---"))
+            return null;
+        span = span[3..];
+        if (!ConsumeRestOfLine(ref span, requireEmpty: true))
+            return null;
+
+        string? title = null;
+        for (var n = 0; n < 200 && span.Length > 0; n++)
+        {
+            var lineEnd = span.IndexOf('\n');
+            var line = (lineEnd < 0 ? span : span[..lineEnd]).TrimEnd('\r').Trim();
+            if (!ConsumeRestOfLine(ref span, requireEmpty: false))
+                break;
+            if (line.Equals("---", StringComparison.Ordinal) || line.Equals("...", StringComparison.Ordinal))
+                return string.IsNullOrEmpty(title) ? null : title;
+            if (line.StartsWith("title:", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = line["title:".Length..].Trim().Trim('"').Trim('\'');
+                if (!value.IsEmpty)
+                    title = value.ToString();
+            }
+        }
+        return null;
+    }
+
+    static bool ConsumeRestOfLine(ref ReadOnlySpan<char> span, bool requireEmpty)
+    {
+        var lineEnd = span.IndexOf('\n');
+        var line = (lineEnd < 0 ? span : span[..lineEnd]).TrimEnd('\r').Trim();
+        if (requireEmpty && line.Length > 0)
+            return false;
+        if (lineEnd < 0)
+        {
+            span = default;
+            return !requireEmpty;
+        }
+        span = span[(lineEnd + 1)..];
+        return true;
     }
 
     public static bool LooksLikeStub(string? content) =>
