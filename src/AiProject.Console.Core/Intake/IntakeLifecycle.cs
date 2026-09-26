@@ -31,9 +31,7 @@ public static class IntakeLifecycle
         IReadOnlyDictionary<int, IssueTrace>? traces = null)
     {
         traces ??= new Dictionary<int, IssueTrace>();
-        if (intake.Billed)
-            return (IntakeStages.Billed, "");
-        if (!string.IsNullOrEmpty(intake.AcceptedAt))
+        if (!string.IsNullOrEmpty(intake.AcceptedAt) || intake.Billed)
             return (IntakeStages.Accepted, "");
 
         var (stage, block) = DeriveProgress(intake, traces);
@@ -50,23 +48,11 @@ public static class IntakeLifecycle
     {
         var issued = intake.Items.Where(i => i.HasIssue).ToList();
         if (issued.Count == 0)
-        {
-            if (IntakeGates.BlockPublish(intake) is null)
-                return (IntakeStages.Split, "");
-            if (IntakeGates.BlockSplit(intake) is null)
-                return (IntakeStages.Split, IntakeGates.BlockPublish(intake) ?? "");
-            if (IntakeGates.BlockDesignReady(intake) is null)
-                return (IntakeStages.DesignReady, IntakeGates.BlockSplit(intake) ?? "");
-            return (IntakeStages.Draft, IntakeGates.BlockDesignReady(intake) ?? "");
-        }
+            return (IntakeStages.Draft, IntakeGates.BlockPublish(intake) ?? "");
 
         var closed = 0;
         var assigned = 0;
         var hasPr = 0;
-        var pendingCi = 0;
-        var failedCi = 0;
-        var green = 0;
-        var merged = 0;
         foreach (var item in issued)
         {
             traces.TryGetValue(item.IssueNumber!.Value, out var trace);
@@ -77,30 +63,10 @@ public static class IntakeLifecycle
                 assigned++;
             if (!string.IsNullOrEmpty(trace?.PrUrl) || !string.IsNullOrEmpty(item.PrUrl))
                 hasPr++;
-            var tone = trace?.CiTone ?? item.CiTone;
-            if (tone == "warn")
-                failedCi++;
-            else if (tone is "wait" or "run")
-                pendingCi++;
-            if (trace?.ChecksGreen == true || tone == "ok")
-                green++;
-            if (trace?.Merged == true || string.Equals(item.PrState, "MERGED", StringComparison.OrdinalIgnoreCase))
-                merged++;
         }
 
-        if (!string.IsNullOrEmpty(intake.DeployRunId) || intake.SkipDeploy)
-        {
-            if (!string.IsNullOrEmpty(intake.ReleaseTag) || intake.SkipDeploy)
-                return (IntakeStages.Deployed, "");
-        }
-        if (!string.IsNullOrEmpty(intake.ReleaseTag))
-            return (IntakeStages.Released, intake.SkipDeploy ? "" : "尚未部署（可略過）。");
-        if (merged == issued.Count && issued.Count > 0)
-            return (IntakeStages.Merged, "可依進件發行 Release。");
-        if (green == issued.Count && hasPr == issued.Count && failedCi == 0 && pendingCi == 0)
-            return (IntakeStages.Review, "");
-        if (pendingCi > 0 || failedCi > 0 || hasPr > 0)
-            return (IntakeStages.Verify, failedCi > 0 ? "CI 未通過。" : "遠端檢查進行中。");
+        if (closed == issued.Count)
+            return (IntakeStages.Accepted, "");
         if (assigned > 0 || hasPr > 0)
             return (IntakeStages.Doing, assigned == 0 ? "已發出但尚未指派。" : "");
         return (IntakeStages.Issued, "已發出，等待工程師接受。");
@@ -140,18 +106,27 @@ public static class IntakeLifecycle
             $"intake: {intake.Id}",
             "",
             intake.Body.Trim(),
-            "",
-            "## 驗收條件",
         };
-        foreach (var c in item.AcceptanceCriteria.Where(x => !string.IsNullOrWhiteSpace(x)))
-            lines.Add("- [ ] " + c.Trim());
-        if (intake.IsDesignChange)
+        var criteria = item.AcceptanceCriteria.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+        if (criteria.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("## 驗收條件");
+            foreach (var c in criteria)
+                lines.Add("- [ ] " + c.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(intake.AsIs)
+            || !string.IsNullOrWhiteSpace(intake.ToBe)
+            || !string.IsNullOrWhiteSpace(intake.Impact))
         {
             lines.Add("");
             lines.Add("## 設計變更");
-            lines.Add("- 現況：" + intake.AsIs.Trim());
-            lines.Add("- 期望：" + intake.ToBe.Trim());
-            lines.Add("- 影響：" + intake.Impact.Trim());
+            if (!string.IsNullOrWhiteSpace(intake.AsIs))
+                lines.Add("- 現況：" + intake.AsIs.Trim());
+            if (!string.IsNullOrWhiteSpace(intake.ToBe))
+                lines.Add("- 期望：" + intake.ToBe.Trim());
+            if (!string.IsNullOrWhiteSpace(intake.Impact))
+                lines.Add("- 影響：" + intake.Impact.Trim());
         }
         if (intake.DesignDocs.Count > 0)
         {
@@ -160,33 +135,18 @@ public static class IntakeLifecycle
             foreach (var doc in intake.DesignDocs.Where(d => !string.IsNullOrWhiteSpace(d)))
                 lines.Add("- " + FileLink(doc.Trim(), links));
         }
-        if (intake.IsUi && !intake.IsDesignChange)
+        var attachments = intake.Sketches
+            .Concat(intake.Crops)
+            .Where(v => !string.IsNullOrWhiteSpace(v.Path))
+            .ToList();
+        if (attachments.Count > 0)
         {
-            var sketches = intake.Sketches.Where(s => !string.IsNullOrWhiteSpace(s.Path)).ToList();
-            if (sketches.Count > 0)
+            lines.Add("");
+            lines.Add("## 附件");
+            foreach (var visual in attachments)
             {
-                lines.Add("");
-                lines.Add("## 介面草圖");
-                foreach (var sketch in sketches)
-                {
-                    lines.Add("- " + FileLink(sketch.Path.Trim(), links));
-                    if (!string.IsNullOrWhiteSpace(sketch.Note))
-                        lines.Add("  " + sketch.Note.Trim());
-                }
-            }
-        }
-        if (intake.IsUi && intake.IsDesignChange)
-        {
-            var crops = intake.Crops.Where(c => !string.IsNullOrWhiteSpace(c.Path)).ToList();
-            if (crops.Count > 0)
-            {
-                lines.Add("");
-                lines.Add("## 現況剪圖（修改處）");
-                foreach (var crop in crops)
-                {
-                    var note = string.IsNullOrWhiteSpace(crop.Note) ? "" : " — " + crop.Note.Trim();
-                    lines.Add("- " + FileLink(crop.Path.Trim(), links) + note);
-                }
+                var note = string.IsNullOrWhiteSpace(visual.Note) ? "" : " — " + visual.Note.Trim();
+                lines.Add("- " + FileLink(visual.Path.Trim(), links) + note);
             }
         }
         return string.Join('\n', lines);
@@ -210,11 +170,12 @@ public static class IntakeLifecycle
 
     public static string PublishPreview(IntakeRecord intake)
     {
+        intake.EnsurePrimaryItem();
         var pending = intake.Items.Where(i => !i.HasIssue).ToList();
         if (pending.Count == 0)
             return "";
         var parts = pending.Select(item =>
-            item.Title + "\n" + IssueBody(intake, item));
+            (string.IsNullOrWhiteSpace(intake.Title) ? item.Title : intake.Title) + "\n" + IssueBody(intake, item));
         var text = string.Join("\n---\n", parts);
         return text.Length <= 900 ? text : text[..900] + "…";
     }

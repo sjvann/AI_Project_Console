@@ -190,4 +190,15 @@ public sealed record GitBranchInfo(
         var slash = text.IndexOf('/');
         return slash > 0 ? text[(slash + 1)..] : text;
     }
+
+    /// <summary>清單的 <c>IsCurrent</c> 優先；清單還沒到再用 brief 快取。</summary>
+    public static string? CurrentName(IReadOnlyList<GitBranchInfo> branches, string? fallback = null)
+    {
+        foreach (var b in branches)
+        {
+            if (b.IsCurrent)
+                return b.Name;
+        }
+        return fallback;
+    }
 }

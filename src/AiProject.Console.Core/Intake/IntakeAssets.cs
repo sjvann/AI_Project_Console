@@ -14,7 +14,7 @@ public static class IntakeAssets
     public static string FolderRel(string intakeId) =>
         RelDir + "/" + SanitizeId(intakeId);
 
-    public static string CopyIn(string root, string intakeId, string source, string kind)
+    public static string CopyIn(string root, string intakeId, string source)
     {
         if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(intakeId))
             throw new InvalidOperationException("沒有工作區或進件編號。");
@@ -28,8 +28,7 @@ public static class IntakeAssets
             throw new InvalidOperationException("圖片需小於 8 MB。");
         var dir = Path.Combine(Path.GetFullPath(root), RelDir.Replace('/', Path.DirectorySeparatorChar), SanitizeId(intakeId));
         Directory.CreateDirectory(dir);
-        var prefix = kind == "crop" ? "crop" : "sketch";
-        var name = $"{prefix}-{DateTime.Now:HHmmss}-{Guid.NewGuid().ToString("N")[..4]}{ext.ToLowerInvariant()}";
+        var name = $"img-{DateTime.Now:HHmmss}-{Guid.NewGuid().ToString("N")[..4]}{ext.ToLowerInvariant()}";
         var dest = Path.Combine(dir, name);
         File.Copy(source, dest, overwrite: false);
         return FolderRel(intakeId) + "/" + name;

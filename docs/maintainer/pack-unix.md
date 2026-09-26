@@ -21,8 +21,8 @@
 
 1. 把含 `scripts/pack-unix.sh` 與 `.github/workflows/pack-unix.yml` 的提交推上遠端。
 2. GitHub → Actions → **Pack Unix** → Run workflow。
-   - `version`：目前版號（例如 `0.6.16`，不含 `v`）
-   - `upload_release`：若 `v0.6.16` 已經存在，勾選後會把 Unix 資產附加到該 Release（不覆寫 `*-win-x64-setup.exe`）
+   - `version`：目前版號（例如 `0.6.18`，不含 `v`）
+   - `upload_release`：若 `v0.6.18` 已經存在，勾選後會把 Unix 資產附加到該 Release（不覆寫 `*-win-x64-setup.exe`）
 3. 工作流程會：
    - 在 **macOS** runner 為 `osx-arm64`／`osx-x64` 做 `dotnet publish`、組 `.app`、ad-hoc `codesign`、zip
    - 在 **Ubuntu** runner 為 `linux-x64`／`linux-arm64` 做 publish、zip，並用 `dpkg-deb` 產 `.deb`
@@ -30,7 +30,7 @@
 4. 未勾選上傳時，從該次 run 的 Artifacts 下載，人工核對後再 `gh release upload`。
 
 ```powershell
-gh workflow run pack-unix.yml -f version=0.6.16 -f upload_release=true
+gh workflow run pack-unix.yml -f version=0.6.18 -f upload_release=true
 gh run watch
 ```
 
@@ -55,7 +55,7 @@ gh run watch
 ## 本機 Windows 交叉編譯（只查原生庫，非正式檔）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/pack-unix.ps1 -Version 0.6.16 -Runtime osx-arm64
+powershell -ExecutionPolicy Bypass -File scripts/pack-unix.ps1 -Version 0.6.18 -Runtime osx-arm64
 ```
 
 成功只表示 `dotnet publish -r osx-arm64` 有帶出 `Photino.Native.dylib`。產出的 zip **禁止**上傳 Release。

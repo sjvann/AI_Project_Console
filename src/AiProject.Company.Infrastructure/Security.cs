@@ -108,19 +108,42 @@ public sealed class WorkspaceIntakeReader : Application.IWorkspaceIntakeReader
             return null;
         var json = await File.ReadAllTextAsync(path, ct);
         using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return Summarize(doc.RootElement);
+    }
+
+    public static IntakeSummary Summarize(System.Text.Json.JsonElement root)
+    {
         var issued = 0;
         var pending = 0;
-        if (doc.RootElement.TryGetProperty("intakes", out var intakes) && intakes.ValueKind == System.Text.Json.JsonValueKind.Array)
+        if (root.TryGetProperty("intakes", out var intakes) && intakes.ValueKind == System.Text.Json.JsonValueKind.Array)
         {
             foreach (var item in intakes.EnumerateArray())
             {
-                var stage = item.TryGetProperty("stage", out var s) ? s.GetString() : "";
-                if (string.Equals(stage, "issued", StringComparison.OrdinalIgnoreCase) || string.Equals(stage, "已發出", StringComparison.OrdinalIgnoreCase))
-                    issued++;
-                else if (string.Equals(stage, "acceptance", StringComparison.OrdinalIgnoreCase) || string.Equals(stage, "待驗收", StringComparison.OrdinalIgnoreCase))
+                var hold = item.TryGetProperty("hold", out var holdEl) ? holdEl.GetString() : "";
+                if (string.Equals(hold, "recalled", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!HasIssue(item))
+                    continue;
+                issued++;
+                var acceptedAt = item.TryGetProperty("acceptedAt", out var acceptedEl) ? acceptedEl.GetString() : null;
+                if (string.IsNullOrWhiteSpace(acceptedAt))
                     pending++;
             }
         }
         return new IntakeSummary(issued, pending);
+    }
+
+    static bool HasIssue(System.Text.Json.JsonElement intake)
+    {
+        if (!intake.TryGetProperty("items", out var items) || items.ValueKind != System.Text.Json.JsonValueKind.Array)
+            return false;
+        foreach (var work in items.EnumerateArray())
+        {
+            if (!work.TryGetProperty("issueNumber", out var number))
+                continue;
+            if (number.ValueKind == System.Text.Json.JsonValueKind.Number && number.TryGetInt32(out var n) && n > 0)
+                return true;
+        }
+        return false;
     }
 }

@@ -5,20 +5,14 @@
 <div class="intake-shell" id="intake-split">
     <div class="intake-side">
         <div class="hours-list-head">
-            <h3 class="hours-panel-title">進件</h3>
+            <h3 class="hours-panel-title">Issue</h3>
             <div class="btn-row">
-                <button type="button" class="hours-link" @onclick="@(() => S.AddIntake(IntakeKinds.Requirement))">新需求</button>
-                <button type="button" class="hours-link" @onclick="@(() => S.AddIntake(IntakeKinds.DesignChange))">設計變更</button>
+                <button type="button" class="hours-link" @onclick="S.AddIntake">開 Issue</button>
             </div>
-        </div>
-        <div class="intake-filters" role="tablist" aria-label="進件種類">
-            <button type="button" class="hours-pane @(S.IntakeFilter == "all" ? "active" : null)" @onclick="@(() => S.SetIntakeFilter("all"))">全部</button>
-            <button type="button" class="hours-pane @(S.IntakeFilter == "requirement" ? "active" : null)" @onclick="@(() => S.SetIntakeFilter("requirement"))">需求</button>
-            <button type="button" class="hours-pane @(S.IntakeFilter == "design-change" ? "active" : null)" @onclick="@(() => S.SetIntakeFilter("design-change"))">設計變更</button>
         </div>
         @if (S.VisibleIntakes.Count == 0)
         {
-            <p class="hint">還沒有進件。從需求或設計變更開始，拆任務後再發出遠端 Issue。</p>
+            <p class="hint">還沒有 Issue。填標題與說明後發出；指派與截圖可選。</p>
         }
         else
         {
@@ -29,15 +23,15 @@
                         <button type="button" class="intake-card-main" @onclick="@(() => S.SelectIntake(item.Id))">
                             <span>
                                 <strong>@item.Id</strong>
-                                <em>@item.KindLabel</em>
+                                <em>@item.AssigneeText</em>
                             </span>
                             <span class="hours-project-meta">
-                                <strong>@item.StageLabel</strong>
+                                <strong>@(string.IsNullOrWhiteSpace(item.Title) ? "未填標題" : item.Title)</strong>
+                                <em>@item.StageLabel</em>
                                 @if (!string.IsNullOrEmpty(item.HoldLabel))
                                 {
                                     <em>@item.HoldLabel</em>
                                 }
-                                <em>@item.IssuedCount/@item.Items.Count</em>
                             </span>
                         </button>
                         @if (IntakeGates.CanDelete(item))
@@ -56,7 +50,7 @@
         }
         @if (S.Catalog is not null && !S.GitIssuesReady)
         {
-            <p class="hint warn">@GitHost.KindLabel(S.GitKind) 尚未接遠端任務／合併請求／流水線。git 提交與推送仍可用；發出與審查請改用 GitHub 或 GitHub Enterprise。</p>
+            <p class="hint warn">@GitHost.KindLabel(S.GitKind) 尚未接遠端任務。git 提交與推送仍可用；發出 Issue 請改用 GitHub 或 GitHub Enterprise。</p>
         }
         else if (S.Catalog is not null && !S.GithubLoggedIn)
         {
@@ -65,15 +59,16 @@
         }
         @if (intake is null)
         {
-            <p class="hint">@(string.IsNullOrEmpty(S.IntakeHint) ? "選左側一筆進件，或新增需求／設計變更。" : S.IntakeHint)</p>
+            <p class="hint">@(string.IsNullOrEmpty(S.IntakeHint) ? "選左側一筆，或按「開 Issue」。" : S.IntakeHint)</p>
         }
         else
         {
             <div class="intake-rail" aria-label="生命週期">
                 @foreach (var stage in IntakeStages.All)
                 {
+                    var now = IntakeStages.Canonical(intake.Stage);
                     var on = IntakeStages.IndexOf(intake.Stage) >= IntakeStages.IndexOf(stage.Id);
-                    <span class="intake-stage @(on ? "is-on" : null) @(intake.Stage == stage.Id ? "is-now" : null)">@stage.Label</span>
+                    <span class="intake-stage @(on ? "is-on" : null) @(now == stage.Id ? "is-now" : null)">@stage.Label</span>
                 }
             </div>
             @if (!string.IsNullOrEmpty(intake.HoldLabel))
@@ -91,158 +86,49 @@
 
             <div class="intake-grid">
                 <div class="field"><span>編號</span><input value="@intake.Id" readonly /></div>
-                <div class="field">
-                    <span>種類</span>
-                    <select @bind="intake.Kind" @bind:after="S.PersistIntake">
-                        <option value="@IntakeKinds.Requirement">需求</option>
-                        <option value="@IntakeKinds.DesignChange">設計變更</option>
-                    </select>
-                </div>
                 <div class="field"><span>標題</span><input @bind="intake.Title" @bind:after="S.PersistIntake" /></div>
-                <div class="field"><span>目標倉</span><input @bind="intake.GithubSlug" @bind:after="S.PersistIntake" placeholder="owner/repo" /></div>
-                <div class="field"><span>產品線</span>
-                    <input @bind="intake.ProductLine" @bind:after="S.PersistIntake" list="product-line-list" placeholder="可選" />
+                <div class="field">
+                    <span>指派</span>
+                    <input @bind="intake.Assignee" @bind:after="S.PersistIntake" placeholder="GitHub 帳號（可選）" list="collab-list" />
                 </div>
-                <div class="field"><span>優先</span>
-                    <select @bind="intake.Priority" @bind:after="S.PersistIntake">
-                        <option value="high">高</option>
-                        <option value="normal">中</option>
-                        <option value="low">低</option>
-                    </select>
-                </div>
+                @if (string.IsNullOrWhiteSpace(intake.GithubSlug))
+                {
+                    <div class="field"><span>目標倉</span><input @bind="intake.GithubSlug" @bind:after="S.PersistIntake" placeholder="owner/repo" /></div>
+                }
             </div>
-            <label class="check">
-                <input type="checkbox" checked="@intake.IsUi" @onchange="@(() => { intake.IsUi = !intake.IsUi; S.PersistIntake(); })" />
-                這是介面（UI）
-            </label>
-            <p class="hint">@(intake.IsDesignChange
-                ? "設計變更是改既有行為：必填現況、期望、影響，並上傳分析／設計文件。若是 UI，請剪出現有畫面要改的區塊。"
-                : "新需求是從無到有：寫目標與驗收即可。若是 UI，請附草圖表達版面，不必剪現有畫面。")</p>
+            <p class="hint">目標倉由目前專案自動帶入。必填標題與說明；指派與截圖可選。</p>
             <div class="field" style="align-items:start"><span>說明</span><textarea @bind="intake.Body" @bind:after="S.PersistIntake"></textarea></div>
-            @if (intake.IsDesignChange)
+            @if (intake.Items.FirstOrDefault(i => i.HasIssue) is { } issued)
             {
-                <div class="field" style="align-items:start"><span>現況</span><textarea @bind="intake.AsIs" @bind:after="S.PersistIntake"></textarea></div>
-                <div class="field" style="align-items:start"><span>期望</span><textarea @bind="intake.ToBe" @bind:after="S.PersistIntake"></textarea></div>
-                <div class="field" style="align-items:start"><span>影響</span><textarea @bind="intake.Impact" @bind:after="S.PersistIntake"></textarea></div>
-            }
-            @if (intake.IsUi && !intake.IsDesignChange)
-            {
-                <div class="hours-list-head">
-                    <h3 class="hours-panel-title">介面草圖</h3>
-                    <div class="btn-row">
-                        <button type="button" class="hours-link" @onclick="@(() => S.AddIntakeVisualAsync("sketch"))">加入檔案</button>
-                        <button type="button" class="hours-link" @onclick="@(() => S.PasteIntakeVisual("sketch"))">貼上剪貼簿</button>
-                    </div>
-                </div>
-                <p class="hint">新介面還沒有可剪的畫面，請附手繪、線框或示意草圖。</p>
-                <IntakeVisualList Kind="sketch" Items="intake.Sketches" />
-            }
-            @if (intake.IsUi && intake.IsDesignChange)
-            {
-                <div class="hours-list-head">
-                    <h3 class="hours-panel-title">現況剪圖</h3>
-                    <div class="btn-row">
-                        <button type="button" class="hours-link" @onclick="@(() => S.AddIntakeVisualAsync("crop"))">加入剪圖</button>
-                        <button type="button" class="hours-link" @onclick="@(() => S.PasteIntakeVisual("crop"))">貼上剪貼簿</button>
-                    </div>
-                </div>
-                <p class="hint">請剪出現有畫面要改的區塊，並在旁註這張要改什麼。</p>
-                <IntakeVisualList Kind="crop" Items="intake.Crops" NoteRequired="true" />
-            }
-            <div class="hours-list-head">
-                <h3 class="hours-panel-title">分析／設計文件</h3>
-                <button type="button" class="hours-link" @onclick="S.AddDesignDocAsync">上傳檔案</button>
-            </div>
-            <div class="field">
-                <span>存放目錄</span>
-                <input value="@S.IntakeDoc.DesignDocsDir" @onchange='e => S.SetDesignDocsDir(e.Value?.ToString() ?? "")' placeholder="docs/product/design" />
-            </div>
-            <p class="hint">檔案會放到專案 @($"{S.IntakeDoc.DesignDocsDir}/{intake.Id}/")。發出時會跟進件表一併提交並推到遠端，Issue 會附上連結，其他人 pull 後也看得到。</p>
-            @if (intake.DesignDocs.Count == 0)
-            {
-                <p class="hint">@(intake.IsDesignChange ? "設計變更至少要上傳一份分析或設計文件。" : "可選。有分析或規格時請上傳。")</p>
-            }
-            else
-            {
-                <ul class="intake-docs">
-                    @foreach (var doc in intake.DesignDocs)
+                <p class="hint">
+                    <a href="@issued.IssueUrl" target="_blank" rel="noreferrer">#@issued.IssueNumber</a>
+                    @if (!string.IsNullOrEmpty(issued.PrUrl))
                     {
-                        <li>
-                            <button type="button" class="hours-link" @onclick="@(() => S.OpenDesignDoc(doc))">@System.IO.Path.GetFileName(doc)</button>
-                            <em>@doc</em>
-                            <button type="button" class="intake-card-del" @onclick="@(() => S.RemoveDesignDoc(doc))">移除</button>
-                        </li>
+                        <span> · </span>
+                        <a href="@issued.PrUrl" target="_blank" rel="noreferrer">PR @issued.PrState</a>
                     }
-                </ul>
+                </p>
             }
 
             <div class="hours-list-head">
-                <h3 class="hours-panel-title">工作任務</h3>
-                <button type="button" class="hours-link" @onclick="S.AddWorkItem">新增任務</button>
+                <h3 class="hours-panel-title">截圖／附件</h3>
+                <div class="btn-row">
+                    <button type="button" class="hours-link" @onclick="S.AddIntakeVisualAsync">加入檔案</button>
+                    <button type="button" class="hours-link" @onclick="S.PasteIntakeVisual">貼上剪貼簿</button>
+                </div>
             </div>
-            @foreach (var item in intake.Items)
-            {
-                <section class="hours-sheet-project">
-                    <div class="field"><span>標題</span><input @bind="item.Title" @bind:after="S.PersistIntake" /></div>
-                    <div class="field">
-                        <span>指派</span>
-                        <input @bind="item.Assignee" @bind:after="S.PersistIntake" placeholder="帳號" list="collab-list" />
-                    </div>
-                    @if (item.HasIssue)
-                    {
-                        <p class="hint">
-                            <a href="@item.IssueUrl" target="_blank" rel="noreferrer">#@item.IssueNumber</a>
-                            @if (!string.IsNullOrEmpty(item.PrUrl))
-                            {
-                                <span> · </span>
-                                <a href="@item.PrUrl" target="_blank" rel="noreferrer">PR @item.PrState</a>
-                                <span class="duty-chip is-@(string.IsNullOrEmpty(item.CiTone) ? "wait" : item.CiTone)">@(string.IsNullOrEmpty(item.CiHint) ? "CI" : item.CiHint)</span>
-                            }
-                        </p>
-                    }
-                    <div class="field" style="align-items:start">
-                        <span>驗收</span>
-                        <div>
-                            @for (var i = 0; i < item.AcceptanceCriteria.Count; i++)
-                            {
-                                var idx = i;
-                                <div class="field-inline">
-                                    <input type="checkbox" checked="@(idx < item.AcceptanceDone.Count && item.AcceptanceDone[idx])" @onchange="@(() => S.ToggleAcceptance(item, idx))" />
-                                    <input @bind="item.AcceptanceCriteria[idx]" @bind:after="S.PersistIntake" placeholder="驗收條件" />
-                                </div>
-                            }
-                            <button type="button" class="hours-link" @onclick="@(() => { item.AcceptanceCriteria.Add(""); item.AcceptanceDone.Add(false); S.PersistIntake(); })">加一條</button>
-                        </div>
-                    </div>
-                    <button type="button" class="btn-sec btn-compact" @onclick="@(() => S.RemoveWorkItem(item.Id))">移除任務</button>
-                </section>
-            }
+            <p class="hint">可選。發出時會跟進件表一併提交並推到遠端，Issue 會附上連結。</p>
+            <IntakeVisualList Items="intake.Sketches" />
             <datalist id="collab-list">
                 @foreach (var login in S.Collaborators)
                 {
                     <option value="@login"></option>
                 }
             </datalist>
-            <datalist id="product-line-list">
-                @foreach (var line in S.ProductLineChoices)
-                {
-                    <option value="@line"></option>
-                }
-            </datalist>
 
             <div class="intake-actions">
-                <button class="btn-primary" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.PublishSelectedAsync">發出並指派</button>
-                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.RequestReviewSelectedAsync">請人審</button>
-                <input class="intake-reviewer" @bind="S.ReviewerDraft" placeholder="審查人帳號" />
-                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.MergeSelectedAsync">合併（CI 綠）</button>
-                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.ReleaseSelectedAsync">發行 Release</button>
-                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.DeploySelectedAsync">觸發部署</button>
-                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled)" @onclick="S.AcceptSelectedAsync">驗收結案</button>
-                <button class="btn-sec" @onclick="S.ImportHoursInboxAsync">匯入工時 CSV</button>
-                <label class="check">
-                    <input type="checkbox" checked="@intake.SkipDeploy" @onchange="@(() => { intake.SkipDeploy = !intake.SkipDeploy; S.PersistIntake(); })" />
-                    本進件不部署
-                </label>
+                <button class="btn-primary" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled || intake.IssuedCount > 0)" @onclick="S.PublishSelectedAsync">發出並指派</button>
+                <button class="btn-sec" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled || intake.IssuedCount == 0)" @onclick="S.AcceptSelectedAsync">驗收結案</button>
             </div>
             @if (IntakeGates.CanHold(intake) || IntakeGates.CanResume(intake))
             {
@@ -262,19 +148,6 @@
                     }
                 </div>
             }
-            @if (!string.IsNullOrEmpty(intake.DeployHint) || !string.IsNullOrEmpty(intake.ReleaseTag))
-            {
-                <p class="hint">
-                    @if (!string.IsNullOrEmpty(intake.ReleaseTag))
-                    {
-                        <span>Release @intake.ReleaseTag</span>
-                    }
-                    @if (!string.IsNullOrEmpty(intake.DeployHint))
-                    {
-                        <span> · 部署 @intake.DeployHint</span>
-                    }
-                </p>
-            }
             @if (S.GovernanceIssues.Count > 0)
             {
                 <div class="hours-list-head">
@@ -288,22 +161,6 @@
                             <a href="@issue.Url" target="_blank" rel="noreferrer">@issue.NumberText</a>
                             <span>@issue.Title</span>
                             <em>@issue.AssigneeText</em>
-                        </li>
-                    }
-                </ul>
-            }
-            @if (!string.IsNullOrEmpty(S.HoursInboxHint))
-            {
-                <p class="hint">@S.HoursInboxHint</p>
-            }
-            @if (S.HoursInbox.Count > 0)
-            {
-                <ul class="hours-items">
-                    @foreach (var row in S.HoursInbox.Take(20))
-                    {
-                        <li>
-                            <span>#@row.Row.Number @row.Row.Title</span>
-                            <em>@(string.IsNullOrEmpty(row.IntakeId) ? "未對上進件" : row.IntakeId)</em>
                         </li>
                     }
                 </ul>

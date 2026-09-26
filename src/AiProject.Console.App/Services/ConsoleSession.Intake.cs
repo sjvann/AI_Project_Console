@@ -1,12 +1,7 @@
-using System.Diagnostics;
-using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Cursor;
-using AiProject.Console.Core.Deploy;
 using AiProject.Console.Core.GitHub;
 using AiProject.Console.Core.Intake;
-using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Util;
-using AiProject.Console.Core.WorkHours;
 
 namespace AiProject.Console.App.Services;
 
@@ -14,37 +9,16 @@ public sealed partial class ConsoleSession
 {
     public IntakeDocument IntakeDoc { get; private set; } = new();
     public string? SelectedIntakeId { get; private set; }
-    public string IntakeFilter { get; set; } = "all";
     public string IntakeHint { get; private set; } = "";
     public bool IntakeBusy { get; private set; }
     public IReadOnlyList<string> Collaborators { get; private set; } = [];
     public IReadOnlyList<GithubIssue> GovernanceIssues { get; private set; } = [];
-    public IReadOnlyList<HoursInboxMatch> HoursInbox { get; private set; } = [];
-    public string HoursInboxHint { get; private set; } = "";
-    public string ReviewerDraft { get; set; } = "";
     public string HoldNoteDraft { get; set; } = "";
-    public IReadOnlyList<string> ProductLineChoices =>
-        Catalog is null
-            ? []
-            : ServiceCatalogBuilder.ReadProductLines(Catalog.Manifest, Catalog.Services).Select(l => l.Label).ToList();
 
     public IntakeRecord? SelectedIntake =>
         IntakeStore.Find(IntakeDoc, SelectedIntakeId);
 
-    public IReadOnlyList<IntakeRecord> VisibleIntakes
-    {
-        get
-        {
-            IEnumerable<IntakeRecord> q = IntakeDoc.Intakes;
-            q = IntakeFilter switch
-            {
-                "requirement" => q.Where(i => i.Kind == IntakeKinds.Requirement),
-                "design-change" => q.Where(i => i.Kind == IntakeKinds.DesignChange),
-                _ => q,
-            };
-            return q.ToList();
-        }
-    }
+    public IReadOnlyList<IntakeRecord> VisibleIntakes => IntakeDoc.Intakes;
 
     public async Task RefreshIntakeAsync()
     {
@@ -52,13 +26,15 @@ public sealed partial class ConsoleSession
         {
             IntakeDoc = new();
             SelectedIntakeId = null;
-            IntakeHint = "請先選擇專案或薄工作區。需求表寫在 docs/product/intake.json。";
+            IntakeHint = "請先選擇專案或薄工作區。Issue 表寫在 docs/product/intake.json。";
             Notify();
             return;
         }
         IntakeDoc = IntakeStore.Load(Catalog.Root);
         if (string.IsNullOrWhiteSpace(IntakeDoc.DesignDocsDir))
             IntakeDoc.DesignDocsDir = IntakeDesignFiles.DefaultDir;
+        foreach (var intake in IntakeDoc.Intakes)
+            intake.MergeAttachments();
         if (SelectedIntake is null)
             SelectedIntakeId = IntakeDoc.Intakes.FirstOrDefault()?.Id;
         DeriveLocalStages();
@@ -73,25 +49,20 @@ public sealed partial class ConsoleSession
         Notify();
     }
 
-    public void SetIntakeFilter(string filter)
-    {
-        IntakeFilter = filter;
-        Notify();
-    }
-
-    public void AddIntake(string kind)
+    public void AddIntake()
     {
         if (Catalog is null)
         {
             _native.Warn("需求工作台", "請先選擇專案目錄。");
             return;
         }
-        var record = IntakeStore.NewRecord(kind, GithubAccount.Login);
+        var record = IntakeStore.NewRecord(GithubAccount.Login);
         var cfg = GithubDraft;
         if (!string.IsNullOrEmpty(cfg.Slug()))
         {
             record.GithubSlug = cfg.Slug();
             record.Host = cfg.ResolvedHost();
+            record.EnsurePrimaryItem().GithubSlug = record.GithubSlug;
         }
         IntakeDoc.Intakes.Insert(0, record);
         SelectedIntakeId = record.Id;
@@ -123,109 +94,6 @@ public sealed partial class ConsoleSession
         PersistIntake();
     }
 
-    public void AddWorkItem()
-    {
-        var intake = SelectedIntake;
-        if (intake is null)
-            return;
-        var item = IntakeStore.NewWorkItem();
-        item.GithubSlug = intake.GithubSlug;
-        intake.Items.Add(item);
-        PersistIntake();
-    }
-
-    public void RemoveWorkItem(string id)
-    {
-        var intake = SelectedIntake;
-        if (intake is null)
-            return;
-        intake.Items.RemoveAll(i => i.Id == id);
-        PersistIntake();
-    }
-
-    public void SetDesignDocsDir(string dir)
-    {
-        try
-        {
-            IntakeDoc.DesignDocsDir = IntakeDesignFiles.NormalizeDir(dir);
-            PersistIntake();
-        }
-        catch (Exception ex)
-        {
-            _native.Warn("目錄無效", FirstLine(ex.Message));
-            Notify();
-        }
-    }
-
-    public async Task AddDesignDocAsync()
-    {
-        var intake = SelectedIntake;
-        if (Catalog is null || intake is null)
-            return;
-        if (intake.DesignDocs.Count >= IntakeDesignFiles.MaxFiles)
-        {
-            _native.Warn("附件已滿", $"同一進件最多 {IntakeDesignFiles.MaxFiles} 份文件。");
-            return;
-        }
-        var files = await _native.PickFilesAsync(
-            "選擇分析／設計文件",
-            ("文件", [".md", ".txt", ".pdf", ".doc", ".docx", ".rtf", ".xlsx", ".pptx", ".csv"]),
-            ("圖片", [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"])).ConfigureAwait(false);
-        if (files is null || files.Length == 0)
-            return;
-        try
-        {
-            foreach (var file in files)
-            {
-                if (intake.DesignDocs.Count >= IntakeDesignFiles.MaxFiles)
-                    break;
-                var rel = IntakeDesignFiles.CopyIn(Catalog.Root, IntakeDoc.DesignDocsDir, intake.Id, file);
-                if (!intake.DesignDocs.Any(d => string.Equals(d, rel, StringComparison.OrdinalIgnoreCase)))
-                    intake.DesignDocs.Add(rel);
-            }
-            PersistIntake();
-        }
-        catch (Exception ex)
-        {
-            _native.Warn("無法加入文件", FirstLine(ex.Message));
-        }
-    }
-
-    public void RemoveDesignDoc(string rel)
-    {
-        var intake = SelectedIntake;
-        if (Catalog is null || intake is null || string.IsNullOrWhiteSpace(rel))
-            return;
-        intake.DesignDocs.RemoveAll(d => string.Equals(d, rel, StringComparison.OrdinalIgnoreCase));
-        IntakeDesignFiles.DeleteFile(Catalog.Root, rel);
-        PersistIntake();
-    }
-
-    public void OpenDesignDoc(string rel)
-    {
-        if (Catalog is null || !IntakeDesignFiles.TryResolve(Catalog.Root, rel, out var full) || !File.Exists(full))
-        {
-            _native.Warn("找不到檔案", rel);
-            return;
-        }
-        try
-        {
-            Process.Start(new ProcessStartInfo(full) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            _native.Warn("無法開啟", FirstLine(ex.Message));
-        }
-    }
-
-    public void ToggleAcceptance(IntakeWorkItem item, int index)
-    {
-        while (item.AcceptanceDone.Count <= index)
-            item.AcceptanceDone.Add(false);
-        item.AcceptanceDone[index] = !item.AcceptanceDone[index];
-        PersistIntake();
-    }
-
     public void PersistIntake()
     {
         if (Catalog is null)
@@ -238,6 +106,12 @@ public sealed partial class ConsoleSession
         {
             IntakeDoc.DesignDocsDir = IntakeDesignFiles.DefaultDir;
         }
+        foreach (var intake in IntakeDoc.Intakes)
+        {
+            FillIntakeSlug(intake);
+            intake.MergeAttachments();
+            intake.EnsurePrimaryItem();
+        }
         DeriveLocalStages();
         IntakeStore.Save(Catalog.Root, IntakeDoc);
         Notify();
@@ -246,28 +120,27 @@ public sealed partial class ConsoleSession
     public string? IntakeVisualSrc(string rel) =>
         Catalog is null ? null : IntakeAssets.TryDataUrl(Catalog.Root, rel);
 
-    public async Task AddIntakeVisualAsync(string kind)
+    public async Task AddIntakeVisualAsync()
     {
         var intake = SelectedIntake;
         if (Catalog is null || intake is null)
             return;
-        var list = kind == "crop" ? intake.Crops : intake.Sketches;
-        if (list.Count >= IntakeAssets.MaxFilesPerKind)
+        intake.MergeAttachments();
+        if (intake.Sketches.Count >= IntakeAssets.MaxFilesPerKind)
         {
             _native.Warn("附件已滿", $"同一進件最多 {IntakeAssets.MaxFilesPerKind} 張。");
             return;
         }
-        var title = kind == "crop" ? "選擇現況剪圖" : "選擇介面草圖";
-        var files = await _native.PickFilesAsync(title, ("圖片", [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"])).ConfigureAwait(false);
+        var files = await _native.PickFilesAsync("選擇截圖", ("圖片", [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"])).ConfigureAwait(false);
         if (files is null || files.Length == 0)
             return;
         try
         {
             foreach (var file in files)
             {
-                if (list.Count >= IntakeAssets.MaxFilesPerKind)
+                if (intake.Sketches.Count >= IntakeAssets.MaxFilesPerKind)
                     break;
-                list.Add(new IntakeVisual { Path = IntakeAssets.CopyIn(Catalog.Root, intake.Id, file, kind) });
+                intake.Sketches.Add(new IntakeVisual { Path = IntakeAssets.CopyIn(Catalog.Root, intake.Id, file) });
             }
             PersistIntake();
         }
@@ -277,13 +150,13 @@ public sealed partial class ConsoleSession
         }
     }
 
-    public void PasteIntakeVisual(string kind)
+    public void PasteIntakeVisual()
     {
         var intake = SelectedIntake;
         if (Catalog is null || intake is null)
             return;
-        var list = kind == "crop" ? intake.Crops : intake.Sketches;
-        if (list.Count >= IntakeAssets.MaxFilesPerKind)
+        intake.MergeAttachments();
+        if (intake.Sketches.Count >= IntakeAssets.MaxFilesPerKind)
         {
             _native.Warn("附件已滿", $"同一進件最多 {IntakeAssets.MaxFilesPerKind} 張。");
             return;
@@ -297,7 +170,7 @@ public sealed partial class ConsoleSession
         }
         try
         {
-            list.Add(new IntakeVisual { Path = IntakeAssets.CopyIn(Catalog.Root, intake.Id, dest, kind) });
+            intake.Sketches.Add(new IntakeVisual { Path = IntakeAssets.CopyIn(Catalog.Root, intake.Id, dest) });
             PersistIntake();
         }
         catch (Exception ex)
@@ -310,13 +183,13 @@ public sealed partial class ConsoleSession
         }
     }
 
-    public void RemoveIntakeVisual(string kind, string path)
+    public void RemoveIntakeVisual(string path)
     {
         var intake = SelectedIntake;
         if (Catalog is null || intake is null || string.IsNullOrWhiteSpace(path))
             return;
-        var list = kind == "crop" ? intake.Crops : intake.Sketches;
-        list.RemoveAll(v => string.Equals(v.Path, path, StringComparison.OrdinalIgnoreCase));
+        intake.Sketches.RemoveAll(v => string.Equals(v.Path, path, StringComparison.OrdinalIgnoreCase));
+        intake.Crops.RemoveAll(v => string.Equals(v.Path, path, StringComparison.OrdinalIgnoreCase));
         IntakeAssets.DeleteFile(Catalog.Root, path);
         PersistIntake();
     }
@@ -453,10 +326,17 @@ public sealed partial class ConsoleSession
             _native.Warn("還不能發出", held);
             return;
         }
+        FillIntakeSlug(intake);
+        intake.EnsurePrimaryItem();
         var block = IntakeGates.BlockPublish(intake);
         if (block is not null)
         {
             _native.Warn("還不能發出", block);
+            return;
+        }
+        if (intake.IssuedCount > 0)
+        {
+            _native.Warn("已經發出", "這筆進件已有 GitHub Issue。");
             return;
         }
         if (!GitIssuesReady)
@@ -467,13 +347,16 @@ public sealed partial class ConsoleSession
         var cfg = await ResolveIntakeConfigAsync(intake).ConfigureAwait(false);
         if (string.IsNullOrEmpty(cfg.Slug()))
         {
-            _native.Warn("沒有目標倉", "請填 owner/repo。");
+            _native.Warn("沒有目標倉", "目前專案沒有 owner/repo，請先登入遠端 Git。");
             return;
         }
         var preview = IntakeLifecycle.PublishPreview(intake);
+        var assignHint = string.IsNullOrWhiteSpace(intake.Assignee)
+            ? ""
+            : $"\n指派給 {intake.Assignee.Trim().TrimStart('@')}。";
         if (!_native.Confirm(
             "發出 Issue",
-            $"要把「{intake.Title}」的未發出任務發到 {cfg.Slug()} 嗎？\n會先把進件表、分析／設計文件與草圖／剪圖提交並推到遠端，Issue 會附上連結。\n\n預覽：\n{preview}"))
+            $"要把「{intake.Title}」發到 {cfg.Slug()} 嗎？{assignHint}\n會先把進件表與附件提交並推到遠端，Issue 會附上連結。\n\n預覽：\n{preview}"))
             return;
         IntakeBusy = true;
         Notify();
@@ -481,29 +364,27 @@ public sealed partial class ConsoleSession
         {
             PersistIntake();
             var links = await PublishIntakeFilesAsync(intake, cfg).ConfigureAwait(false);
-            var label = intake.IsDesignChange ? "design-change" : "requirement";
-            foreach (var item in intake.Items.Where(i => !i.HasIssue))
+            var item = intake.EnsurePrimaryItem();
+            var assignee = string.IsNullOrWhiteSpace(item.Assignee) ? null : item.Assignee;
+            var (number, url) = await GitHubIssues.CreateAsync(
+                Catalog.Root,
+                cfg,
+                intake.Title,
+                IntakeLifecycle.IssueBody(intake, item, links),
+                null,
+                assignee,
+                _cts.Token).ConfigureAwait(false);
+            item.IssueNumber = number;
+            item.IssueUrl = url;
+            if (!string.IsNullOrWhiteSpace(assignee))
             {
-                var (number, url) = await GitHubIssues.CreateAsync(
-                    Catalog.Root,
-                    cfg,
-                    item.Title,
-                    IntakeLifecycle.IssueBody(intake, item, links),
-                    [label, "task"],
-                    string.IsNullOrWhiteSpace(item.Assignee) ? null : item.Assignee,
-                    _cts.Token).ConfigureAwait(false);
-                item.IssueNumber = number;
-                item.IssueUrl = url;
-                if (!string.IsNullOrWhiteSpace(item.Assignee))
+                try
                 {
-                    try
-                    {
-                        await GitHubIssues.AssignAsync(Catalog.Root, cfg, number, item.Assignee, _cts.Token).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // 建立已成功；指派失敗不回滾
-                    }
+                    await GitHubIssues.AssignAsync(Catalog.Root, cfg, number, assignee, _cts.Token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 建立已成功；指派失敗不回滾
                 }
             }
             PersistIntake();
@@ -525,115 +406,6 @@ public sealed partial class ConsoleSession
         }
     }
 
-    public async Task RequestReviewSelectedAsync()
-    {
-        var intake = SelectedIntake;
-        if (Catalog is null || intake is null)
-            return;
-        if (IntakeGates.BlockWhileHeld(intake) is { } held)
-        {
-            _native.Warn("還不能請人審", held);
-            return;
-        }
-        var prs = intake.Items.Where(i => !string.IsNullOrEmpty(i.PrUrl)).ToList();
-        if (prs.Count == 0)
-        {
-            _native.Warn("沒有 PR", "這個進件還沒有連結的合併請求。");
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(ReviewerDraft))
-        {
-            _native.Warn("請指定審查人", "填 GitHub 帳號後再請人審。");
-            return;
-        }
-        var cfg = await ResolveIntakeConfigAsync(intake).ConfigureAwait(false);
-        IntakeBusy = true;
-        Notify();
-        try
-        {
-            foreach (var item in prs)
-            {
-                if (!int.TryParse(item.PrNumber, out var n) || n <= 0)
-                    n = GitHubLifecycle.FindIssueNumbers(item.PrUrl).LastOrDefault();
-                if (n <= 0)
-                    continue;
-                await GitHubLifecycle.RequestReviewAsync(Catalog.Root, cfg, n, ReviewerDraft, _cts.Token).ConfigureAwait(false);
-            }
-            JobText = "已請人審查";
-        }
-        catch (Exception ex)
-        {
-            _native.Error("請人審失敗", FirstLine(ex.Message));
-        }
-        finally
-        {
-            IntakeBusy = false;
-            Notify();
-        }
-    }
-
-    public async Task MergeSelectedAsync()
-    {
-        var intake = SelectedIntake;
-        if (Catalog is null || intake is null)
-            return;
-        if (IntakeGates.BlockWhileHeld(intake) is { } held)
-        {
-            _native.Warn("還不能合併", held);
-            return;
-        }
-        var mergeBlock = IntakeGates.BlockMerge(intake);
-        if (mergeBlock is not null)
-        {
-            _native.Warn("還不能合併", mergeBlock);
-            return;
-        }
-        if (!_native.Confirm("合併 PR", "確定把這個進件相關、檢查已過的 PR 合併進主線？"))
-            return;
-        var cfg = await ResolveIntakeConfigAsync(intake).ConfigureAwait(false);
-        IntakeBusy = true;
-        Notify();
-        try
-        {
-            foreach (var item in intake.Items)
-            {
-                if (!int.TryParse(item.PrNumber, out var n) || n <= 0)
-                    n = GitHubLifecycle.FindIssueNumbers(item.PrUrl).LastOrDefault();
-                if (n <= 0 || item.CiTone == "warn")
-                    continue;
-                await GitHubLifecycle.MergeAsync(Catalog.Root, cfg, n, allowWhenRed: false, _cts.Token).ConfigureAwait(false);
-            }
-            JobText = "已合併";
-            await RefreshIntakeRemoteAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _native.Error("合併失敗", FirstLine(ex.Message));
-        }
-        finally
-        {
-            IntakeBusy = false;
-            Notify();
-        }
-    }
-
-    public async Task ReleaseSelectedAsync()
-    {
-        var intake = SelectedIntake;
-        if (Catalog is null || intake is null)
-            return;
-        if (IntakeGates.BlockWhileHeld(intake) is { } held)
-        {
-            _native.Warn("還不能發行", held);
-            return;
-        }
-        ReleaseNotes = IntakeLifecycle.ReleaseNotes(intake);
-        ReleaseTitle = intake.Id + " " + intake.Title;
-        Dialog = "release";
-        Notify();
-        await Task.CompletedTask;
-    }
-
     public void StampReleaseOnIntake(string tag)
     {
         var intake = SelectedIntake;
@@ -641,57 +413,6 @@ public sealed partial class ConsoleSession
             return;
         intake.ReleaseTag = tag.Trim();
         PersistIntake();
-    }
-
-    public async Task DeploySelectedAsync()
-    {
-        var intake = SelectedIntake;
-        if (Catalog is null || intake is null)
-            return;
-        if (IntakeGates.BlockWhileHeld(intake) is { } held)
-        {
-            _native.Warn("還不能部署", held);
-            return;
-        }
-        var deploy = DeployConfigResolver.Resolve(Catalog);
-        var workflow = deploy.Target switch
-        {
-            DeployTargets.Gcp => deploy.Gcp.Workflow,
-            DeployTargets.Azure => deploy.Azure.Workflow,
-            _ => "",
-        };
-        if (string.IsNullOrWhiteSpace(workflow))
-        {
-            if (_native.Confirm("沒有部署 workflow", "這個進件要標成「不部署」並繼續嗎？"))
-            {
-                intake.SkipDeploy = true;
-                PersistIntake();
-            }
-            return;
-        }
-        var cfg = await ResolveIntakeConfigAsync(intake).ConfigureAwait(false);
-        IntakeBusy = true;
-        Notify();
-        try
-        {
-            var msg = await GitHubLifecycle.DispatchWorkflowAsync(Catalog.Root, cfg, workflow, _cts.Token).ConfigureAwait(false);
-            var run = await GitHubLifecycle.LatestRunAsync(Catalog.Root, cfg, workflow, _cts.Token).ConfigureAwait(false);
-            intake.DeployRunId = run is { DatabaseId: > 0 } ? run.DatabaseId.ToString() : DateTimeOffset.Now.ToString("o");
-            intake.DeployHint = run is null
-                ? msg
-                : $"{run.DisplayTitle} · {run.Status} {run.Conclusion}".Trim();
-            PersistIntake();
-            JobText = string.IsNullOrEmpty(run?.Url) ? "已觸發部署" : "已觸發部署 " + run.Url;
-        }
-        catch (Exception ex)
-        {
-            _native.Error("部署失敗", FirstLine(ex.Message));
-        }
-        finally
-        {
-            IntakeBusy = false;
-            Notify();
-        }
     }
 
     public async Task AcceptSelectedAsync()
@@ -710,7 +431,7 @@ public sealed partial class ConsoleSession
             _native.Warn("還不能驗收", block);
             return;
         }
-        if (!_native.Confirm("驗收結案", $"確定依驗收條件關閉「{intake.Title}」的 Issue？"))
+        if (!_native.Confirm("驗收結案", $"確定關閉「{intake.Title}」的 Issue？"))
             return;
         var cfg = await ResolveIntakeConfigAsync(intake).ConfigureAwait(false);
         IntakeBusy = true;
@@ -732,32 +453,6 @@ public sealed partial class ConsoleSession
             IntakeBusy = false;
             Notify();
         }
-    }
-
-    public async Task ImportHoursInboxAsync()
-    {
-        var files = await _native.PickFilesAsync("選擇工時 CSV", ("CSV", [".csv"])).ConfigureAwait(false);
-        if (files is null || files.Length == 0)
-            return;
-        var items = new List<HoursInboxRow>();
-        foreach (var file in files)
-        {
-            var text = await File.ReadAllTextAsync(file).ConfigureAwait(false);
-            if (text.Contains("kind,number,title", StringComparison.OrdinalIgnoreCase))
-                items.AddRange(WorkHoursInbox.ParseItemsCsv(text));
-            else
-                items.AddRange(WorkHoursInbox.ParseHoursCsv(text));
-        }
-        HoursInbox = WorkHoursInbox.Match(items.Where(i => i.Number > 0), IntakeDoc.Intakes);
-        var matched = HoursInbox.Count(m => !string.IsNullOrEmpty(m.IntakeId));
-        HoursInboxHint = $"讀入 {HoursInbox.Count} 筆 Issue／PR，對上 {matched} 筆進件。";
-        foreach (var group in HoursInbox.Where(m => m.IntakeId is not null).GroupBy(m => m.IntakeId))
-        {
-            var intake = IntakeStore.Find(IntakeDoc, group.Key);
-            if (intake is not null)
-                intake.Billed = true;
-        }
-        PersistIntake();
     }
 
     public async Task LoadCollaboratorsAsync()
@@ -846,6 +541,17 @@ public sealed partial class ConsoleSession
             intake.Stage = stage;
             intake.BlockReason = block;
         }
+    }
+
+    void FillIntakeSlug(IntakeRecord intake)
+    {
+        if (!string.IsNullOrWhiteSpace(intake.GithubSlug) && intake.GithubSlug.Contains('/', StringComparison.Ordinal))
+            return;
+        var cfg = GithubDraft;
+        if (string.IsNullOrEmpty(cfg.Slug()))
+            return;
+        intake.GithubSlug = cfg.Slug();
+        intake.Host = cfg.ResolvedHost();
     }
 
     async Task<IntakeIssueLinks?> PublishIntakeFilesAsync(IntakeRecord intake, GithubConfig cfg)

@@ -7,63 +7,32 @@ namespace AiProject.Console.Core.Tests;
 public class IntakeTests
 {
     [Fact]
-    public void Gates_DesignChangeNeedsImpactAndDoc()
+    public void Gates_PublishNeedsTitleBodyAndSlug()
     {
-        var intake = new IntakeRecord
-        {
-            Title = "改登入",
-            Body = "說明",
-            GithubSlug = "acme/app",
-            Kind = IntakeKinds.DesignChange,
-            Items = [new IntakeWorkItem { Title = "改 API", AcceptanceCriteria = ["可登入"] }],
-        };
-        Assert.Equal("設計變更要填現況與期望。", IntakeGates.BlockDesignReady(intake));
-        intake.AsIs = "舊";
-        intake.ToBe = "新";
-        Assert.Equal("設計變更要填影響範圍。", IntakeGates.BlockDesignReady(intake));
-        intake.Impact = "登入流";
-        Assert.Equal("設計變更要上傳分析或設計文件。", IntakeGates.BlockDesignReady(intake));
-        intake.DesignDocs = ["docs/product/design/ECR-1/分析.md"];
+        var intake = new IntakeRecord();
+        Assert.Equal("請先填標題。", IntakeGates.BlockPublish(intake));
+        intake.Title = "登入失敗";
+        Assert.Equal("請先寫說明。", IntakeGates.BlockPublish(intake));
+        intake.Body = "UAT 按登入沒反應。";
+        Assert.Equal("請指定目標倉（owner/repo）。", IntakeGates.BlockPublish(intake));
+        intake.GithubSlug = "acme/app";
         Assert.Null(IntakeGates.BlockPublish(intake));
     }
 
     [Fact]
-    public void Gates_UiRequirementNeedsSketch()
+    public void Gates_CanPublishWithoutAcceptanceDesignOrKind()
     {
-        var intake = ReadyRequirement();
+        var intake = ReadyIssue();
+        intake.Kind = IntakeKinds.DesignChange;
+        Assert.Null(IntakeGates.BlockPublish(intake));
         intake.IsUi = true;
-        Assert.Equal("介面新需求要附一張草圖。", IntakeGates.BlockDesignReady(intake));
-        intake.Sketches = [new IntakeVisual { Path = "docs/product/intake-assets/REQ-1/sketch-1.png" }];
-        Assert.Null(IntakeGates.BlockDesignReady(intake));
-    }
-
-    [Fact]
-    public void Gates_UiDesignChangeNeedsCropNote()
-    {
-        var intake = new IntakeRecord
-        {
-            Title = "改登入鈕",
-            Body = "說明",
-            GithubSlug = "acme/app",
-            Kind = IntakeKinds.DesignChange,
-            IsUi = true,
-            AsIs = "舊",
-            ToBe = "新",
-            Impact = "登入",
-            DesignDocs = ["docs/product/design/ECR-1/分析.md"],
-            Items = [new IntakeWorkItem { Title = "改鈕", AcceptanceCriteria = ["對得上剪圖"] }],
-        };
-        Assert.Equal("介面設計變更要提供剪圖，標出修改處。", IntakeGates.BlockDesignReady(intake));
-        intake.Crops = [new IntakeVisual { Path = "docs/product/intake-assets/ECR-1/crop-1.png" }];
-        Assert.Equal("每張剪圖都要寫修改說明。", IntakeGates.BlockDesignReady(intake));
-        intake.Crops[0].Note = "把登入改成主色";
         Assert.Null(IntakeGates.BlockPublish(intake));
     }
 
     [Fact]
     public void Gates_DeletePauseRecallRules()
     {
-        var draft = ReadyRequirement();
+        var draft = ReadyIssue();
         Assert.True(IntakeGates.CanDelete(draft));
         Assert.False(IntakeGates.CanPause(draft));
         Assert.False(IntakeGates.CanRecall(draft));
@@ -84,7 +53,7 @@ public class IntakeTests
     [Fact]
     public void Lifecycle_HoldOverlaysBlockReason()
     {
-        var intake = ReadyRequirement();
+        var intake = ReadyIssue();
         intake.Items[0].IssueNumber = 9;
         intake.Hold = IntakeHolds.Paused;
         var paused = IntakeLifecycle.Derive(intake);
@@ -96,25 +65,26 @@ public class IntakeTests
     }
 
     [Fact]
-    public void IssueBody_IncludesUiVisuals()
+    public void IssueBody_IncludesAttachmentsAndLegacyFields()
     {
-        var req = ReadyRequirement();
-        req.Id = "REQ-1";
-        req.IsUi = true;
-        req.Sketches = [new IntakeVisual { Path = "docs/product/intake-assets/REQ-1/sketch-1.png", Note = "首頁線框" }];
-        var reqBody = IntakeLifecycle.IssueBody(req, req.Items[0]);
-        Assert.Contains("介面草圖", reqBody);
-        Assert.Contains("sketch-1.png", reqBody);
-        var ecr = ReadyRequirement();
+        var issue = ReadyIssue();
+        issue.Id = "ISS-1";
+        issue.Sketches = [new IntakeVisual { Path = "docs/product/intake-assets/ISS-1/img-1.png", Note = "首頁" }];
+        var body = IntakeLifecycle.IssueBody(issue, issue.Items[0]);
+        Assert.Contains("## 附件", body);
+        Assert.Contains("img-1.png", body);
+        Assert.Contains("首頁", body);
+        Assert.DoesNotContain("## 驗收條件", body);
+        var ecr = ReadyIssue();
         ecr.Kind = IntakeKinds.DesignChange;
-        ecr.IsUi = true;
         ecr.AsIs = "舊";
         ecr.ToBe = "新";
         ecr.Impact = "登入";
         ecr.Crops = [new IntakeVisual { Path = "docs/product/intake-assets/ECR-1/crop-1.png", Note = "改按鈕" }];
         var ecrBody = IntakeLifecycle.IssueBody(ecr, ecr.Items[0]);
-        Assert.Contains("現況剪圖", ecrBody);
+        Assert.Contains("## 設計變更", ecrBody);
         Assert.Contains("改按鈕", ecrBody);
+        Assert.Contains("## 附件", ecrBody);
     }
 
     [Fact]
@@ -128,12 +98,13 @@ public class IntakeTests
             Assert.False(IntakeAssets.TryResolve(root, "docs/user/help.md", out _));
             var src = Path.Combine(root, "src.png");
             File.WriteAllBytes(src, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-            var rel = IntakeAssets.CopyIn(root, "REQ-1", src, "sketch");
-            Assert.StartsWith("docs/product/intake-assets/REQ-1/", rel);
+            var rel = IntakeAssets.CopyIn(root, "ISS-1", src);
+            Assert.StartsWith("docs/product/intake-assets/ISS-1/", rel);
+            Assert.Contains("/img-", rel.Replace('\\', '/'));
             Assert.True(IntakeAssets.TryResolve(root, rel, out var full));
             Assert.True(File.Exists(full));
             Assert.StartsWith("data:image/png;base64,", IntakeAssets.TryDataUrl(root, rel));
-            IntakeAssets.DeleteFolder(root, "REQ-1");
+            IntakeAssets.DeleteFolder(root, "ISS-1");
             Assert.False(File.Exists(full));
         }
         finally
@@ -143,27 +114,41 @@ public class IntakeTests
     }
 
     [Fact]
-    public void Store_RoundTripUiAndHold()
+    public void Store_RoundTripLegacyKindAndHold()
     {
         var root = Path.Combine(Path.GetTempPath(), "apc-intake-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
-            var doc = new IntakeDocument { Intakes = [ReadyRequirement()] };
+            var doc = new IntakeDocument { Intakes = [ReadyIssue()] };
             doc.Intakes[0].Id = "REQ-UI";
+            doc.Intakes[0].Kind = IntakeKinds.Requirement;
             doc.Intakes[0].IsUi = true;
             doc.Intakes[0].Hold = IntakeHolds.Paused;
+            doc.Intakes[0].AsIs = "舊畫面";
             doc.Intakes[0].Sketches = [new IntakeVisual { Path = "docs/product/intake-assets/REQ-UI/a.png", Note = "線框" }];
             IntakeStore.Save(root, doc);
             var loaded = IntakeStore.Load(root);
+            Assert.Equal(IntakeKinds.Requirement, loaded.Intakes[0].Kind);
             Assert.True(loaded.Intakes[0].IsUi);
             Assert.Equal(IntakeHolds.Paused, loaded.Intakes[0].Hold);
+            Assert.Equal("舊畫面", loaded.Intakes[0].AsIs);
             Assert.Equal("線框", loaded.Intakes[0].Sketches[0].Note);
         }
         finally
         {
             Directory.Delete(root, true);
         }
+    }
+
+    [Fact]
+    public void Store_NewRecordUsesIssuePrefix()
+    {
+        var record = IntakeStore.NewRecord("alice");
+        Assert.StartsWith("ISS-", record.Id);
+        Assert.Equal(IntakeKinds.Issue, record.Kind);
+        Assert.Equal("alice", record.Requester);
+        Assert.Single(record.Items);
     }
 
     [Fact]
@@ -195,58 +180,65 @@ public class IntakeTests
     [Fact]
     public void IssueBody_UsesRemoteLinksWhenPublishing()
     {
-        var intake = ReadyRequirement();
-        intake.Id = "REQ-1";
-        intake.DesignDocs = ["docs/product/design/REQ-1/spec.md"];
+        var intake = ReadyIssue();
+        intake.Id = "ISS-1";
+        intake.DesignDocs = ["docs/product/design/ISS-1/spec.md"];
         var body = IntakeLifecycle.IssueBody(intake, intake.Items[0], new IntakeIssueLinks("https://github.com/acme/app", "main"));
         Assert.Contains("分析／設計文件", body);
-        Assert.Contains("[spec.md](https://github.com/acme/app/blob/main/docs/product/design/REQ-1/spec.md)", body);
+        Assert.Contains("[spec.md](https://github.com/acme/app/blob/main/docs/product/design/ISS-1/spec.md)", body);
         var paths = IntakeLifecycle.PublishRelPaths(intake);
         Assert.Contains(IntakeStore.RelPath, paths);
-        Assert.Contains("docs/product/design/REQ-1/spec.md", paths);
+        Assert.Contains("docs/product/design/ISS-1/spec.md", paths);
     }
 
     [Fact]
-    public void Gates_CannotPublishWithoutAcceptance()
-    {
-        var intake = ReadyRequirement();
-        intake.Items[0].AcceptanceCriteria = [""];
-        Assert.Contains("驗收條件", IntakeGates.BlockPublish(intake));
-    }
-
-    [Fact]
-    public void Lifecycle_DraftToSplit()
+    public void Lifecycle_DraftUntilIssued()
     {
         var intake = new IntakeRecord { Title = "A", Body = "B", GithubSlug = "acme/app" };
-        Assert.Equal(IntakeStages.DesignReady, IntakeLifecycle.Derive(intake).Stage);
-        intake.Items.Add(new IntakeWorkItem { Title = "做 A", AcceptanceCriteria = [""] });
-        Assert.Equal(IntakeStages.Split, IntakeLifecycle.Derive(intake).Stage);
-        intake.Items[0].AcceptanceCriteria = ["通過測試"];
-        Assert.Equal(IntakeStages.Split, IntakeLifecycle.Derive(intake).Stage);
+        Assert.Equal(IntakeStages.Draft, IntakeLifecycle.Derive(intake).Stage);
+        Assert.Equal("", IntakeLifecycle.Derive(intake).Block);
+        intake.Items.Add(new IntakeWorkItem { Title = "做 A" });
+        Assert.Equal(IntakeStages.Draft, IntakeLifecycle.Derive(intake).Stage);
+        intake.Items[0].IssueNumber = 9;
+        Assert.Equal(IntakeStages.Issued, IntakeLifecycle.Derive(intake).Stage);
     }
 
     [Fact]
-    public void Lifecycle_IssuedAndReviewFromTraces()
+    public void Lifecycle_MapsLegacyStagesToRail()
     {
-        var intake = ReadyRequirement();
+        Assert.Equal(IntakeStages.Draft, IntakeStages.Canonical(IntakeStages.DesignReady));
+        Assert.Equal(IntakeStages.Draft, IntakeStages.Canonical(IntakeStages.Split));
+        Assert.Equal(IntakeStages.Doing, IntakeStages.Canonical(IntakeStages.Review));
+        Assert.Equal(IntakeStages.Doing, IntakeStages.Canonical(IntakeStages.Merged));
+        Assert.Equal(IntakeStages.Accepted, IntakeStages.Canonical(IntakeStages.Billed));
+        Assert.Equal(4, IntakeStages.All.Count);
+        Assert.Equal(1, IntakeStages.IndexOf(IntakeStages.Issued));
+        Assert.Equal(2, IntakeStages.IndexOf(IntakeStages.Review));
+    }
+
+    [Fact]
+    public void Lifecycle_IssuedAndDoingFromTraces()
+    {
+        var intake = ReadyIssue();
         intake.Items[0].IssueNumber = 9;
         var traces = new Dictionary<int, IssueTrace>
         {
             [9] = new(9, "做 A", "OPEN", "https://example/9", ["dev"], "https://example/pull/3", "OPEN", "ok", "檢查已過", true, false),
         };
         var applied = IntakeLifecycle.ApplyTraces(intake, traces);
-        Assert.Equal(IntakeStages.Review, applied.Stage);
+        Assert.Equal(IntakeStages.Doing, applied.Stage);
         Assert.Equal("https://example/pull/3", applied.Items[0].PrUrl);
     }
 
     [Fact]
-    public void IssueBody_IncludesIntakeIdAndCriteria()
+    public void IssueBody_IncludesIntakeIdWithoutForcedCriteria()
     {
-        var intake = ReadyRequirement();
-        intake.Id = "REQ-1";
+        var intake = ReadyIssue();
+        intake.Id = "ISS-1";
         var body = IntakeLifecycle.IssueBody(intake, intake.Items[0]);
-        Assert.Contains("intake: REQ-1", body);
-        Assert.Contains("通過測試", body);
+        Assert.Contains("intake: ISS-1", body);
+        Assert.Contains("UAT 按登入沒反應。", body);
+        Assert.DoesNotContain("## 驗收條件", body);
     }
 
     [Fact]
@@ -256,12 +248,12 @@ public class IntakeTests
         Directory.CreateDirectory(root);
         try
         {
-            var doc = new IntakeDocument { Intakes = [ReadyRequirement()] };
-            doc.Intakes[0].Id = "REQ-TEST";
+            var doc = new IntakeDocument { Intakes = [ReadyIssue()] };
+            doc.Intakes[0].Id = "ISS-TEST";
             IntakeStore.Save(root, doc);
             var loaded = IntakeStore.Load(root);
-            Assert.Equal("REQ-TEST", loaded.Intakes[0].Id);
-            Assert.Equal("通過測試", loaded.Intakes[0].Items[0].AcceptanceCriteria[0]);
+            Assert.Equal("ISS-TEST", loaded.Intakes[0].Id);
+            Assert.Equal(IntakeKinds.Issue, loaded.Intakes[0].Kind);
         }
         finally
         {
@@ -270,43 +262,36 @@ public class IntakeTests
     }
 
     [Fact]
-    public void Gates_AcceptNeedsChecksMergedAndDeploy()
+    public void Gates_AcceptNeedsIssueOnly()
     {
-        var intake = ReadyRequirement();
+        var intake = ReadyIssue();
+        Assert.Equal("尚未發出 Issue。", IntakeGates.BlockAccept(intake));
         intake.Items[0].IssueNumber = 9;
-        intake.Items[0].AcceptanceDone = [true];
-        Assert.Contains("尚未部署", IntakeGates.BlockAccept(intake));
-        intake.SkipDeploy = true;
         Assert.Null(IntakeGates.BlockAccept(intake));
         intake.Items[0].PrUrl = "https://example/pull/3";
         intake.Items[0].PrState = "OPEN";
-        Assert.Contains("尚未入主線", IntakeGates.BlockAccept(intake));
-        intake.Items[0].PrState = "MERGED";
         Assert.Null(IntakeGates.BlockAccept(intake));
-    }
-
-    [Fact]
-    public void Gates_MergeNeedsGreenChecks()
-    {
-        var intake = ReadyRequirement();
-        Assert.Contains("還沒有連結", IntakeGates.BlockMerge(intake));
-        intake.Items[0].PrUrl = "https://example/pull/3";
-        intake.Items[0].CiTone = "wait";
-        Assert.Contains("還沒綠", IntakeGates.BlockMerge(intake));
-        intake.Items[0].CiTone = "warn";
-        Assert.Contains("未通過", IntakeGates.BlockMerge(intake));
-        intake.Items[0].CiTone = "ok";
-        Assert.Null(IntakeGates.BlockMerge(intake));
     }
 
     [Fact]
     public void PublishPreview_IncludesBody()
     {
-        var intake = ReadyRequirement();
-        intake.Id = "REQ-1";
+        var intake = ReadyIssue();
+        intake.Id = "ISS-1";
         var preview = IntakeLifecycle.PublishPreview(intake);
-        Assert.Contains("intake: REQ-1", preview);
-        Assert.Contains("通過測試", preview);
+        Assert.Contains("intake: ISS-1", preview);
+        Assert.Contains("UAT 按登入沒反應。", preview);
+        Assert.DoesNotContain("## 驗收條件", preview);
+    }
+
+    [Fact]
+    public void MergeAttachments_MovesCropsIntoSketches()
+    {
+        var intake = ReadyIssue();
+        intake.Crops = [new IntakeVisual { Path = "docs/product/intake-assets/ECR-1/crop-1.png", Note = "改鈕" }];
+        intake.MergeAttachments();
+        Assert.Empty(intake.Crops);
+        Assert.Contains(intake.Sketches, s => s.Path.Contains("crop-1.png", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -339,27 +324,42 @@ public class IntakeTests
         var items = WorkHoursInbox.ParseItemsCsv(csv);
         Assert.Single(items);
         Assert.Equal(9, items[0].Number);
-        var intake = ReadyRequirement();
-        intake.Id = "REQ-9";
+        var intake = ReadyIssue();
+        intake.Id = "ISS-9";
         intake.Items[0].IssueNumber = 9;
         var match = WorkHoursInbox.Match(items, [intake]);
-        Assert.Equal("REQ-9", match[0].IntakeId);
+        Assert.Equal("ISS-9", match[0].IntakeId);
     }
 
-    static IntakeRecord ReadyRequirement() =>
+    [Fact]
+    public void Counts_IssuedAndPending()
+    {
+        var draft = ReadyIssue();
+        Assert.False(draft.CountsAsIssued);
+        var open = ReadyIssue();
+        open.Items[0].IssueNumber = 9;
+        Assert.True(open.CountsAsIssued);
+        Assert.True(open.CountsAsPendingAcceptance);
+        open.AcceptedAt = "2026-09-23T00:00:00Z";
+        Assert.True(open.CountsAsIssued);
+        Assert.False(open.CountsAsPendingAcceptance);
+        open.Hold = IntakeHolds.Recalled;
+        open.AcceptedAt = null;
+        Assert.False(open.CountsAsIssued);
+    }
+
+    static IntakeRecord ReadyIssue() =>
         new()
         {
-            Title = "新功能",
-            Body = "說明",
+            Title = "登入失敗",
+            Body = "UAT 按登入沒反應。",
             GithubSlug = "acme/app",
-            Kind = IntakeKinds.Requirement,
+            Kind = IntakeKinds.Issue,
             Items =
             [
                 new IntakeWorkItem
                 {
-                    Title = "做 A",
-                    AcceptanceCriteria = ["通過測試"],
-                    AcceptanceDone = [false],
+                    Title = "登入失敗",
                 },
             ],
         };

@@ -587,29 +587,21 @@
         <section class="slide" aria-label="第 6 頁 專案管理">
             <div class="slide-content">
                 <p class="kicker">專案管理</p>
-                <h2>從進件到報帳，關卡寫在產品裡。</h2>
+                <h2>從開 Issue 到驗收，紀錄寫在 Git 裡。</h2>
                 <div class="flow" aria-label="進件生命週期">
                     <span class="chip">草稿</span>
-                    <span class="chip">設計就緒</span>
-                    <span class="chip">已拆解</span>
                     <span class="chip gate">已發出</span>
                     <span class="chip">實作中</span>
-                    <span class="chip">驗證中</span>
-                    <span class="chip gate">可審查</span>
-                    <span class="chip">入主線</span>
-                    <span class="chip">已發行</span>
-                    <span class="chip">已部署</span>
                     <span class="chip gate">已驗收</span>
-                    <span class="chip gate">已報帳</span>
                 </div>
                 <div class="grid-3">
                     <article class="card">
-                        <h3>新需求 ≠ 設計變更</h3>
-                        <p>從無到有走 REQ；改既有行為走 ECR，要填現況、期望、影響，並上傳分析或設計文件。介面還要草圖或剪圖。</p>
+                        <h3>對齊 GitHub Issue</h3>
+                        <p>標題與說明就能發出。指派與截圖可選。不再分需求／設計變更兩套表單。</p>
                     </article>
                     <article class="card">
                         <h3>擋得住的關卡</h3>
-                        <p>沒有驗收條件不能發 Issue。CI 未綠不能合併。驗收要勾完條件，相關 PR 已入主線，且已部署或明示不部署。</p>
+                        <p>缺標題或說明不能發 Issue。驗收結案會關閉遠端 Issue。審查與合併走 GitHub 與開發台。</p>
                     </article>
                     <article class="card">
                         <h3>暫停與收回留紀錄</h3>

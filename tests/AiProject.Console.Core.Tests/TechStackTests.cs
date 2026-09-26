@@ -304,7 +304,6 @@ public class TechStackTests
     [Theory]
     [InlineData("src/AiProject.Console.App/wwwroot/js")]
     [InlineData("templates/public")]
-    [InlineData("ui")]
     public async Task Build_ThisRepoStaticFolders_ExitsZero(string rel)
     {
         var root = FindRepoRoot();

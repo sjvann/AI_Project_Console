@@ -6,14 +6,14 @@ title: 路線圖
 
 把「能賣什麼」與「下一季做什麼」分開。日期是意圖，不是合約承諾。
 
-## 已交付（控制台 0.6.16，現況）— P1
+## 已交付（控制台 0.6.18，現況）— P1
 
 - Windows x64、macOS、Linux 安裝包：掃描、需重編、啟停、Log、前端 URL
 - 「開啟」先起服務與相依再開瀏覽器；硬相依失敗則不開
 - 各專案一句用途；開啟時寫入 `.ai_project/product-purposes.md`
 - 建置／啟動佔用列（可取消）；工作區佔用鎖避免雙視窗互搶
 - GitHub：clone、提交、同步、PR、Actions、Release、檢查更新
-- 需求工作台與進件關卡
+- 需求工作台：開 GitHub Issue、暫停／收回、驗收
 - 工時儀表、CSV／Markdown 匯出、需求台對帳；可加入多家申報公司
 - Agent 求救、MCP、審計、專案問答（多來源 OpenAI 相容端點）
 - 被管專案的 DocFX／GitHub Pages 輔助

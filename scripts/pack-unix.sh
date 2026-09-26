@@ -9,7 +9,7 @@ CONFIGURATION="Release"
 ROOT=""
 
 usage() {
-  echo "用法: pack-unix.sh --version 0.6.16 --runtime osx-arm64|osx-x64|linux-x64|linux-arm64" >&2
+  echo "用法: pack-unix.sh --version 0.6.18 --runtime osx-arm64|osx-x64|linux-x64|linux-arm64" >&2
   exit 2
 }
 

@@ -593,7 +593,7 @@
     <div class="overlay" @onclick="S.CloseDialog">
         <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="branch-title" aria-modal="true">
             <h2 id="branch-title">切換分支</h2>
-            <p class="hint">目前：@(S.GitBrief?.Branch ?? "（未知）")。工作區必須乾淨才能切換；切換後會立刻從遠端同步。</p>
+            <p class="hint">目前：@(S.BranchDialogCurrent ?? "（未知）")。工作區必須乾淨才能切換；切換後會立刻從遠端同步。</p>
             @if (!string.IsNullOrEmpty(S.BranchDialogHint))
             {
                 <p class="hint">@S.BranchDialogHint</p>

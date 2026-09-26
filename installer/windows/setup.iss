@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.6.16"
+  #define MyAppVersion "0.6.18"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\..\dist\win-x64"
