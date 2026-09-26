@@ -162,9 +162,11 @@ else
   if [[ -f "$DEB" && "$HOST" == Linux ]] && command -v dpkg-deb >/dev/null; then
     echo "CHECK:deb"
     dpkg-deb --info "$DEB"
-    dpkg-deb --contents "$DEB" | grep -q "opt/AI_Project_Console/AI_Project_Console" \
+    # 不要把 --contents 直接管到 grep -q：檔案很多時 grep 提前關閉會讓 tar SIGPIPE，pipefail 整段失敗。
+    dpkg-deb --contents "$DEB" > "$TMP/deb-contents.txt"
+    grep -F "opt/AI_Project_Console/AI_Project_Console" "$TMP/deb-contents.txt" >/dev/null \
       || fail ".deb 沒有 /opt/AI_Project_Console/AI_Project_Console"
-    dpkg-deb --contents "$DEB" | grep -q "usr/share/applications/ai-project-console.desktop" \
+    grep -F "usr/share/applications/ai-project-console.desktop" "$TMP/deb-contents.txt" >/dev/null \
       || fail ".deb 沒有 desktop 檔"
   fi
 fi
