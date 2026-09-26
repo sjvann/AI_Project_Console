@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 版號（例如 0.6.18，不含 v）
+        description: 版號（例如 0.6.19，不含 v）
         required: true
         type: string
       upload_release:

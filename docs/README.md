@@ -4,7 +4,7 @@
 
 文件站頂列分成四區：**使用文件**（本頁）、[產品規格](product/README.md)、[銷售套件](salekit/README.md)、API。規格裡的公司平台標「規劃」，尚未出貨。
 
-現行出貨為控制台 **0.6.18**（Windows x64、macOS、Linux）。變更摘要：[現行版本](user/whats-new.md)。倉庫公開可見，授權為**保留一切權利**，見 [版權與授權](legal/copyright.md)。
+現行出貨為控制台 **0.6.19**（Windows x64、macOS、Linux）。變更摘要：[現行版本](user/whats-new.md)。倉庫公開可見，授權為**保留一切權利**，見 [版權與授權](legal/copyright.md)。
 
 ## 我是誰、該看哪裡
 
@@ -26,7 +26,7 @@
 
 ## 一般使用者閱讀順序
 
-1. [現行版本](user/whats-new.md) — 目前出貨 0.6.18
+1. [現行版本](user/whats-new.md) — 目前出貨 0.6.19
 2. [安裝與第一次使用](user/getting-started.md) — 下載、啟動、選專案、環境體檢
 3. [畫面導覽](user/interface.md) — 每個按鈕與分頁做什麼
 4. [日常操作](user/daily-use.md) — 啟動、停止、編譯、看 Log、開前端
