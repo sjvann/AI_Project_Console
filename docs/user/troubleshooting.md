@@ -51,6 +51,12 @@
 
 若 `ai-project.json` 已填 `services`，服務列以清單為準；新程式仍會出現在「專案」。要把新程式列入服務，請補進清單後再掃描。
 
+外掛用的 `package.json`（`name` 是物件，或有 `entryDll`）以及檔頭是 PEP 723 的腳本（即使檔名是 `setup.py`）不會被當成專案，也不會出現在「還原套件」。
+
+## 還原套件
+
+環境體檢裡的「還原套件」依專案檔執行 `npm install`、`pip install` 等。Python 專案會先建立 `.venv`，再在那個環境安裝 `requirements.txt`，或對有 `pyproject.toml`／`setup.py` 的目錄做可編輯安裝。體檢以 `.venv` 是否存在判斷套件已還原。
+
 ## 服務啟動失敗或一直離線
 
 1. 選該列，右側「服務 Log」從頭看例外與 port 佔用。
