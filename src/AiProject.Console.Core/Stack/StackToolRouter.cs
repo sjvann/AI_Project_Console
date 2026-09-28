@@ -29,9 +29,9 @@ public static class StackToolRouter
         new("ci_status", "遠端 GitHub Actions 最近執行：通過／失敗／進行中。只摘要，不含 log。", ""),
         new("pr_status", "目前分支的 PR 與檢查是否通過。只回答能不能請人審，不含審查內容。", ""),
         new("list_audit", "讀取最近的 MCP 審計紀錄（.ai_project/mcp-audit.jsonl）。", "tail"),
-        new("docs_status", "文件體系狀態：docs/ 是否存在、骨架、待補頁數、DocFX／Pages workflow。", ""),
-        new("list_docs", "列出 docs/ 內的 Markdown 與 DocFX 設定檔。", ""),
-        new("read_doc", "讀取 docs/ 內一份檔案。path 為相對 docs/ 的路徑，例如 user/getting-started.md。", "path"),
+        new("docs_status", "文件體系狀態：文件根目錄是否存在、骨架、待補頁數、DocFX／Pages workflow。根目錄預設 docs/，可在 ai-project.json 設 docsRoot。", ""),
+        new("list_docs", "列出文件根目錄內的 Markdown 與 DocFX 設定檔。根目錄預設 docs/，可在 ai-project.json 設 docsRoot。", ""),
+        new("read_doc", "讀取文件根目錄內一份檔案。path 為相對該目錄的路徑，例如 user/getting-started.md。根目錄預設 docs/。", "path"),
     ];
 
     public static string DisplayTitle(string name) => name switch

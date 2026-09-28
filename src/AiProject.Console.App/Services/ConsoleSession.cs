@@ -412,6 +412,10 @@ public sealed partial class ConsoleSession : IDisposable
     public bool DocsChipWarn => Docs is null or { Health: not DocsHealth.Ready };
     public string NewDocPath { get; private set; } = "";
     public string NewDocHint { get; private set; } = "";
+    public string DocsRootDraft { get; private set; } = "";
+    public string DocsRootHint { get; private set; } = "";
+    public string DocsFolderLabel =>
+        Docs?.FolderLabel ?? (Catalog is null ? DocsService.FolderName + "/" : DocsService.DisplayFolder(Catalog.Root));
 
     private readonly HashSet<string> _collapsedServiceGroups = new(StringComparer.Ordinal);
     private readonly HashSet<string> _collapsedProjectGroups = new(StringComparer.Ordinal);
@@ -3331,8 +3335,8 @@ public sealed partial class ConsoleSession : IDisposable
             case "docs_scaffold":
                 await ScaffoldDocsAsync().ConfigureAwait(false);
                 return;
-            case "docs_open_folder":
-                OpenDocsFolder();
+            case "docs_set_root":
+                OpenDocsRootDialog();
                 return;
             case "docs_ai_fill":
                 await AiFillDocsAsync(currentOnly: false).ConfigureAwait(false);
@@ -3510,10 +3514,11 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var previous = keepSelection ? SelectedDocPath : null;
         Docs = DocsService.Scan(Catalog.Root);
+        var folder = Docs.FolderLabel;
         DocsHint = Docs.Health switch
         {
-            DocsHealth.Missing => "還沒有 docs/。按「建立／補齊體系」產生標準骨架。",
-            DocsHealth.Incomplete => "有文件但缺 toc.yml 或 docfx.json。可再按「建立／補齊體系」。",
+            DocsHealth.Missing => $"還沒有 {folder}。按「建立／補齊體系」產生標準骨架。",
+            DocsHealth.Incomplete => $"有文件但缺 toc.yml 或 docfx.json。可再按「建立／補齊體系」。",
             DocsHealth.Draft => $"有 {Docs.StubCount} 頁仍標待補。可用 AI 補齊或在右側編輯。",
             _ => Docs.HasWorkflow ? "文件就緒。可本機預覽或發布到 GitHub Pages。" : "文件就緒。尚未放 Pages workflow，發布前會自動補上。",
         };
@@ -3575,7 +3580,7 @@ public sealed partial class ConsoleSession : IDisposable
             return;
         if (!_native.Confirm(
             "建立文件體系",
-            "將在 docs/ 建立標準 Markdown 骨架與 DocFX／Pages 設定。已有的檔不會覆蓋。確定？"))
+            $"將在 {DocsService.DisplayFolder(Catalog!.Root)} 建立標準 Markdown 骨架與 DocFX／Pages 設定。已有的檔不會覆蓋。確定？"))
             return;
         await RunJobAsync("建立文件體系…", async () =>
         {
@@ -3649,6 +3654,67 @@ public sealed partial class ConsoleSession : IDisposable
         Notify();
     }
 
+    public void SetDocsRootDraft(string value) => DocsRootDraft = value ?? "";
+
+    public void OpenDocsRootDialog()
+    {
+        if (!RequireCatalog())
+            return;
+        DocsRootDraft = DocsService.ReadConfiguredRel(Catalog!.Root) ?? "";
+        DocsRootHint = $"目前文件對應 {DocsFolderLabel}。改成專案裡的其他資料夾後，文件頁會改讀那裡。這不是用檔案總管打開 docs。空白則回到預設 docs/。";
+        Dialog = "docs-root";
+        Notify();
+    }
+
+    public async Task BrowseDocsRootAsync()
+    {
+        if (!RequireCatalog())
+            return;
+        var picked = await _native.PickFolderAsync("選擇文件要對應的資料夾").ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(picked))
+            return;
+        var rel = DocsService.RelFromAbsolute(Catalog!.Root, picked);
+        if (rel is null)
+        {
+            DocsRootHint = "請選專案目錄裡面的子資料夾。不能選專案根本身，也不能選外面的路徑。";
+            Notify();
+            return;
+        }
+        DocsRootDraft = rel;
+        DocsRootHint = "將使用 " + rel + "/";
+        Notify();
+    }
+
+    public void SaveDocsRoot()
+    {
+        if (!RequireCatalog())
+            return;
+        if (!ConfirmDiscardDocs())
+            return;
+        var raw = (DocsRootDraft ?? "").Trim();
+        if (raw.Length > 0 && DocsService.NormalizeDocsRoot(raw) is null)
+        {
+            DocsRootHint = "路徑無效。請用專案內的相對路徑，例如 DocsLibrary。";
+            Notify();
+            return;
+        }
+        try
+        {
+            DocsService.WriteDocsRoot(Catalog!.Root, raw);
+            StopDocsServe();
+            _collapsedDocFolders.Clear();
+            Dialog = null;
+            RefreshDocs(keepSelection: false);
+            JobText = "文件根目錄 " + DocsFolderLabel;
+            Notify();
+        }
+        catch (Exception ex)
+        {
+            DocsRootHint = ex.Message;
+            Notify();
+        }
+    }
+
     public void OpenNewDocDialog(string? folder = null)
     {
         if (!RequireCatalog())
@@ -3660,7 +3726,7 @@ public sealed partial class ConsoleSession : IDisposable
             prefix = slash >= 0 ? SelectedDocPath[..slash] : "";
         }
         NewDocPath = string.IsNullOrEmpty(prefix) ? "user/new-page.md" : prefix.TrimEnd('/') + "/new-page.md";
-        NewDocHint = "路徑相對於 docs/，例如 user/new-page.md。資料夾不存在會自動建立。";
+        NewDocHint = $"路徑相對於 {DocsService.DisplayFolder(Catalog!.Root)}，例如 user/new-page.md。資料夾不存在會自動建立。";
         Dialog = "new-doc";
         Notify();
     }
@@ -3680,7 +3746,7 @@ public sealed partial class ConsoleSession : IDisposable
         }
         if (!DocsService.IsSafeRelPath(rel))
         {
-            NewDocHint = "路徑無效。只能用 docs/ 內的相對路徑。";
+            NewDocHint = $"路徑無效。只能用 {DocsService.DisplayFolder(Catalog!.Root)} 內的相對路徑。";
             Notify();
             return;
         }
@@ -3715,13 +3781,14 @@ public sealed partial class ConsoleSession : IDisposable
         var rel = relPath.Trim().Replace('\\', '/').Trim('/');
         if (!DocsService.IsSafeRelPath(rel))
         {
-            _native.Warn("無法刪除", "路徑無效。只能刪 docs/ 內的 Markdown 或 DocFX 設定。");
+            _native.Warn("無法刪除", $"路徑無效。只能刪 {DocsService.DisplayFolder(Catalog!.Root)} 內的 Markdown 或 DocFX 設定。");
             return;
         }
         var extra = DocsService.IsScaffoldFile(rel)
             ? "這是骨架檔，之後可用「建立體系」再產生（不會覆蓋你已改過的其他檔）。\n\n"
             : "";
-        if (!_native.Confirm("刪除文件", extra + $"確定刪除 docs/{rel}？本機檔案會立刻移除。"))
+        var folder = DocsService.DisplayFolder(Catalog!.Root);
+        if (!_native.Confirm("刪除文件", extra + $"確定刪除 {folder}{rel}？本機檔案會立刻移除。"))
             return;
         try
         {
@@ -3811,15 +3878,6 @@ public sealed partial class ConsoleSession : IDisposable
         }).ConfigureAwait(false);
         await RefreshGitStatusAsync().ConfigureAwait(false);
         RefreshDocs(keepSelection: true);
-    }
-
-    public void OpenDocsFolder()
-    {
-        if (!RequireCatalog())
-            return;
-        var dir = DocsService.DocsDirectory(Catalog!.Root);
-        Directory.CreateDirectory(dir);
-        CliUtil.OpenPath(dir);
     }
 
     public void StopDocsServe()

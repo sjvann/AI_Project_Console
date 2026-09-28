@@ -26,13 +26,19 @@ public sealed partial class ConsoleSession
         {
             IntakeDoc = new();
             SelectedIntakeId = null;
-            IntakeHint = "請先選擇專案或薄工作區。Issue 表寫在 docs/product/intake.json。";
+            IntakeHint = "請先選擇專案或薄工作區。Issue 表寫在文件根目錄的 product/intake.json。";
             Notify();
             return;
         }
         IntakeDoc = IntakeStore.Load(Catalog.Root);
-        if (string.IsNullOrWhiteSpace(IntakeDoc.DesignDocsDir))
-            IntakeDoc.DesignDocsDir = IntakeDesignFiles.DefaultDir;
+        try
+        {
+            IntakeDoc.DesignDocsDir = IntakeDesignFiles.NormalizeDir(IntakeDoc.DesignDocsDir, Catalog.Root);
+        }
+        catch (InvalidOperationException)
+        {
+            IntakeDoc.DesignDocsDir = IntakeDesignFiles.NormalizeDir("", Catalog.Root);
+        }
         foreach (var intake in IntakeDoc.Intakes)
             intake.MergeAttachments();
         if (SelectedIntake is null)
@@ -100,11 +106,11 @@ public sealed partial class ConsoleSession
             return;
         try
         {
-            IntakeDoc.DesignDocsDir = IntakeDesignFiles.NormalizeDir(IntakeDoc.DesignDocsDir);
+            IntakeDoc.DesignDocsDir = IntakeDesignFiles.NormalizeDir(IntakeDoc.DesignDocsDir, Catalog.Root);
         }
         catch (InvalidOperationException)
         {
-            IntakeDoc.DesignDocsDir = IntakeDesignFiles.DefaultDir;
+            IntakeDoc.DesignDocsDir = IntakeDesignFiles.NormalizeDir("", Catalog.Root);
         }
         foreach (var intake in IntakeDoc.Intakes)
         {

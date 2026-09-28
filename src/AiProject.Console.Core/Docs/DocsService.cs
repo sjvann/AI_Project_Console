@@ -12,6 +12,7 @@ namespace AiProject.Console.Core.Docs;
 
 public static class DocsService
 {
+    /// <summary>未設定 <c>ai-project.json</c> 的 <c>docsRoot</c> 時使用的文件根。</summary>
     public const string FolderName = "docs";
     /// <summary>骨架占位句。判定待補只認這組字，避免說明文提到摘要列「待補」也被算進去。</summary>
     public const string TodoMarker = "（待補）";
@@ -46,13 +47,117 @@ public static class DocsService
         "_site", "api", "obj", "bin", ".git",
     };
 
+    /// <summary>相對專案根的文件目錄，例如 <c>docs</c> 或 <c>DocsLibrary</c>。不含結尾斜線。</summary>
+    public static string RelativeFolder(string projectRoot)
+    {
+        var configured = ReadConfiguredRel(projectRoot);
+        if (configured is not null)
+            return configured;
+        var found = FindDefaultDirectory(projectRoot);
+        if (found is null)
+            return FolderName;
+        return Path.GetFileName(found.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    public static string DisplayFolder(string projectRoot) => RelativeFolder(projectRoot) + "/";
+
+    public static string? ReadConfiguredRel(string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+            return null;
+        var path = Path.Combine(Path.GetFullPath(projectRoot), AppInfo.ManifestName);
+        if (!File.Exists(path))
+            return null;
+        var doc = JsonUtil.LoadObject(path);
+        var raw = JsonUtil.Pick(JsonUtil.Str(doc["docsRoot"]), JsonUtil.Str(doc["docs_root"]));
+        return NormalizeDocsRoot(raw);
+    }
+
+    /// <summary>空白或預設 <c>docs</c> 會拿掉設定。無效路徑（絕對路徑、<c>..</c>）丟出例外。</summary>
+    public static void WriteDocsRoot(string projectRoot, string? raw)
+    {
+        var root = Path.GetFullPath(projectRoot);
+        var trimmed = (raw ?? "").Trim();
+        var normalized = NormalizeDocsRoot(trimmed);
+        if (trimmed.Length > 0 && normalized is null)
+            throw new InvalidOperationException("路徑無效。請用專案內的相對路徑，例如 DocsLibrary。");
+        var path = Path.Combine(root, AppInfo.ManifestName);
+        var isDefault = normalized is null || string.Equals(normalized, FolderName, StringComparison.OrdinalIgnoreCase);
+        if (isDefault && !File.Exists(path))
+            return;
+        var doc = JsonUtil.LoadObject(path);
+        doc.Remove("docs_root");
+        if (isDefault)
+            doc.Remove("docsRoot");
+        else
+            doc["docsRoot"] = normalized;
+        if (doc["name"] is null)
+            doc["name"] = Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        JsonUtil.SaveObject(path, doc);
+    }
+
+    public static string? NormalizeDocsRoot(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        var text = raw.Trim().Replace('\\', '/');
+        while (text.StartsWith("./", StringComparison.Ordinal))
+            text = text[2..];
+        text = text.Trim('/');
+        if (string.IsNullOrEmpty(text) || text == ".")
+            return null;
+        if (text.Contains(':', StringComparison.Ordinal) || text.StartsWith("//", StringComparison.Ordinal))
+            return null;
+        var parts = text.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0 || parts.Any(p => p is "." or ".."))
+            return null;
+        foreach (var part in parts)
+        {
+            if (part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                return null;
+        }
+        return string.Join('/', parts);
+    }
+
+    public static string? RelFromAbsolute(string projectRoot, string absolute)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot) || string.IsNullOrWhiteSpace(absolute))
+            return null;
+        var root = Path.GetFullPath(projectRoot);
+        string full;
+        try
+        {
+            full = Path.GetFullPath(absolute);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+        if (string.Equals(full, root, StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (!IsUnder(full, root))
+            return null;
+        return NormalizeDocsRoot(Path.GetRelativePath(root, full));
+    }
+
     public static string DocsDirectory(string projectRoot)
     {
-        return FindDocsDirectory(projectRoot)
-            ?? Path.Combine(Path.GetFullPath(projectRoot), FolderName);
+        var root = Path.GetFullPath(projectRoot);
+        var configured = ReadConfiguredRel(root);
+        if (configured is not null)
+            return Path.Combine(root, configured.Replace('/', Path.DirectorySeparatorChar));
+        return FindDefaultDirectory(root) ?? Path.Combine(root, FolderName);
     }
 
     public static string? FindDocsDirectory(string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+            return null;
+        var dir = DocsDirectory(projectRoot);
+        return Directory.Exists(dir) ? dir : null;
+    }
+
+    static string? FindDefaultDirectory(string projectRoot)
     {
         if (string.IsNullOrWhiteSpace(projectRoot))
             return null;
@@ -71,18 +176,19 @@ public static class DocsService
     public static string ResolveInsideDocs(string projectRoot, string relPath)
     {
         var docs = DocsDirectory(projectRoot);
+        var where = DisplayFolder(projectRoot);
         if (!IsSafeRelPath(relPath))
-            throw new InvalidOperationException("路徑無效。只能使用 docs/ 內的相對路徑。");
+            throw new InvalidOperationException($"路徑無效。只能使用 {where} 內的相對路徑。");
         var rel = NormalizeRel(relPath);
         if (rel.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
-            throw new InvalidOperationException("路徑無效。只能使用 docs/ 內的相對路徑。");
+            throw new InvalidOperationException($"路徑無效。只能使用 {where} 內的相對路徑。");
         var ext = Path.GetExtension(rel);
         if (!AllowedExt.Contains(ext))
             throw new InvalidOperationException("只能讀寫 Markdown 或 DocFX 設定（.md／.yml／.json）。");
         Directory.CreateDirectory(docs);
         var full = Path.GetFullPath(Path.Combine(docs, rel.Replace('/', Path.DirectorySeparatorChar)));
         if (!IsUnder(full, docs))
-            throw new InvalidOperationException("路徑超出 docs/。");
+            throw new InvalidOperationException($"路徑超出 {where}。");
         return full;
     }
 
@@ -157,7 +263,7 @@ public static class DocsService
         {
             return new DocsStatus(
                 root,
-                Path.Combine(root, FolderName),
+                DocsDirectory(root),
                 DocsHealth.Missing,
                 0,
                 0,
@@ -230,10 +336,11 @@ public static class DocsService
         if (!File.Exists(intakePath) || new FileInfo(intakePath).Length == 0)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(intakePath)!);
-            File.WriteAllText(intakePath, """
+            var designDir = RelativeFolder(root) + "/product/design";
+            File.WriteAllText(intakePath, $$"""
                 {
                   "version": "1",
-                  "designDocsDir": "docs/product/design",
+                  "designDocsDir": "{{designDir}}",
                   "intakes": []
                 }
                 """, new UTF8Encoding(false));
@@ -253,7 +360,7 @@ public static class DocsService
         if (File.Exists(path) && new FileInfo(path).Length > 0)
             return false;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, WorkflowTemplate(), new UTF8Encoding(false));
+        File.WriteAllText(path, WorkflowTemplate(RelativeFolder(projectRoot)), new UTF8Encoding(false));
         return true;
     }
 
@@ -283,8 +390,10 @@ public static class DocsService
         return File.Exists(root) ? root : null;
     }
 
-    public static string WorkflowTemplate() =>
-        """
+    public static string WorkflowTemplate(string docsRel = "docs")
+    {
+        var folder = string.IsNullOrWhiteSpace(docsRel) ? FolderName : docsRel.Replace('\\', '/').Trim('/');
+        return """
         name: Deploy docs
 
         on:
@@ -338,7 +447,9 @@ public static class DocsService
               - name: Deploy to GitHub Pages
                 id: deployment
                 uses: actions/deploy-pages@v4
-        """.Replace("\r\n", "\n") + "\n";
+        """.Replace("\r\n", "\n").Replace("docs/docfx.json", folder + "/docfx.json", StringComparison.Ordinal)
+            .Replace("path: docs/_site", "path: " + folder + "/_site", StringComparison.Ordinal) + "\n";
+    }
 
     public static string ToolsManifestTemplate() =>
         """
@@ -438,7 +549,7 @@ public static class DocsService
         if (string.IsNullOrWhiteSpace(projectRoot))
             return "文件：" + string.Join("；", parts);
         var status = Scan(projectRoot);
-        parts.Add("docs: " + status.Label() + (status.FileCount > 0 ? $"（{status.FileCount} 檔）" : ""));
+        parts.Add(status.FolderLabel.TrimEnd('/') + ": " + status.Label() + (status.FileCount > 0 ? $"（{status.FileCount} 檔）" : ""));
         parts.Add("Pages workflow: " + (status.HasWorkflow ? "有" : "無"));
         return "文件：" + string.Join("；", parts);
     }
@@ -585,6 +696,7 @@ public static class DocsService
         var docsDir = FindDocsDirectory(projectRoot);
         if (docsDir is not null && IsUnder(jsonPath, docsDir))
             return "";
+        var folder = RelativeFolder(projectRoot);
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath, Encoding.UTF8));
@@ -595,11 +707,11 @@ public static class DocsService
                 foreach (var item in content.EnumerateArray())
                 {
                     var src = item.TryGetProperty("src", out var s) ? s.GetString() ?? "" : "";
-                    if (!string.Equals(src.Replace('\\', '/').Trim('/'), FolderName, StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(src.Replace('\\', '/').Trim('/'), folder, StringComparison.OrdinalIgnoreCase))
                         continue;
                     if (item.TryGetProperty("dest", out var d) && !string.IsNullOrWhiteSpace(d.GetString()))
                         return d.GetString()!.Replace('\\', '/').Trim('/');
-                    return FolderName;
+                    return folder;
                 }
             }
         }
@@ -607,7 +719,7 @@ public static class DocsService
         {
             // fall through
         }
-        return FolderName;
+        return folder;
     }
 
     public static IReadOnlyList<DocsTreeNode> BuildTree(IEnumerable<DocsFile> files)
@@ -977,7 +1089,8 @@ public static class DocsService
     static string MapBody(DocsScaffoldContext ctx)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"這是 **{ctx.Name}** 的文件地圖。內容都放在 `docs/`。");
+        var folder = string.IsNullOrWhiteSpace(ctx.Root) ? FolderName + "/" : DisplayFolder(ctx.Root);
+        sb.AppendLine($"這是 **{ctx.Name}** 的文件地圖。內容都放在 `{folder}`。");
         sb.AppendLine();
         sb.AppendLine("| 角色 | 從這裡開始 |");
         sb.AppendLine("|------|------------|");

@@ -281,7 +281,7 @@ public class DocsServiceTests
     {
         var actions = ActionCatalog.Load("docs");
         Assert.Contains(actions, a => a.Id == "docs_scaffold" && a.Handler == "docs_scaffold");
-        Assert.Contains(actions, a => a.Id == "docs_open_folder");
+        Assert.Contains(actions, a => a.Id == "docs_set_root" && a.Handler == "docs_set_root");
         Assert.Contains(actions, a => a.Id == "docs_ai_fill");
         Assert.Contains(actions, a => a.Id == "docs_serve");
         Assert.Contains(actions, a => a.Id == "docs_enable_pages" && a.RequiresGithub);
@@ -483,6 +483,56 @@ public class DocsServiceTests
         var title = DocsService.TitleOf("big.md", body);
         Assert.InRange(Environment.TickCount64 - started, 0, 200);
         Assert.Equal("真正標題", title);
+    }
+
+    [Fact]
+    public void DocsRoot_UsesConfiguredFolderAndIgnoresDefaultDocs()
+    {
+        var root = NewTemp();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "docs"));
+            File.WriteAllText(Path.Combine(root, "docs", "ignore.md"), "# no\n");
+            DocsService.WriteDocsRoot(root, "DocsLibrary");
+            DocsService.Write(root, "handbook.md", "# yes\n");
+            var status = DocsService.Scan(root);
+            Assert.Equal("DocsLibrary/", status.FolderLabel);
+            Assert.Contains(status.Files, f => f.RelPath == "handbook.md");
+            Assert.DoesNotContain(status.Files, f => f.RelPath == "ignore.md");
+            Assert.Equal("DocsLibrary", DocsService.ReadConfiguredRel(root));
+            Assert.Contains("DocsLibrary/docfx.json", DocsService.WorkflowTemplate(DocsService.RelativeFolder(root)));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void DocsRoot_RejectsEscapeAndBlankStaysDefault()
+    {
+        Assert.Null(DocsService.NormalizeDocsRoot("../secret"));
+        Assert.Null(DocsService.NormalizeDocsRoot("C:/abs"));
+        Assert.Null(DocsService.NormalizeDocsRoot(""));
+        Assert.Equal("DocsLibrary/V3", DocsService.NormalizeDocsRoot(@"DocsLibrary\V3/"));
+
+        var root = NewTemp();
+        try
+        {
+            DocsService.WriteDocsRoot(root, "docs");
+            Assert.Null(DocsService.ReadConfiguredRel(root));
+            Assert.False(File.Exists(Path.Combine(root, "ai-project.json")));
+            Assert.Throws<InvalidOperationException>(() => DocsService.WriteDocsRoot(root, "../outside"));
+            var picked = DocsService.RelFromAbsolute(root, root);
+            Assert.Null(picked);
+            var child = Path.Combine(root, "DocsLibrary");
+            Directory.CreateDirectory(child);
+            Assert.Equal("DocsLibrary", DocsService.RelFromAbsolute(root, child));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
     }
 
     static string NewTemp()

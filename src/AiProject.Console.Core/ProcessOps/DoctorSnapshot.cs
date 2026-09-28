@@ -250,7 +250,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             if (docs is not null)
             {
                 docsItems.Add(new(
-                    "docs/",
+                    docs.FolderLabel,
                     docs.Label() + (docs.FileCount > 0 ? $"（{docs.FileCount} 檔）" : ""),
                     docs.Health switch
                     {

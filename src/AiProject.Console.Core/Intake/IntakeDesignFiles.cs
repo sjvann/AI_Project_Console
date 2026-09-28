@@ -1,3 +1,5 @@
+using AiProject.Console.Core.Docs;
+
 namespace AiProject.Console.Core.Intake;
 
 public static class IntakeDesignFiles
@@ -13,17 +15,21 @@ public static class IntakeDesignFiles
         ".xlsx", ".pptx", ".csv",
     };
 
-    public static string NormalizeDir(string? dir)
+    public static string NormalizeDir(string? dir, string? projectRoot = null)
     {
+        var folder = DocsFolder(projectRoot);
         var raw = (dir ?? "").Trim().Replace('\\', '/').Trim('/');
         if (string.IsNullOrEmpty(raw))
-            return DefaultDir;
+            return folder + "/product/design";
         if (raw.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(raw.Replace('/', Path.DirectorySeparatorChar)))
-            throw new InvalidOperationException("目錄必須在專案的 docs/ 底下。");
-        if (!raw.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) && !raw.Equals("docs", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("目錄必須在專案的 docs/ 底下。");
+            throw new InvalidOperationException($"目錄必須在專案的 {folder}/ 底下。");
+        if (!raw.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase) && !raw.Equals(folder, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"目錄必須在專案的 {folder}/ 底下。");
         return raw;
     }
+
+    static string DocsFolder(string? projectRoot) =>
+        string.IsNullOrWhiteSpace(projectRoot) ? "docs" : DocsService.RelativeFolder(projectRoot);
 
     public static string CopyIn(string root, string dir, string intakeId, string source)
     {
@@ -37,7 +43,7 @@ public static class IntakeDesignFiles
         var len = new FileInfo(source).Length;
         if (len <= 0 || len > MaxBytes)
             throw new InvalidOperationException("單一檔案需小於 20 MB。");
-        var folder = NormalizeDir(dir);
+        var folder = NormalizeDir(dir, root);
         var id = SanitizeId(intakeId);
         var destDir = Path.Combine(Path.GetFullPath(root), folder.Replace('/', Path.DirectorySeparatorChar), id);
         Directory.CreateDirectory(destDir);
@@ -67,7 +73,7 @@ public static class IntakeDesignFiles
         string folder;
         try
         {
-            folder = NormalizeDir(dir);
+            folder = NormalizeDir(dir, root);
         }
         catch (InvalidOperationException)
         {
@@ -95,10 +101,11 @@ public static class IntakeDesignFiles
         if (rel.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(rel))
             return false;
         var norm = rel.Replace('\\', '/').Trim('/');
-        if (!norm.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) && !norm.Equals("docs", StringComparison.OrdinalIgnoreCase))
+        var folder = DocsFolder(root);
+        if (!norm.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase) && !norm.Equals(folder, StringComparison.OrdinalIgnoreCase))
             return false;
         var candidate = Path.GetFullPath(Path.Combine(Path.GetFullPath(root), norm.Replace('/', Path.DirectorySeparatorChar)));
-        var docs = Path.GetFullPath(Path.Combine(Path.GetFullPath(root), "docs"));
+        var docs = DocsService.DocsDirectory(root);
         if (!candidate.StartsWith(docs + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(candidate, docs, StringComparison.OrdinalIgnoreCase))
             return false;

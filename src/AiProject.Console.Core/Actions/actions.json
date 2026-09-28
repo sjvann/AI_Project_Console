@@ -193,11 +193,11 @@
       "handler": "docs_scaffold"
     },
     {
-      "id": "docs_open_folder",
-      "label": "開啟 docs 資料夾",
+      "id": "docs_set_root",
+      "label": "設定文件根目錄…",
       "group": "docs",
       "kind": "internal",
-      "handler": "docs_open_folder"
+      "handler": "docs_set_root"
     },
     {
       "id": "docs_ai_fill",

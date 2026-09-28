@@ -4,10 +4,11 @@ title: 現行版本
 
 # 現行版本
 
-文件與安裝包以 **0.6.21** 為準（Windows x64、macOS、Linux）。標 **規劃** 的仲介與公司工作區尚未出貨。
+文件與安裝包以 **0.6.22** 為準（Windows x64、macOS、Linux）。標 **規劃** 的仲介與公司工作區尚未出貨。
 
-## 這版有什麼（0.6.21）
+## 這版有什麼（0.6.22）
 
+- 文件頁可設定文件根目錄（`ai-project.json` 的 `docsRoot`），不再固定讀 `docs/`。工具列「文件 → 設定文件根目錄…」
 - 外掛用的 `package.json`（`name` 不是字串，或有 `entryDll`）與 PEP 723 腳本不再被當成專案，也不會被要求還原套件
 - 還原 Python 套件時先建立 `.venv`，再安裝 `requirements.txt` 或做可編輯安裝
 - 工作區在 `ai-project.json` 宣告 Podman 虛擬機與資料庫後，啟動列會顯示就緒或問題筆數；滑鼠停上可看原因
