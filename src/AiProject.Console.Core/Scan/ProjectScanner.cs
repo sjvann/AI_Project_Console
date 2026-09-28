@@ -40,7 +40,7 @@ public static class ProjectScanner
                 if (!TechStackCatalog.IsProjectManifest(rel))
                     continue;
                 var path = Path.GetFullPath(Path.Combine(root, rel));
-                if (File.Exists(path) && !IsSkippedPath(path))
+                if (File.Exists(path) && !IsSkippedPath(path) && TechStackDetector.IsInstallableManifest(path))
                     found.Add(path);
             }
         }
@@ -51,7 +51,7 @@ public static class ProjectScanner
             {
                 foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
                 {
-                    if (IsSkippedPath(path) || !TechStackCatalog.IsProjectManifest(path))
+                    if (IsSkippedPath(path) || !TechStackCatalog.IsProjectManifest(path) || !TechStackDetector.IsInstallableManifest(path))
                         continue;
                     found.Add(Path.GetFullPath(path));
                 }
@@ -404,8 +404,8 @@ public static class ProjectScanner
         if (stackId == "python")
             return TechStackDetector.DirectoryLooksLikePythonProject(dir);
         if (stackId == "node")
-            return File.Exists(Path.Combine(dir, "package.json"))
-                || (fileCount >= 8 && TechStackDetector.DirectoryLooksLikeNodeProject(dir));
+            return TechStackDetector.DirectoryLooksLikeNodeProject(dir)
+                && (File.Exists(Path.Combine(dir, "package.json")) || fileCount >= 8);
         if (stackId == "go")
             return TechStackDetector.HasGoMain(dir) || fileCount >= 3;
         if (stackId == "dotnet")

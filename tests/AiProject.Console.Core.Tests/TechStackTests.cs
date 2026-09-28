@@ -73,6 +73,25 @@ public class TechStackTests
             """);
             File.WriteAllText(Path.Combine(api, "main.py"), "from fastapi import FastAPI\napp = FastAPI()\n");
 
+            var plugin = Path.Combine(root, "plugin");
+            var tool = Path.Combine(root, "tool");
+            Directory.CreateDirectory(plugin);
+            Directory.CreateDirectory(tool);
+            File.WriteAllText(Path.Combine(plugin, "package.json"), """
+            {
+              "id": "sample.plugin",
+              "name": { "zhTw": "示範", "en": "Sample" },
+              "entryDll": "lib/net10.0/Sample.dll"
+            }
+            """);
+            File.WriteAllText(Path.Combine(tool, "setup.py"), """
+            # /// script
+            # requires-python = ">=3.11"
+            # ///
+            def setup(root):
+                pass
+            """);
+
             var scan = ProjectScanner.ScanWorkspace(root);
             Assert.Equal(2, scan.Projects.Count);
             Assert.Contains(scan.Projects, p => p.StackId == "node" && p.Language == "JavaScript");

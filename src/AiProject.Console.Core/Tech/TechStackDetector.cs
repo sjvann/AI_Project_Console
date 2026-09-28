@@ -151,7 +151,8 @@ public static class TechStackDetector
 
     public static bool DirectoryLooksLikeNodeProject(string dir)
     {
-        if (File.Exists(Path.Combine(dir, "package.json")))
+        var manifest = Path.Combine(dir, "package.json");
+        if (File.Exists(manifest) && IsNpmManifest(manifest))
             return true;
         try
         {
@@ -162,6 +163,57 @@ public static class TechStackDetector
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// npm 套件清單：<c>name</c> 是字串。外掛描述（name 為物件、或帶 entryDll）不是。
+    /// </summary>
+    public static bool IsNpmManifest(string path)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+            var root = doc.RootElement;
+            if (root.TryGetProperty("entryDll", out _) || root.TryGetProperty("entry_dll", out _))
+                return false;
+            return root.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>PEP 723 行內腳本。檔名即使是 setup.py 也不是 setuptools 專案。</summary>
+    public static bool IsPep723Script(string path)
+    {
+        try
+        {
+            using var reader = new StreamReader(path);
+            for (var i = 0; i < 40 && reader.ReadLine() is { } line; i++)
+            {
+                if (line.Contains("# /// script", StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>這個檔會讓控制台要求還原套件。外掛清單與 PEP 723 腳本不會。</summary>
+    public static bool IsInstallableManifest(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (name.Equals("package.json", StringComparison.OrdinalIgnoreCase))
+            return IsNpmManifest(path);
+        if (name.Equals("setup.py", StringComparison.OrdinalIgnoreCase))
+            return !IsPep723Script(path);
+        return true;
     }
 
     public static string PackageManager(string projectDir)

@@ -487,18 +487,34 @@ public static class StackCommands
             return new(CliUtil.FindOnPath("poetry")!, ["install"], dir, [], "poetry install");
         if (File.Exists(Path.Combine(dir, "Pipfile")) && CliUtil.CommandExists("pipenv"))
             return new(CliUtil.FindOnPath("pipenv")!, ["install"], dir, [], "pipenv install");
-        if (File.Exists(Path.Combine(dir, "requirements.txt")))
-        {
-            args.AddRange(["-m", "pip", "install", "-r", "requirements.txt"]);
-            return new(py, args, dir, [], "pip install -r requirements.txt");
-        }
-        if (File.Exists(Path.Combine(dir, "pyproject.toml")))
-        {
-            args.AddRange(["-m", "pip", "install", "-e", "."]);
-            return new(py, args, dir, [], "pip install -e .");
-        }
-        args.AddRange(["-m", "pip", "install", "-e", "."]);
-        return new(py, args, dir, [], "pip install");
+        args.Add("-c");
+        args.Add(PythonVenvInstallScript(dir));
+        var label = File.Exists(Path.Combine(dir, "requirements.txt"))
+            ? "pip install -r requirements.txt"
+            : "pip install";
+        return new(py, args, dir, [], label);
+    }
+
+    /// <summary>建立 .venv 後再安裝。體檢以這個目錄判斷套件已還原。</summary>
+    static string PythonVenvInstallScript(string dir)
+    {
+        var req = File.Exists(Path.Combine(dir, "requirements.txt"));
+        var editable = File.Exists(Path.Combine(dir, "pyproject.toml"))
+            || File.Exists(Path.Combine(dir, "setup.py"));
+        var install = req
+            ? "subprocess.check_call([py, '-m', 'pip', 'install', '-r', 'requirements.txt'])"
+            : editable
+                ? "subprocess.check_call([py, '-m', 'pip', 'install', '-e', '.'])"
+                : "pass";
+        return $$"""
+            import os, subprocess, sys
+            root = os.getcwd()
+            win = os.name == 'nt'
+            py = os.path.join(root, '.venv', 'Scripts' if win else 'bin', 'python.exe' if win else 'python')
+            if not os.path.isfile(py):
+                subprocess.check_call([sys.executable, '-m', 'venv', os.path.join(root, '.venv')])
+            {{install}}
+            """;
     }
 
     static ProcessPlan PlanPythonScript(string script)
