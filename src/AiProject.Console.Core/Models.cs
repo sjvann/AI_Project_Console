@@ -73,6 +73,10 @@ public sealed class ProjectCatalog
     /// <summary>群組 id／頂層名稱 → 短說明（來自 manifest <c>groups</c>）。</summary>
     public IReadOnlyDictionary<string, string> GroupDescriptions { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>工作區宣告的本機執行環境（例如 Podman 虛擬機）。</summary>
+    public IReadOnlyList<Infra.RuntimeDeclaration> Runtimes { get; init; } = [];
+    /// <summary>執行環境上的資料庫。requiredBy 決定誰在未就緒時不能測試或啟動。</summary>
+    public IReadOnlyList<Infra.DatastoreDeclaration> Datastores { get; init; } = [];
 }
 
 public sealed record BuildState(

@@ -19,7 +19,7 @@
 
 | 情境 | 以前 | 現在（Agent + MCP） |
 |------|------|---------------------|
-| 晨會／值班 | 自己開控制台對 port | `duty_summary`（必要時再 `stack_status` + `git_status`） |
+| 晨會／值班 | 自己開控制台對 port | `duty_summary`（必要時再 `stack_status` + `git_status`）。`runtimeAttention` 有字代表 Podman 虛擬機或宣告的資料庫還沒就緒 |
 | AI 剛改完碼 | 人去終端機 `dotnet build` | Agent 自己 `build mode=stale` |
 | 服務起不來 | 翻 `.ai_project/logs` | `get_log` → 修碼 → `start_service` |
 | 發版前 | 口頭問「都編過了嗎」 | `list_projects` 需重編必須為 0 |

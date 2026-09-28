@@ -5,6 +5,7 @@
 - 根目錄本身幾乎沒有專案（薄工作區），真正的產品線在隔壁資料夾
 - 掃描到的服務名稱、port、健康檢查不對
 - 要固定啟動順序、預設前端，或宣告服務啟動相依（`dependsOn`）
+- 資料庫跑在本機 Podman 虛擬機，希望測試或啟動前就知道機器沒開
 - 要把 GitHub／部署設定跟倉一起走
 
 完整範例：[`schema/ai-project.example.json`](../../schema/ai-project.example.json)。
@@ -113,6 +114,39 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 控制台會遞迴展開、偵測循環、把 `hostedBy` 別名解析成真正宿主。不要把這種跨線關係寫進 `startOrder` 或 `preStart`。
 
 **開啟**（有 `openUrl`）：先對目標跑與啟動相同的相依展開與就緒等待，成功後再開瀏覽器；硬相依失敗則不開 URL。
+
+## 執行環境（Podman 虛擬機）
+
+資料庫若由本機 Podman 虛擬機提供，在清單宣告。控制台會查三層：`podman` 在不在、具名 machine 是否 Running、機器已開之後容器與埠。摘要列與環境體會顯示結果。**不會**在開啟工作區或輪詢時自動 `podman machine start`。
+
+編譯（含「編譯過期項目」）不看這層。`requiredBy` 含 `test` 時，「跑測試」在進 `dotnet test` 之前就拒絕。`requiredBy` 裡的服務 id，啟動（含先展開的 `dependsOn`）、重啟與開啟會先拒絕。沒被點名的服務仍可啟動。
+
+```json
+"runtimes": [
+  { "id": "podman", "kind": "podman-machine", "machine": "podman-machine-default" }
+],
+"datastores": [
+  {
+    "id": "company-db",
+    "label": "公司工作區 PostgreSQL",
+    "runtime": "podman",
+    "container": "company-db",
+    "port": 5432,
+    "requiredBy": ["test", "company-web"]
+  }
+]
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `runtimes[].id` | 穩定識別。`datastores[].runtime` 指這裡 |
+| `kind` | 目前只探測 `podman-machine`（也接受 `podman_machine`）。空白時用這個 |
+| `machine` | `podman machine list` 裡的名稱。也可用 `name`。空白時用 `podman-machine-default` |
+| `datastores[].container` | `podman ps` 裡的容器名。機器已啟動才查 |
+| `port` | 機器與容器都就緒後，再看 `127.0.0.1` 這個埠接不接受連線 |
+| `requiredBy` | `test`（或 `tests`）擋跑測試；其餘字串是服務 id。也可用 `required_by`。空白則只顯示、不擋動作 |
+
+虛擬機沒起來時，句子是「Podman 虛擬機未啟動：機器名」（命令不在、機器不存在、啟動中會各用不同句子）。虛擬機已啟動但容器或埠還沒好，才是「虛擬機已啟動，資料庫未就緒：標籤」。沒有這兩段宣告時，控制台不查 Podman。
 
 ## 啟動順序與前端
 

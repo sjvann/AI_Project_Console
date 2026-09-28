@@ -322,6 +322,12 @@ Domain 無 EF／HTTP。Application 開頭授權。規則不進 `.razor`。產品
 - **Prevents:** N 個專案 N 次 `dotnet build` 當預設；專案級平行編譯互搶 `obj/`；MCP 與桌面各編各的
 - **Rule:** .NET 倉有 solution／可建圖時，一次交給 `dotnet build`（過期模式仍可把目標交給 MSBuild 圖）。其他語言維持逐目標。徽章與失敗專案仍要對得回單一 csproj。第一刀**不做**專案級平行排程。桌面與 MCP 對同一 `Root` 共用佔用登錄（檔案或 named mutex）；Agent 在編時畫面寫「Agent 正在編譯」。`[ASSUMPTION]` 登錄放工作區 `.ai_project/`，不進 git。
 
+### AD-35 — Podman 虛擬機要在測試與啟動之前說清楚 `[ADOPTED]`
+
+- **Binds:** 控制台摘要列、環境體檢、MCP `doctor`／`stack_status`／`duty_summary`、跑測試、服務啟動
+- **Prevents:** 工作區資料庫跑在 Podman 虛擬機裡，卻要等編譯與 `dotnet test` 連線失敗才知道機器沒開
+- **Rule:** 只認工作區 `ai-project.json` 的 `runtimes`（`kind=podman-machine`）與 `datastores`。探測分三層：命令在不在、具名 machine 是否 Running、機器已開之後的容器與埠。摘要列與體檢寫出機器名。虛擬機未啟動與「虛擬機已啟動，資料庫未就緒」是兩句不同的話。`requiredBy` 含 `test` 時，跑測試在進入測試指令前拒絕；點名的服務 id 在啟動、重啟、開啟前拒絕。編譯不拒絕。沒有宣告就不查 Podman，也不掃 compose。控制台不自動 `podman machine start`。輪詢這層不得串在服務健康檢查後面把輪詢卡住。
+
 ## 4. 選型（種子；代碼存在後以代碼為準）
 
 | 層 | 選擇 | 版本／註記 |
@@ -510,7 +516,7 @@ tests/
 
 | 能力 | 住在哪 | 受哪條管 |
 |------|--------|----------|
-| 本機堆疊／MCP／進件 | Console.Core + App | AD-9、AD-31、AD-32～AD-34 |
+| 本機堆疊／MCP／進件 | Console.Core + App | AD-9、AD-31、AD-32～AD-35 |
 | 申報目的地、握手、上傳 | CompanyClient + Company.Web 公開 API | AD-4、AD-16、AD-17、AD-18、AD-31 |
 | 人員／派工／薪資／毛利／戰情 | Company.* | AD-13、AD-26、AD-28 |
 | 概念→Issue | Analysis.*（B） | AD-1、AD-30 |

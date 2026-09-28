@@ -122,7 +122,7 @@ public static class StackToolRouter
             "start_all" => await workspace.StartAllAsync().ConfigureAwait(false),
             "stop_all" => workspace.StopAll(),
             "get_log" => workspace.GetLog(Require(args, "id"), ParseTail(Arg(args, "tail"), 80)),
-            "doctor" => workspace.Doctor(),
+            "doctor" => await workspace.DoctorAsync().ConfigureAwait(false),
             "git_status" => await workspace.GitStatusAsync().ConfigureAwait(false),
             "ci_status" => await workspace.CiStatusAsync().ConfigureAwait(false),
             "pr_status" => await workspace.PrStatusAsync().ConfigureAwait(false),

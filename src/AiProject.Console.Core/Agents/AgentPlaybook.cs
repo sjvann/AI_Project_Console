@@ -12,7 +12,7 @@ public static class AgentPlaybook
 
         ---
         驗證（若 IDE 已接 MCP「ai-project-console」請直接呼叫工具，不要只口述）：
-        1. stack_status — 看哪些服務離線、哪些專案需重編
+        1. stack_status — 看哪些服務離線、哪些專案需重編；runtimeAttention 有字時先處理 Podman 虛擬機或資料庫，不要先跑測試
         2. 改完程式後 build（mode=stale 或 mode=one + path）
         3. 執行問題用 get_log；需要時 start_service / start_all（start_service 會先起 dependsOn）
         4. 最後再 stack_status 確認就緒數上升、需重編為 0

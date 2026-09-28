@@ -1,6 +1,7 @@
 using AiProject.Console.Core.Agents;
 using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
+using AiProject.Console.Core.Infra;
 using AiProject.Console.Core.Stack;
 using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Update;
@@ -117,7 +118,7 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
 
     public string ToText() => Text;
 
-    public static DoctorSnapshot Build(ProjectCatalog? catalog)
+    public static DoctorSnapshot Build(ProjectCatalog? catalog, WorkspaceRuntimeReport? runtime = null)
     {
         var hasGit = CliUtil.CommandExists("git");
         var hasGh = CliUtil.CommandExists("gh");
@@ -189,6 +190,15 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
                     ? "缺少的執行環境可按下方按鈕安裝（Windows 用 winget；沒有 winget 會開官方下載頁）。裝好後請再按一次環境體檢。"
                     : "依專案檔與副檔名偵測。套件還原可在缺少 node_modules／.venv 時執行。",
                 missingTools > 0 ? "install-toolchains" : null));
+            var runtimeItems = BuildRuntimeItems(catalog, runtime);
+            if (runtimeItems.Count > 0)
+            {
+                sections.Add(new(
+                    "runtime",
+                    "執行環境",
+                    runtimeItems,
+                    "工作區 ai-project.json 宣告的 Podman 虛擬機與資料庫。編譯不看這層；跑測試與被點名的服務啟動會先看。"));
+            }
         }
         sections.Add(new("agent", "Agent 後端", agentItems, "可在設定切換目前後端。", "prefs-agent"));
         sections.Add(new("mcp", "MCP", mcpItems, "寫入 .cursor/mcp.json、調整允許的工具。", "prefs-mcp"));
@@ -280,7 +290,47 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             sections.Add(new("project", "專案", project));
         }
 
-        return new DoctorSnapshot(sections, FormatText(catalog, agent, agentCli, mcpPolicy, stackIds, toolStatus));
+        return new DoctorSnapshot(sections, FormatText(catalog, agent, agentCli, mcpPolicy, stackIds, toolStatus, runtime));
+    }
+
+    static List<DoctorItem> BuildRuntimeItems(ProjectCatalog catalog, WorkspaceRuntimeReport? runtime)
+    {
+        if (!WorkspaceRuntimeManifest.Declared(catalog))
+            return [];
+        if (runtime is null || !runtime.HasRows)
+        {
+            return
+            [
+                new(
+                    "執行環境",
+                    "已宣告，尚未探測",
+                    DoctorLevel.Info,
+                    HowTo: "開啟環境體檢或等摘要列刷新。控制台會查 podman machine，不會自動啟動虛擬機。"),
+            ];
+        }
+
+        var items = new List<DoctorItem>();
+        foreach (var row in runtime.Runtimes)
+        {
+            items.Add(new(
+                row.Machine,
+                row.Headline,
+                row.State == RuntimeProbeState.Ready ? DoctorLevel.Ok : DoctorLevel.Missing,
+                Detail: row.Detail,
+                HowTo: row.HowTo,
+                Badge: row.State == RuntimeProbeState.Ready ? "已啟動" : "未就緒"));
+        }
+        foreach (var row in runtime.Datastores)
+        {
+            items.Add(new(
+                row.Label,
+                row.Headline,
+                row.State == RuntimeProbeState.Ready ? DoctorLevel.Ok : DoctorLevel.Missing,
+                Detail: row.Detail,
+                HowTo: row.HowTo,
+                Badge: row.State == RuntimeProbeState.Ready ? "就緒" : "未就緒"));
+        }
+        return items;
     }
 
     static List<DoctorItem> BuildToolchainItems(
@@ -406,7 +456,8 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         AgentCliDoctor agentCli,
         McpPolicy? mcpPolicy,
         IReadOnlyList<string> stackIds,
-        IReadOnlyList<ToolStatus> toolStatus)
+        IReadOnlyList<ToolStatus> toolStatus,
+        WorkspaceRuntimeReport? runtime)
     {
         var lines = new List<string>
         {
@@ -437,6 +488,11 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             return string.Join('\n', lines);
         }
 
+        var projectName = catalog.Name;
+        var projectRoot = catalog.Root;
+        var projectSummary = catalog.Summary;
+        var serviceCount = catalog.Services.Count;
+
         if (stackIds.Count > 0 || toolStatus.Count > 0)
         {
             lines.Add("");
@@ -445,13 +501,28 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
                 lines.Add($"  - {st.Spec.DisplayName}: {(st.Installed ? "OK" : "缺少")}");
         }
 
+        if (runtime is { HasRows: true })
+        {
+            lines.Add("");
+            lines.Add("執行環境：");
+            foreach (var row in runtime.Runtimes)
+                lines.Add($"  - {row.Headline}");
+            foreach (var row in runtime.Datastores)
+                lines.Add($"  - {row.Headline}" + (string.IsNullOrEmpty(row.Detail) ? "" : $"（{row.Detail}）"));
+        }
+        else if (WorkspaceRuntimeManifest.Declared(catalog))
+        {
+            lines.Add("");
+            lines.Add("執行環境：已宣告，尚未探測");
+        }
+
         lines.AddRange(
         [
             "",
-            $"專案：{catalog.Name}",
-            $"路徑：{catalog.Root}",
-            $"摘要：{catalog.Summary}",
-            $"服務：{catalog.Services.Count}",
+            $"專案：{projectName}",
+            $"路徑：{projectRoot}",
+            $"摘要：{projectSummary}",
+            $"服務：{serviceCount}",
         ]);
         foreach (var svc in catalog.Services)
         {

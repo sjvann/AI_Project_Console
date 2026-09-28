@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using AiProject.Console.Core.Infra;
 using AiProject.Console.Core.Scan;
 using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Util;
@@ -146,6 +147,7 @@ public static class ServiceCatalogBuilder
         if (!string.IsNullOrEmpty(scan.Error))
             summary = scan.Error;
 
+        var (runtimes, datastores) = WorkspaceRuntimeManifest.Read(manifest);
         var catalog = new ProjectCatalog
         {
             Root = root,
@@ -158,6 +160,8 @@ public static class ServiceCatalogBuilder
             Scan = scan with { Projects = projects },
             Summary = summary,
             GroupDescriptions = ReadGroupDescriptions(manifest),
+            Runtimes = runtimes,
+            Datastores = datastores,
         };
         ProjectPurpose.TryWrite(catalog);
         return catalog;

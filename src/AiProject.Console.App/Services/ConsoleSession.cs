@@ -8,6 +8,7 @@ using AiProject.Console.Core.Cursor;
 using AiProject.Console.Core.Deploy;
 using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
+using AiProject.Console.Core.Infra;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Scan;
@@ -235,6 +236,9 @@ public sealed partial class ConsoleSession : IDisposable
     public string LeaveGateTitle => GitBriefStatus.LeaveGateTitle(string.IsNullOrEmpty(LeaveGateAction) ? "離開" : LeaveGateAction);
     public string LeaveGateForceLabel => GitBriefStatus.LeaveGateForceLabel(LeaveGateAction);
     public DoctorSnapshot? DoctorView { get; private set; }
+    public WorkspaceRuntimeReport RuntimeReport { get; private set; } = WorkspaceRuntimeReport.Empty;
+    public string RuntimeAttention => RuntimeReport.Attention ?? "";
+    private int _runtimeProbeBusy;
     public bool DoctorCopied { get; private set; }
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
@@ -1417,6 +1421,7 @@ public sealed partial class ConsoleSession : IDisposable
             RefreshDocs();
             Notify();
             _ = RefreshBuildStatesAsync();
+            _ = RefreshRuntimeAttentionAsync();
             await AfterProjectLoadedAsync(openCursor, rememberErr).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1482,6 +1487,7 @@ public sealed partial class ConsoleSession : IDisposable
         _iconUrlCache.Clear();
         Catalog = next;
         ReloadLog();
+        _ = RefreshRuntimeAttentionAsync();
     }
 
     private async Task<bool> TryStopCurrentProjectForSwitchAsync(string nextRoot)
@@ -2440,6 +2446,8 @@ public sealed partial class ConsoleSession : IDisposable
         var health = new Dictionary<string, bool>(Health);
         var planned = ProcessSupervisor.OfflineRunnable(catalog, health);
         var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
+        if (await BlockedByRuntimeServicesAsync(plan.Order.Select(s => s.Id)).ConfigureAwait(false))
+            return;
         MarkServiceActivity(plan.Order.Count > 0 ? plan.Order : planned, ServiceActivityMap.Starting);
         IReadOnlyList<(string Id, string Label, string? Error)> results = [];
         await RunJobAsync("啟動中…", async () =>
@@ -2479,6 +2487,8 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var plan = ServiceStartPlanner.ForTargets(catalog, planned.Select(s => s.Id));
         var toStart = plan.Order.Count > 0 ? plan.Order : planned;
+        if (await BlockedByRuntimeServicesAsync(toStart.Select(s => s.Id)).ConfigureAwait(false))
+            return;
         if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
             return;
         MarkServiceActivity(toStart, ServiceActivityMap.Starting);
@@ -2525,6 +2535,8 @@ public sealed partial class ConsoleSession : IDisposable
         var ids = GroupRunnableIds(key);
         var targets = ProcessSupervisor.OnlineRunnable(catalog, health, ids);
         if (targets.Count == 0)
+            return;
+        if (await BlockedByRuntimeServicesAsync(targets.Select(s => s.Id)).ConfigureAwait(false))
             return;
         if (!await EnsureStartToolsAsync(targets).ConfigureAwait(false))
             return;
@@ -2579,6 +2591,8 @@ public sealed partial class ConsoleSession : IDisposable
         var runtime = Runtime!;
         var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id], skipOptional, skipDepends);
         var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
+        if (await BlockedByRuntimeServicesAsync(toStart.Select(s => s.Id)).ConfigureAwait(false))
+            return;
         if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
             return;
         MarkServiceActivity(toStart, ServiceActivityMap.Starting);
@@ -2647,6 +2661,8 @@ public sealed partial class ConsoleSession : IDisposable
         var runtime = Runtime!;
         var plan = ServiceStartPlanner.ForTargets(catalog, [svc.Id]);
         var toStart = plan.Order.Count > 0 ? plan.Order : [svc];
+        if (await BlockedByRuntimeServicesAsync(toStart.Select(s => s.Id)).ConfigureAwait(false))
+            return;
         if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
             return;
         MarkServiceActivity(toStart, ServiceActivityMap.Restarting);
@@ -2735,6 +2751,8 @@ public sealed partial class ConsoleSession : IDisposable
 
             var plan = ServiceStartPlanner.ForTargets(catalog, startIds, skipOptional);
             var toStart = plan.Order.Count > 0 ? plan.Order : targets.Where(s => startIds.Contains(s.Id)).ToList();
+            if (await BlockedByRuntimeServicesAsync(toStart.Select(s => s.Id)).ConfigureAwait(false))
+                return;
             if (!await EnsureStartToolsAsync(toStart).ConfigureAwait(false))
                 return;
 
@@ -2786,11 +2804,13 @@ public sealed partial class ConsoleSession : IDisposable
         }
     }
 
-    public void Doctor()
+    public async Task Doctor()
     {
         AskPanelOpen = false;
         AuditPanelOpen = false;
-        DoctorView = DoctorSnapshot.Build(Catalog);
+        if (Catalog is not null && WorkspaceRuntimeManifest.Declared(Catalog))
+            await ProbeRuntimeIntoSessionAsync().ConfigureAwait(false);
+        DoctorView = DoctorSnapshot.Build(Catalog, RuntimeReport);
         DoctorCopied = false;
         Dialog = "doctor";
         Notify();
@@ -2905,7 +2925,7 @@ public sealed partial class ConsoleSession : IDisposable
         {
             EndOccupancy();
             if (Dialog == "doctor")
-                DoctorView = DoctorSnapshot.Build(Catalog);
+                DoctorView = DoctorSnapshot.Build(Catalog, RuntimeReport);
             Notify();
         }
     }
@@ -2943,7 +2963,7 @@ public sealed partial class ConsoleSession : IDisposable
         {
             EndOccupancy();
             if (Dialog == "doctor")
-                DoctorView = DoctorSnapshot.Build(Catalog);
+                DoctorView = DoctorSnapshot.Build(Catalog, RuntimeReport);
             Notify();
         }
     }
@@ -2974,7 +2994,7 @@ public sealed partial class ConsoleSession : IDisposable
         {
             EndOccupancy();
             if (Dialog == "doctor")
-                DoctorView = DoctorSnapshot.Build(Catalog);
+                DoctorView = DoctorSnapshot.Build(Catalog, RuntimeReport);
             Notify();
         }
     }
@@ -5062,6 +5082,8 @@ public sealed partial class ConsoleSession : IDisposable
                 _native.Info("沒有測試", "這個工作區沒有方案或測試專案可跑。控制台只做一次完整測試，不是 IDE 測試總管。");
             return true;
         }
+        if (await BlockedByRuntimeTestAsync().ConfigureAwait(false))
+            return false;
         if (!await EnsureBuildToolsAsync(targets).ConfigureAwait(false))
             return false;
 
@@ -5652,6 +5674,8 @@ public sealed partial class ConsoleSession : IDisposable
                     var dead = Runtime is null ? null : ProcessSupervisor.DeadStartedIds(catalog, Runtime);
                     ServiceActivityMap.Reconcile(ServiceActivities, health, StartErrors, dead);
                     UpdateReady();
+                    if (WorkspaceRuntimeManifest.Declared(catalog))
+                        _ = RefreshRuntimeAttentionAsync();
                 }
                 var gitEvery = _autoSyncSkippedDirty ? 2 : 8;
                 if (healthEvery % gitEvery == 0 && Catalog is not null)
@@ -5716,6 +5740,7 @@ public sealed partial class ConsoleSession : IDisposable
         _collapsedServiceGroups.Clear();
         _collapsedProjectGroups.Clear();
         Projects = [];
+        RuntimeReport = WorkspaceRuntimeReport.Empty;
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
@@ -5872,6 +5897,86 @@ public sealed partial class ConsoleSession : IDisposable
             JobText = "工作區已乾淨";
     }
 
+    private async Task RefreshRuntimeAttentionAsync()
+    {
+        if (Interlocked.CompareExchange(ref _runtimeProbeBusy, 1, 0) != 0)
+            return;
+        try
+        {
+            await ProbeRuntimeIntoSessionAsync().ConfigureAwait(false);
+            Notify();
+        }
+        catch (OperationCanceledException)
+        {
+            // 關閉專案
+        }
+        catch
+        {
+            // 下一輪再探
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _runtimeProbeBusy, 0);
+        }
+    }
+
+    private async Task ProbeRuntimeIntoSessionAsync()
+    {
+        var catalog = Catalog;
+        if (catalog is null || !WorkspaceRuntimeManifest.Declared(catalog))
+        {
+            RuntimeReport = WorkspaceRuntimeReport.Empty;
+            return;
+        }
+        var report = await WorkspaceRuntimeProbe.ProbeAsync(catalog, _cts.Token).ConfigureAwait(false);
+        if (ReferenceEquals(Catalog, catalog))
+            RuntimeReport = report;
+    }
+
+    /// <summary>虛擬機或資料庫未就緒時拒絕啟動。回傳 true 表示已擋下。</summary>
+    private async Task<bool> BlockedByRuntimeServicesAsync(IEnumerable<string> serviceIds)
+    {
+        var ids = serviceIds.Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+        if (ids.Count == 0)
+            return false;
+        var message = await RuntimeBlockMessageAsync(report => RuntimeGate.ServiceMessage(report, ids)).ConfigureAwait(false);
+        if (message is null)
+            return false;
+        PresentRuntimeBlock("還不能啟動", message);
+        return true;
+    }
+
+    /// <summary>requiredBy 含 test 的資料庫未就緒時拒絕跑測試。</summary>
+    private async Task<bool> BlockedByRuntimeTestAsync()
+    {
+        var message = await RuntimeBlockMessageAsync(RuntimeGate.TestMessage).ConfigureAwait(false);
+        if (message is null)
+            return false;
+        PresentRuntimeBlock("還不能跑測試", message);
+        return true;
+    }
+
+    private async Task<string?> RuntimeBlockMessageAsync(Func<WorkspaceRuntimeReport, string?> pick)
+    {
+        var catalog = Catalog;
+        if (catalog is null || !WorkspaceRuntimeManifest.Declared(catalog))
+            return null;
+        var report = await WorkspaceRuntimeProbe.ProbeAsync(catalog, _cts.Token).ConfigureAwait(false);
+        if (!ReferenceEquals(Catalog, catalog))
+            return "專案已切換。";
+        RuntimeReport = report;
+        Notify();
+        return pick(report);
+    }
+
+    private void PresentRuntimeBlock(string title, string message)
+    {
+        WarnText = message;
+        JobText = message.Length <= 80 ? message : message[..79] + "…";
+        Notify();
+        _native.Warn(title, message);
+    }
+
     private void ApplyStartResults(IReadOnlyList<(string Id, string Label, string? Error)> results)
     {
         if (results.Count == 0)
@@ -5881,7 +5986,14 @@ public sealed partial class ConsoleSession : IDisposable
         ServiceActivityMap.ClearFailed(ServiceActivities, StartErrors);
         var failed = results.Where(r => r.Error is not null).ToList();
         if (failed.Count > 0)
-            WarnText = string.Join("；", failed.Select(f => $"{f.Label}：{f.Error}"));
+        {
+            var distinct = failed.Select(f => f.Error!).Distinct().ToList();
+            WarnText = distinct.Count == 1 && RuntimeMessages.IsBlock(distinct[0])
+                ? distinct[0]
+                : string.Join("；", failed.Select(f => $"{f.Label}：{f.Error}"));
+            if (distinct.Count == 1 && RuntimeMessages.IsBlock(distinct[0]) && string.IsNullOrEmpty(RuntimeAttention))
+                _native.Warn("還不能啟動", distinct[0]);
+        }
         else if (StartErrors.Count == 0)
             WarnText = "";
     }

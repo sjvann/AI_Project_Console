@@ -42,7 +42,7 @@ title: 系統執行計劃書
 
 | 已有 | 路徑／能力 | 怎麼用 |
 |------|------------|--------|
-| 控制台 0.6.x | 堆疊、GitHub、進件、本機工時 | 做工與 `intake.json`；A 加目的地＋握手＋上傳 |
+| 控制台 0.6.x | 堆疊、GitHub、進件、本機工時；工作區可宣告 Podman 虛擬機（AD-35） | 做工與 `intake.json`；A 加目的地＋握手＋上傳 |
 | Photino.Blazor 4.0.13 | `Console.App` 宿主 | K0 抽出介面後暫留；K1 通過才替換 |
 | `SelfUpdate` | GitHub Release 檢查／套用 setup.exe | K0 升成 `Shared.Update`；P1 行為等價 |
 | `--accent: #0b6e56` | Console 與 Company.Web CSS | K0 抽進 DesignSystem token |

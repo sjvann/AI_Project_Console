@@ -3,6 +3,7 @@ using AiProject.Console.Core.Build;
 using AiProject.Console.Core.Catalog;
 using AiProject.Console.Core.Docs;
 using AiProject.Console.Core.GitHub;
+using AiProject.Console.Core.Infra;
 using AiProject.Console.Core.ProcessOps;
 using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Util;
@@ -35,7 +36,11 @@ public sealed class StackWorkspace
 
     public async Task<string> StackStatusAsync()
     {
-        var health = await ProbeHealthAsync().ConfigureAwait(false);
+        var healthTask = ProbeHealthAsync();
+        var runtimeTask = WorkspaceRuntimeProbe.ProbeAsync(Catalog);
+        await Task.WhenAll(healthTask, runtimeTask).ConfigureAwait(false);
+        var health = await healthTask.ConfigureAwait(false);
+        var runtime = await runtimeTask.ConfigureAwait(false);
         var svcStates = BuildFreshness.AllServiceBuildStates(Catalog);
         var prj = BuildFreshness.AllProjectBuildStates(Catalog);
         var ready = Catalog.Services.Count(s => health.GetValueOrDefault(s.Id));
@@ -57,13 +62,18 @@ public sealed class StackWorkspace
             ready = $"{ready}/{Catalog.Services.Count}",
             staleServices = staleSvc,
             staleProjects = stalePrj,
+            runtimeAttention = runtime.Attention,
             services = rows,
         });
     }
 
     public async Task<string> DutySummaryAsync()
     {
-        var health = await ProbeHealthAsync().ConfigureAwait(false);
+        var healthTask = ProbeHealthAsync();
+        var runtimeTask = WorkspaceRuntimeProbe.ProbeAsync(Catalog);
+        await Task.WhenAll(healthTask, runtimeTask).ConfigureAwait(false);
+        var health = await healthTask.ConfigureAwait(false);
+        var runtime = await runtimeTask.ConfigureAwait(false);
         var ready = Catalog.Services.Count(s => health.GetValueOrDefault(s.Id));
         var offline = Catalog.Services.Count - ready;
         var staleSvc = BuildFreshness.AllServiceBuildStates(Catalog).Count(s => s.Status is "stale" or "unbuilt");
@@ -74,6 +84,8 @@ public sealed class StackWorkspace
         var last = fails.Count > 0 ? fails[^1] : null;
         var lastIncident = incidents.Count > 0 ? incidents[^1] : null;
         var attention = DutySummary.Attention(offline, stalePrj, incidents.Count, lastIncident?.Tool);
+        if (!string.IsNullOrEmpty(runtime.Attention))
+            attention = attention == "堆疊正常" ? runtime.Attention : attention + " · " + runtime.Attention;
         return Json(new
         {
             root = Root,
@@ -88,7 +100,8 @@ public sealed class StackWorkspace
                 ? null
                 : new { tool = last.Tool, error = last.Error, utc = last.Utc.ToString("o") },
             attention,
-            ok = DutySummary.IsClear(offline, stalePrj, incidents.Count),
+            runtimeAttention = runtime.Attention,
+            ok = DutySummary.IsClear(offline, stalePrj, incidents.Count) && string.IsNullOrEmpty(runtime.Attention),
         });
     }
 
@@ -271,11 +284,13 @@ public sealed class StackWorkspace
     public async Task<string> StartAllAsync()
     {
         var results = await ProcessSupervisor.StartOfflineAsync(Catalog, Runtime).ConfigureAwait(false);
+        var errors = results.Where(r => r.Error is not null).Select(r => r.Error).Distinct().ToList();
         return Json(new
         {
             ok = results.All(r => r.Error is null),
             started = results.Where(r => r.Error is null).Select(r => r.Id),
             failed = results.Where(r => r.Error is not null).Select(r => new { r.Id, r.Label, error = r.Error }),
+            error = errors.Count == 1 ? errors[0] : null,
         });
     }
 
@@ -299,7 +314,11 @@ public sealed class StackWorkspace
         return Json(new { id = svc.Id, path, lineCount = lines.Length, lines = slice });
     }
 
-    public string Doctor() => ProcessSupervisor.DoctorReport(Catalog);
+    public async Task<string> DoctorAsync()
+    {
+        var report = await WorkspaceRuntimeProbe.ProbeAsync(Catalog).ConfigureAwait(false);
+        return ProcessSupervisor.DoctorReport(Catalog, report);
+    }
 
     public string DocsStatus()
     {

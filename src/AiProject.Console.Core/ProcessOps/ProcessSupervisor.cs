@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using AiProject.Console.Core.Catalog;
+using AiProject.Console.Core.Infra;
 using AiProject.Console.Core.Runtime;
 using AiProject.Console.Core.Tech;
 using AiProject.Console.Core.Util;
@@ -600,6 +601,20 @@ public static class ProcessSupervisor
             return results;
         }
 
+        if (WorkspaceRuntimeManifest.Declared(catalog))
+        {
+            var report = await WorkspaceRuntimeProbe.ProbeAsync(catalog, ct).ConfigureAwait(false);
+            var blocked = RuntimeGate.ServiceMessage(report, plan.Order.Select(s => s.Id));
+            if (blocked is not null)
+            {
+                foreach (var svc in plan.Order)
+                    results.Add((svc.Id, svc.Label, blocked));
+                if (results.Count == 0)
+                    results.Add(("", "", blocked));
+                return results;
+            }
+        }
+
         var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var svc in plan.Order)
         {
@@ -735,7 +750,8 @@ public static class ProcessSupervisor
         KillAllPids(rt);
     }
 
-    public static string DoctorReport(ProjectCatalog? catalog) => DoctorSnapshot.Build(catalog).ToText();
+    public static string DoctorReport(ProjectCatalog? catalog, WorkspaceRuntimeReport? runtime = null) =>
+        DoctorSnapshot.Build(catalog, runtime).ToText();
 
     internal static string? ResolvePreStartPath(string root, string? preStart)
     {

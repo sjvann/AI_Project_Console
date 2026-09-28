@@ -180,6 +180,10 @@
             <button type="button" class="duty-chip @(S.DocsChipWarn ? "is-warn" : "is-ok")" title="專案文件（docs/）" @onclick="S.ShowDocs">
                 @(S.Docs?.ChipText() ?? "文件 無文件")
             </button>
+            @if (!string.IsNullOrEmpty(S.RuntimeAttention))
+            {
+                <button type="button" class="duty-chip is-warn" title="環境體檢" @onclick="S.Doctor">@S.RuntimeAttention</button>
+            }
             @if (!string.IsNullOrEmpty(S.DutyAttention))
             {
                 <span class="duty-attn @(S.DutyOk ? "status-on" : "warn")">@S.DutyAttention</span>
