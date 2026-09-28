@@ -117,7 +117,7 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 ## 執行環境（Podman 虛擬機）
 
-資料庫若由本機 Podman 虛擬機提供，在清單宣告。控制台會查三層：`podman` 在不在、具名 machine 是否 Running、機器已開之後容器與埠。摘要列與環境體會顯示結果。**不會**在開啟工作區或輪詢時自動 `podman machine start`。
+資料庫若由本機 Podman 虛擬機提供，在清單宣告。控制台會查三層：`podman` 在不在、具名 machine 是否 Running、機器已開之後容器與埠。啟動列出現 **Podman** 按鈕（已啟動，或錯誤筆數與提示），摘要列與環境體會顯示同一句結果。**不會**在開啟工作區或輪詢時自動 `podman machine start`。
 
 編譯（含「編譯過期項目」）不看這層。`requiredBy` 含 `test` 時，「跑測試」在進 `dotnet test` 之前就拒絕。`requiredBy` 裡的服務 id，啟動（含先展開的 `dependsOn`）、重啟與開啟會先拒絕。沒被點名的服務仍可啟動。
 

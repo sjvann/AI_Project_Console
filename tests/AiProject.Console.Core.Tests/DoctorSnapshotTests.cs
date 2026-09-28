@@ -116,11 +116,13 @@ public class DoctorSnapshotTests
         Assert.Equal(DoctorLevel.Missing, missing.Overall);
         Assert.Equal("1 項缺少、1 項需注意", missing.Headline);
         Assert.Equal("dotnet、gh", missing.HeadlineDetail);
+        Assert.Equal("錯誤 1 筆、不足 1 筆：dotnet、gh", missing.IssueTip);
 
         var ok = new DoctorSnapshot(
             [new("x", "X", [new("dotnet", "已安裝", DoctorLevel.Ok)])],
             "text");
         Assert.Equal("環境正常", ok.Headline);
+        Assert.Equal("環境正常", ok.IssueTip);
         Assert.Equal("基本工具與目前 Agent 都可用。", ok.HeadlineDetail);
     }
 }

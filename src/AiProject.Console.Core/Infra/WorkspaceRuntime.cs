@@ -54,6 +54,49 @@ public sealed record WorkspaceRuntimeReport(
 
     public bool HasRows => Runtimes.Count > 0 || Datastores.Count > 0;
 
+    /// <summary>未就緒列的不同句子數。同一句不重複計。</summary>
+    public int BlockedCount
+    {
+        get
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var row in Runtimes)
+            {
+                if (row.State == RuntimeProbeState.Blocked)
+                    seen.Add(row.Headline);
+            }
+            foreach (var row in Datastores)
+            {
+                if (row.State == RuntimeProbeState.Blocked)
+                    seen.Add(row.Headline);
+            }
+            return seen.Count;
+        }
+    }
+
+    /// <summary>啟動列 Podman 按鈕的提示。就緒時列出已啟動句子。</summary>
+    public string CheckTip
+    {
+        get
+        {
+            if (!HasRows)
+                return "檢測 Podman 虛擬機";
+            if (BlockedCount == 0)
+            {
+                var ready = new List<string>();
+                foreach (var row in Runtimes)
+                    ready.Add(row.Headline);
+                foreach (var row in Datastores)
+                {
+                    if (!ready.Contains(row.Headline))
+                        ready.Add(row.Headline);
+                }
+                return string.Join("；", ready);
+            }
+            return $"錯誤 {BlockedCount} 筆：{Attention}";
+        }
+    }
+
     /// <summary>摘要列要顯示的阻斷句。就緒時為空白。</summary>
     public string? Attention
     {

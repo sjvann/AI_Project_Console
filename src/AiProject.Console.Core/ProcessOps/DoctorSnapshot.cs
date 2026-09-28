@@ -116,6 +116,25 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         }
     }
 
+    public int IssueCount => MissingCount + WarnCount;
+
+    /// <summary>環境體檢按鈕的提示。有缺少或需注意時寫出筆數與項目。</summary>
+    public string IssueTip
+    {
+        get
+        {
+            if (IssueCount == 0)
+                return "環境正常";
+            var parts = new List<string>();
+            if (MissingCount > 0)
+                parts.Add($"錯誤 {MissingCount} 筆");
+            if (WarnCount > 0)
+                parts.Add($"不足 {WarnCount} 筆");
+            var head = string.Join("、", parts);
+            return string.IsNullOrEmpty(HeadlineDetail) ? head : head + "：" + HeadlineDetail;
+        }
+    }
+
     public string ToText() => Text;
 
     public static DoctorSnapshot Build(ProjectCatalog? catalog, WorkspaceRuntimeReport? runtime = null)

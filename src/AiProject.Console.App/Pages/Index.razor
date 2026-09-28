@@ -105,6 +105,16 @@
     <div class="card">
         <div class="row">
             <button class="btn-primary" disabled="@S.ServiceLifecycleBusy" title="@(S.ServiceLifecycleBusy ? S.ServiceLifecycleBusyTitle : "啟動全部離線服務")" @onclick="S.StartAllAsync">啟動</button>
+            @if (S.ShowPodmanCheck)
+            {
+                <button type="button" class="btn-sec @(S.PodmanIssueCount > 0 ? "is-warn" : null)" title="@S.PodmanCheckTip" @onclick="S.Doctor">
+                    @S.PodmanCheckLabel
+                    @if (S.PodmanIssueCount > 0)
+                    {
+                        <span class="badge">@S.PodmanIssueCount</span>
+                    }
+                </button>
+            }
             <button class="btn-danger" disabled="@S.ServiceLifecycleBusy" title="@(S.ServiceLifecycleBusy ? S.ServiceLifecycleBusyTitle : "停止全部線上服務")" @onclick="S.StopAllAsync">停止全部</button>
             <span class="sep"></span>
             <div class="menu @(openMenu == "urls" ? "open" : null)">
@@ -134,7 +144,13 @@
                     <span class="badge">…</span>
                 }
             </button>
-            <button class="btn-sec" @onclick="S.Doctor">環境體檢</button>
+            <button type="button" class="btn-sec @(S.DoctorIssueCount > 0 ? "is-warn" : null)" title="@S.DoctorButtonTip" @onclick="S.Doctor">
+                環境體檢
+                @if (S.DoctorIssueCount > 0)
+                {
+                    <span class="badge">@S.DoctorIssueCount</span>
+                }
+            </button>
         </div>
     </div>
     }

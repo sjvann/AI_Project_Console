@@ -47,6 +47,7 @@ button, .btn { font: 600 12px "Segoe UI", sans-serif; border: 1px solid transpar
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-sec { background: var(--row-alt); color: var(--text); border-color: var(--border); }
 .btn-sec.is-open { border-color: var(--accent); background: var(--sel); }
+.btn-sec.is-warn { color: var(--wait); border-color: var(--wait); }
 .btn-sec .badge { font-size: 11px; margin-left: 4px; }
 .btn-link { background: none; border: none; color: var(--accent); text-decoration: underline; padding: 0 8px 0 0; font-weight: 600; cursor: pointer; }
 .btn-link:hover { color: var(--accent-hi); }

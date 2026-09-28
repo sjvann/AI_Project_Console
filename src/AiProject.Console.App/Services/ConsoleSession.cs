@@ -236,9 +236,19 @@ public sealed partial class ConsoleSession : IDisposable
     public string LeaveGateTitle => GitBriefStatus.LeaveGateTitle(string.IsNullOrEmpty(LeaveGateAction) ? "離開" : LeaveGateAction);
     public string LeaveGateForceLabel => GitBriefStatus.LeaveGateForceLabel(LeaveGateAction);
     public DoctorSnapshot? DoctorView { get; private set; }
+    public DoctorSnapshot? DoctorHint { get; private set; }
     public WorkspaceRuntimeReport RuntimeReport { get; private set; } = WorkspaceRuntimeReport.Empty;
     public string RuntimeAttention => RuntimeReport.Attention ?? "";
+    public bool ShowPodmanCheck => Catalog is not null && WorkspaceRuntimeManifest.Declared(Catalog);
+    public int PodmanIssueCount => RuntimeReport.BlockedCount;
+    public string PodmanCheckLabel =>
+        ShowPodmanCheck && RuntimeReport.HasRows && PodmanIssueCount == 0 ? "Podman 已啟動" : "Podman";
+    public string PodmanCheckTip => RuntimeReport.HasRows ? RuntimeReport.CheckTip : "檢測 Podman 虛擬機";
+    public int DoctorIssueCount => DoctorHint?.IssueCount ?? 0;
+    public string DoctorButtonTip => DoctorHint?.IssueTip ?? "檢查本機工具、執行環境與文件";
     private int _runtimeProbeBusy;
+    private DateTimeOffset _doctorHintUtc = DateTimeOffset.MinValue;
+    private string _doctorHintAttention = "";
     public bool DoctorCopied { get; private set; }
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
@@ -2811,6 +2821,9 @@ public sealed partial class ConsoleSession : IDisposable
         if (Catalog is not null && WorkspaceRuntimeManifest.Declared(Catalog))
             await ProbeRuntimeIntoSessionAsync().ConfigureAwait(false);
         DoctorView = DoctorSnapshot.Build(Catalog, RuntimeReport);
+        DoctorHint = DoctorView;
+        _doctorHintUtc = DateTimeOffset.UtcNow;
+        _doctorHintAttention = RuntimeReport.Attention ?? "";
         DoctorCopied = false;
         Dialog = "doctor";
         Notify();
@@ -5674,8 +5687,7 @@ public sealed partial class ConsoleSession : IDisposable
                     var dead = Runtime is null ? null : ProcessSupervisor.DeadStartedIds(catalog, Runtime);
                     ServiceActivityMap.Reconcile(ServiceActivities, health, StartErrors, dead);
                     UpdateReady();
-                    if (WorkspaceRuntimeManifest.Declared(catalog))
-                        _ = RefreshRuntimeAttentionAsync();
+                    _ = RefreshRuntimeAttentionAsync();
                 }
                 var gitEvery = _autoSyncSkippedDirty ? 2 : 8;
                 if (healthEvery % gitEvery == 0 && Catalog is not null)
@@ -5741,6 +5753,9 @@ public sealed partial class ConsoleSession : IDisposable
         _collapsedProjectGroups.Clear();
         Projects = [];
         RuntimeReport = WorkspaceRuntimeReport.Empty;
+        DoctorHint = null;
+        _doctorHintUtc = DateTimeOffset.MinValue;
+        _doctorHintAttention = "";
         WarnText = "";
         GitStatusText = "";
         GitBrief = null;
@@ -5904,6 +5919,7 @@ public sealed partial class ConsoleSession : IDisposable
         try
         {
             await ProbeRuntimeIntoSessionAsync().ConfigureAwait(false);
+            await RefreshDoctorHintAsync().ConfigureAwait(false);
             Notify();
         }
         catch (OperationCanceledException)
@@ -5918,6 +5934,38 @@ public sealed partial class ConsoleSession : IDisposable
         {
             Interlocked.Exchange(ref _runtimeProbeBusy, 0);
         }
+    }
+
+    private async Task RefreshDoctorHintAsync()
+    {
+        var catalog = Catalog;
+        if (catalog is null)
+            return;
+        var attention = RuntimeReport.Attention ?? "";
+        var due = DateTimeOffset.UtcNow - _doctorHintUtc >= TimeSpan.FromSeconds(12);
+        if (!due && attention == _doctorHintAttention && DoctorHint is not null)
+            return;
+        var report = RuntimeReport;
+        DoctorSnapshot snap;
+        try
+        {
+            snap = await Task.Run(() => DoctorSnapshot.Build(catalog, report), _cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return;
+        }
+        if (!ReferenceEquals(Catalog, catalog))
+            return;
+        DoctorHint = snap;
+        _doctorHintUtc = DateTimeOffset.UtcNow;
+        _doctorHintAttention = attention;
+        if (Dialog == "doctor")
+            DoctorView = snap;
     }
 
     private async Task ProbeRuntimeIntoSessionAsync()

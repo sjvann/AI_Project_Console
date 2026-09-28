@@ -326,7 +326,7 @@ Domain 無 EF／HTTP。Application 開頭授權。規則不進 `.razor`。產品
 
 - **Binds:** 控制台摘要列、環境體檢、MCP `doctor`／`stack_status`／`duty_summary`、跑測試、服務啟動
 - **Prevents:** 工作區資料庫跑在 Podman 虛擬機裡，卻要等編譯與 `dotnet test` 連線失敗才知道機器沒開
-- **Rule:** 只認工作區 `ai-project.json` 的 `runtimes`（`kind=podman-machine`）與 `datastores`。探測分三層：命令在不在、具名 machine 是否 Running、機器已開之後的容器與埠。摘要列與體檢寫出機器名。虛擬機未啟動與「虛擬機已啟動，資料庫未就緒」是兩句不同的話。`requiredBy` 含 `test` 時，跑測試在進入測試指令前拒絕；點名的服務 id 在啟動、重啟、開啟前拒絕。編譯不拒絕。沒有宣告就不查 Podman，也不掃 compose。控制台不自動 `podman machine start`。輪詢這層不得串在服務健康檢查後面把輪詢卡住。
+- **Rule:** 只認工作區 `ai-project.json` 的 `runtimes`（`kind=podman-machine`）與 `datastores`。探測分三層：命令在不在、具名 machine 是否 Running、機器已開之後的容器與埠。摘要列、啟動列的 Podman 按鈕與體檢寫出機器名。有未就緒項目時，按鈕提示寫「錯誤 N 筆」；環境體檢按鈕另計全部缺少與需注意（「錯誤 N 筆、不足 M 筆」）。已啟動時按鈕寫「Podman 已啟動」。虛擬機未啟動與「虛擬機已啟動，資料庫未就緒」是兩句不同的話。`requiredBy` 含 `test` 時，跑測試在進入測試指令前拒絕；點名的服務 id 在啟動、重啟、開啟前拒絕。編譯不拒絕。沒有宣告就不顯示 Podman 按鈕，也不掃 compose。控制台不自動 `podman machine start`。輪詢這層不得串在服務健康檢查後面把輪詢卡住。
 
 ## 4. 選型（種子；代碼存在後以代碼為準）
 

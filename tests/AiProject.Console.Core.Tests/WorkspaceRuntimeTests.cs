@@ -76,6 +76,8 @@ public class WorkspaceRuntimeTests
     {
         var report = Evaluate(Stopped("podman-machine-default"));
         Assert.Equal("Podman 虛擬機未啟動：podman-machine-default", report.Attention);
+        Assert.Equal(1, report.BlockedCount);
+        Assert.Equal("錯誤 1 筆：Podman 虛擬機未啟動：podman-machine-default", report.CheckTip);
         Assert.DoesNotContain("資料庫未就緒", report.Attention);
         Assert.Equal("Podman 虛擬機未啟動：podman-machine-default", RuntimeGate.TestMessage(report));
         Assert.Equal("Podman 虛擬機未啟動：podman-machine-default", RuntimeGate.ServiceMessage(report, ["company-web"]));
@@ -136,6 +138,7 @@ public class WorkspaceRuntimeTests
         };
         var report = Evaluate(snapshot, portOpen: port => port == 5432);
         Assert.Null(report.Attention);
+        Assert.Contains("Podman 虛擬機已啟動：podman-machine-default", report.CheckTip);
         Assert.Null(RuntimeGate.TestMessage(report));
         Assert.Null(RuntimeGate.ServiceMessage(report, ["company-web"]));
     }
