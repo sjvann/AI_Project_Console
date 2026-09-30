@@ -17,11 +17,22 @@ public static class ProcessSupervisor
     {
         if (string.IsNullOrWhiteSpace(url))
             return false;
+        timeoutMs = Math.Max(200, timeoutMs);
         try
         {
             using var cts = new CancellationTokenSource(timeoutMs);
-            using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
-            using var resp = await client.GetAsync(url, cts.Token).ConfigureAwait(false);
+            using var handler = new SocketsHttpHandler
+            {
+                ConnectTimeout = TimeSpan.FromMilliseconds(timeoutMs),
+                UseProxy = false,
+            };
+            using var client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromMilliseconds(timeoutMs),
+            };
+            using var resp = await client
+                .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token)
+                .ConfigureAwait(false);
             var code = (int)resp.StatusCode;
             return code is >= 200 and < 500;
         }
@@ -40,12 +51,35 @@ public static class ProcessSupervisor
         var services = catalog.Services;
         var tasks = new Task<bool>[services.Count];
         for (var i = 0; i < services.Count; i++)
-            tasks[i] = ProbeHealthAsync(catalog, services[i]);
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+            tasks[i] = ProbeHealthBoundAsync(catalog, services[i]);
+        try
+        {
+            // 個別探測理論上 2 秒會結束。連線被丟包時 HttpClient 仍可能不返回，整輪就不能停在 WhenAll。
+            await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromMilliseconds(4_500)).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+        }
+        catch (Exception)
+        {
+        }
+
         var health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < services.Count; i++)
-            health[services[i].Id] = results[i];
+            health[services[i].Id] = tasks[i].IsCompletedSuccessfully && tasks[i].Result;
         return health;
+    }
+
+    static async Task<bool> ProbeHealthBoundAsync(ProjectCatalog catalog, ServiceEntry svc)
+    {
+        try
+        {
+            return await ProbeHealthAsync(catalog, svc).WaitAsync(TimeSpan.FromMilliseconds(3_000)).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     public static async Task<bool> ProbeHealthAsync(ServiceEntry svc)

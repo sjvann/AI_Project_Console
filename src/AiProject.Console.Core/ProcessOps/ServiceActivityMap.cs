@@ -111,7 +111,8 @@ public static class ServiceActivityMap
         var n = 0;
         foreach (var id in map.Keys.ToList())
         {
-            var activity = map[id];
+            if (!map.TryGetValue(id, out var activity))
+                continue;
             if (activity is Starting or Restarting && errors is not null && errors.ContainsKey(id))
             {
                 map.Remove(id);

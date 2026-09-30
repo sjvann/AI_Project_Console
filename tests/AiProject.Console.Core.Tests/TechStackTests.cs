@@ -452,6 +452,54 @@ public class TechStackTests
     }
 
     [Fact]
+    public void ScanWorkspace_FhirPackageFixture_IsNotAnNpmProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-stack-fhir-" + Guid.NewGuid().ToString("N"));
+        var package = Path.Combine(root, "TestData", "bundle-two-valuesets", "package");
+        Directory.CreateDirectory(package);
+        try
+        {
+            var manifest = Path.Combine(package, "package.json");
+            File.WriteAllText(manifest, """
+            {
+              "name": "fixture.bundle-vs",
+              "version": "1.0.0",
+              "fhirVersion": "5.0"
+            }
+            """);
+            Assert.False(TechStackDetector.IsInstallableManifest(manifest));
+            Assert.False(TechStackDetector.DeclaresNpmDependencies(package));
+
+            var withDeps = Path.Combine(root, "ig-tool", "package.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(withDeps)!);
+            File.WriteAllText(withDeps, """
+            {
+              "name": "ig-tool",
+              "fhirVersion": "5.0",
+              "dependencies": { "fhir": "4.12.0" }
+            }
+            """);
+            Assert.True(TechStackDetector.IsInstallableManifest(withDeps));
+
+            var scan = ProjectScanner.ScanWorkspace(root);
+            Assert.DoesNotContain(scan.Projects, p => p.Name == "fixture.bundle-vs");
+            Assert.Contains(scan.Projects, p => p.Name == "ig-tool" && p.StackId == "node");
+
+            var catalog = ServiceCatalogBuilder.Build(root);
+            var report = DoctorSnapshot.Build(catalog);
+            var tools = report.Sections.Single(s => s.Id == "toolchain");
+            Assert.DoesNotContain(tools.Items, i => i.Label.Contains("fixture.bundle-vs", StringComparison.Ordinal));
+            Assert.Contains(tools.Items, i => i.Label.Contains("ig-tool", StringComparison.Ordinal) && i.Value == "尚未還原");
+            Assert.True(StackCommands.PackagesRestored(package, "node"));
+            Assert.False(StackCommands.PackagesRestored(Path.GetDirectoryName(withDeps)!, "node"));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void FormatMissing_NamesTheTool()
     {
         var text = ToolchainBootstrap.FormatMissing(["python"]);

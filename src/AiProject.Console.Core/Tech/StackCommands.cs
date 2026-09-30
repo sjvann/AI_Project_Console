@@ -96,7 +96,8 @@ public static class StackCommands
             return false;
         return stackId switch
         {
-            "node" => Directory.Exists(Path.Combine(projectDir, "node_modules")),
+            "node" => Directory.Exists(Path.Combine(projectDir, "node_modules"))
+                || !TechStackDetector.DeclaresNpmDependencies(projectDir),
             "python" => Directory.Exists(Path.Combine(projectDir, ".venv"))
                 || Directory.Exists(Path.Combine(projectDir, "venv")),
             "php" => Directory.Exists(Path.Combine(projectDir, "vendor")),
