@@ -6,11 +6,12 @@ public static class DocsPrompts
 {
     public static string FillAll(DocsStatus status, DocsScaffoldContext ctx)
     {
+        var folder = status.FolderLabel;
         var sb = new StringBuilder();
-        sb.AppendLine("請依目前專案狀態，補齊 `docs/` 裡的 Markdown 文件（繁體中文）。");
+        sb.AppendLine($"請依目前專案狀態，補齊 `{folder}` 裡的 Markdown 文件（繁體中文）。");
         sb.AppendLine();
         sb.AppendLine("規定：");
-        sb.AppendLine("- 只改 `docs/` 內的 `.md`／`.yml`，不要搬倉根 README。");
+        sb.AppendLine($"- 只改 `{folder}` 內的 `.md`／`.yml`，不要搬倉根 README。");
         sb.AppendLine("- 保留 YAML front matter 的 title。");
         sb.AppendLine("- 刪掉「（待補）」這類占位句，改寫成可給一般使用者看的完整段落。");
         sb.AppendLine("- 不知就寫「尚未確認」並說明要向誰問，不要捏造。");
@@ -40,8 +41,9 @@ public static class DocsPrompts
 
     public static string FillOne(string relPath, string content, DocsScaffoldContext ctx)
     {
+        var folder = string.IsNullOrWhiteSpace(ctx.Root) ? DocsService.FolderName + "/" : DocsService.DisplayFolder(ctx.Root);
         var sb = new StringBuilder();
-        sb.AppendLine($"請補齊目前這頁 `docs/{relPath.Replace('\\', '/')}`（繁體中文 Markdown）。");
+        sb.AppendLine($"請補齊目前這頁 `{folder}{relPath.Replace('\\', '/')}`（繁體中文 Markdown）。");
         sb.AppendLine();
         sb.AppendLine("規定：只改這一檔、保留 front matter、刪掉待補占位、不要捏造、不要改程式碼。");
         sb.AppendLine();

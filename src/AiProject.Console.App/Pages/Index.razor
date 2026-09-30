@@ -193,7 +193,7 @@
                     我的任務 @S.AssignedIssues.Count
                 </button>
             }
-            <button type="button" class="duty-chip @(S.DocsChipWarn ? "is-warn" : "is-ok")" title="專案文件（docs/）" @onclick="S.ShowDocs">
+            <button type="button" class="duty-chip @(S.DocsChipWarn ? "is-warn" : "is-ok")" title="@("專案文件（" + S.DocsFolderLabel + "）")" @onclick="S.ShowDocs">
                 @(S.Docs?.ChipText() ?? "文件 無文件")
             </button>
             @if (!string.IsNullOrEmpty(S.RuntimeAttention))
@@ -220,7 +220,7 @@
             <div class="tab @(S.LeftTab == "prj" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "prj")" title="連點：全部展開／收合" @onclick="@(() => S.SetWorkspaceTab("prj"))" @ondblclick="S.ToggleAllProjectGroups" @onkeydown="@(e => OnWorkspaceTabKey(e, "prj"))">
                 專案 <span class="badge">@(S.StaleProjectCount > 0 ? $"{S.StaleProjectCount} 需重編" : $"{S.Projects.Count}")</span>
             </div>
-            <div class="tab @(S.LeftTab == "docs" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "docs")" title="專案 docs/" @onclick="S.ShowDocs" @onkeydown="@(e => OnWorkspaceTabKey(e, "docs"))">
+            <div class="tab @(S.LeftTab == "docs" ? "active" : null)" role="tab" tabindex="0" aria-selected="@(S.LeftTab == "docs")" title="@("專案文件（" + S.DocsFolderLabel + "）")" @onclick="S.ShowDocs" @onkeydown="@(e => OnWorkspaceTabKey(e, "docs"))">
                 文件
                 @if (S.Docs is not null)
                 {
@@ -400,6 +400,7 @@
                         <button class="btn-sec" disabled="@(!S.HasProject || S.JobBusy)" @onclick="S.ScaffoldDocsAsync">建立體系</button>
                         <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="@(() => S.OpenNewDocDialog())">新增文件</button>
                         <button class="btn-sec" disabled="@(!S.HasProject || string.IsNullOrEmpty(S.SelectedDocPath))" @onclick="@(() => S.DeleteDoc(S.SelectedDocPath!))">刪除</button>
+                        <button class="btn-sec" disabled="@(!S.HasProject)" title="重新設定文件對應的根目錄" @onclick="S.OpenDocsRootDialog">設定根目錄</button>
                         <button class="btn-sec" disabled="@(!S.HasProject)" @onclick="S.RefreshDocsFromUi">刷新</button>
                     </div>
                     @if (!string.IsNullOrEmpty(S.DocsHint))
@@ -408,16 +409,16 @@
                     }
                     @if (S.Catalog is null)
                     {
-                        <p class="hint">請先選擇專案目錄。文件規定都放在 docs/。</p>
+                        <p class="hint">請先選擇專案目錄。文件根目錄預設是 docs/，選定專案後可改。</p>
                     }
                     else if (S.Docs is null || S.Docs.Files.Count == 0)
                     {
-                        <p class="hint">還沒有 docs/。按「建立體系」產生標準 Markdown 骨架與 DocFX 設定。</p>
+                        <p class="hint">還沒有 @S.DocsFolderLabel。按「建立體系」產生標準 Markdown 骨架與 DocFX 設定。</p>
                     }
                     else
                     {
                         <div class="doc-tree" role="tree" aria-label="文件目錄">
-                            <div class="doc-tree-root">docs/</div>
+                            <div class="doc-tree-root">@S.DocsFolderLabel</div>
                             @foreach (var row in S.VisibleDocsTree)
                             {
                                 var pad = 8 + row.Depth * 14;
@@ -1119,6 +1120,26 @@
     </div>
 }
 
+@if (S.Dialog == "docs-root")
+{
+    <div class="overlay" @onclick="S.CloseDialog">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-labelledby="docs-root-title" aria-modal="true">
+            <h2 id="docs-root-title">設定文件根目錄</h2>
+            <p class="hint">@S.DocsRootHint</p>
+            <div class="field">
+                <span>對應資料夾（相對專案根）</span>
+                <input value="@S.DocsRootDraft" @oninput="OnDocsRootDraft" placeholder="docs" />
+            </div>
+            <div class="dialog-actions">
+                <button class="btn-sec" @onclick="S.BrowseDocsRootAsync">選擇資料夾…</button>
+                <span class="grow"></span>
+                <button class="btn-sec" @onclick="S.CloseDialog">取消</button>
+                <button class="btn-primary" @onclick="S.SaveDocsRoot">套用</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (S.Dialog == "new-doc")
 {
     <div class="overlay" @onclick="S.CloseDialog">
@@ -1126,7 +1147,7 @@
             <h2 id="new-doc-title">新增文件</h2>
             <p class="hint">@S.NewDocHint</p>
             <div class="field">
-                <span>docs/ 路徑</span>
+                <span>@(S.DocsFolderLabel) 路徑</span>
                 <input value="@S.NewDocPath" @oninput="OnNewDocPath" placeholder="user/new-page.md" />
             </div>
             <div class="dialog-actions">
@@ -1283,6 +1304,8 @@
     void OnDocsDraft(ChangeEventArgs e) => S.SetDocsDraft(e.Value?.ToString() ?? "");
 
     void OnNewDocPath(ChangeEventArgs e) => S.SetNewDocPath(e.Value?.ToString() ?? "");
+
+    void OnDocsRootDraft(ChangeEventArgs e) => S.SetDocsRootDraft(e.Value?.ToString() ?? "");
 
     void OnAgentProvider(ChangeEventArgs e) => S.OnAgentProviderChanged(e.Value?.ToString() ?? "cursor");
 

@@ -161,6 +161,16 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 可與畫面「GitHub 設定」「部署設定」互相寫入。結構見範例檔的 `github`、`deploy`、`gcp`、`onprem`、`azure`。`github.host`／`github.kind` 指定認證對象（公開 GitHub 或企業主機）。使用者操作見 [GitHub](../user/github.md)、[部署](../user/deploy.md)、[需求工作台](../user/intake.md)。
 
+## 文件根目錄
+
+文件頁與 MCP 的 `list_docs`／`read_doc` 預設讀專案根下的 `docs/`（也認 `Docs/`）。文件不在這個資料夾時，在 `ai-project.json` 加相對路徑：
+
+```json
+"docsRoot": "DocsLibrary"
+```
+
+也接受 `docs_root`。路徑必須在專案內，不能是絕對路徑或 `..`。空白或 `docs` 表示沿用預設。控制台 **文件 → 設定文件根目錄…**（或文件頁的 **設定根目錄**）會把這欄寫回 `ai-project.json`。這是改文件對應哪個資料夾，不是用檔案總管打開 `docs/`。
+
 ## 執行期目錄
 
 選定專案根下會出現 `.ai_project/`：

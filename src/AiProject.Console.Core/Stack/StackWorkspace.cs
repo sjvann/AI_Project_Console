@@ -358,7 +358,7 @@ public sealed class StackWorkspace
     public string ReadDoc(string path)
     {
         if (!DocsService.IsSafeRelPath(path))
-            return Error("path 必須是 docs/ 內的相對路徑，例如 user/getting-started.md。");
+            return Error("path 必須是文件根目錄（" + DocsService.DisplayFolder(Root) + "）內的相對路徑，例如 user/getting-started.md。");
         var text = DocsService.Read(Root, path);
         return Json(new { ok = true, path = path.Replace('\\', '/'), text });
     }

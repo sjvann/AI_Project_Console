@@ -46,7 +46,7 @@ public sealed record DocfxDetect(bool Available, DocfxDetectKind Kind)
             "在專案根目錄執行：\n" +
             "dotnet tool restore\n\n" +
             "若還沒有 .config/dotnet-tools.json，按「安裝 DocFX」會寫入清單並 restore。\n" +
-            "之後預覽：dotnet docfx docs/docfx.json --serve",
+            "之後預覽：dotnet docfx <文件根>/docfx.json --serve",
         _ => null,
     };
 }
@@ -85,6 +85,24 @@ public sealed record DocsStatus(
     IReadOnlyList<DocsFile> Files)
 {
     public bool IsOk => Health == DocsHealth.Ready;
+
+    public string FolderLabel
+    {
+        get
+        {
+            try
+            {
+                var rel = Path.GetRelativePath(Root, DocsRoot).Replace('\\', '/').Trim('/');
+                if (string.IsNullOrEmpty(rel) || rel is "." or "..")
+                    return DocsService.FolderName + "/";
+                return rel + "/";
+            }
+            catch (Exception ex) when (ex is ArgumentException or PathTooLongException)
+            {
+                return DocsService.FolderName + "/";
+            }
+        }
+    }
 
     public string Label() => Health switch
     {
