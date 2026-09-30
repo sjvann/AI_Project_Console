@@ -40,7 +40,7 @@
           "hasIssue": false
         }
       ],
-      "releaseTag": "",
+      "releaseTag": "v0.6.23",
       "deployRunId": "",
       "deployHint": "",
       "skipDeploy": false,
