@@ -1815,18 +1815,25 @@ public sealed partial class ConsoleSession : IDisposable
         if (!_native.Confirm("登出 GitHub", $"要登出 {GithubAccount.Display()} 嗎？\n登出後，GitHub 管理的專案需要重新登入。"))
             return;
 
+        var loggingOut = GithubAccount;
         GithubAuthBusy = true;
         JobText = "登出 GitHub…";
         Notify();
         try
         {
-            var (ok, message) = await GitHubAuth.LogoutAsync(Catalog?.Root, ActiveGitHost, _cts.Token).ConfigureAwait(false);
+            var (ok, message) = await GitHubAuth.LogoutAsync(
+                Catalog?.Root, loggingOut.Host, loggingOut.Login, _cts.Token).ConfigureAwait(false);
             await RefreshGithubAuthAsync().ConfigureAwait(false);
             ClearIssueLists();
             if (!ok && GithubLoggedIn)
             {
                 _native.Warn("登出 GitHub", string.IsNullOrEmpty(message) ? "登出失敗。" : message);
                 JobText = "GitHub 登出失敗";
+                return;
+            }
+            if (GithubLoggedIn)
+            {
+                JobText = $"已登出 {loggingOut.Display()}，目前是 {GithubAccount.Display()}";
                 return;
             }
             JobText = "已登出 GitHub";

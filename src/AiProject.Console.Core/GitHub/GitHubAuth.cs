@@ -212,23 +212,41 @@ public static class GitHubAuth
         }
     }
 
+    internal static IReadOnlyList<string>? LogoutArguments(string? host, string? user)
+    {
+        var login = (user ?? "").Trim();
+        if (!LooksLikeLogin(login))
+            return null;
+        return ["auth", "logout", "--hostname", GitHost.Normalize(host), "--user", login];
+    }
+
     public static async Task<(bool Ok, string Message)> LogoutAsync(
         string? cwd = null,
         string? host = null,
+        string? user = null,
         CancellationToken ct = default)
     {
         if (!GitHubService.GhAvailable())
             return (false, "尚未安裝 GitHub CLI（gh）。");
         var hostname = GitHost.Normalize(host);
+        var login = (user ?? "").Trim();
+        if (!LooksLikeLogin(login))
+        {
+            var current = await CurrentAsync(cwd, hostname, ct).ConfigureAwait(false);
+            login = current.Login;
+        }
+        var args = LogoutArguments(hostname, login);
+        if (args is null)
+            return (false, "無法判斷要登出的帳號。請先確認已登入 GitHub。");
         var (code, output) = await CliUtil.RunAsync(
             "gh",
-            ["auth", "logout", "--hostname", hostname],
+            args,
             cwd,
             60_000,
             ct,
             stdin: "Y\n").ConfigureAwait(false);
         if (code == 0)
-            return (true, string.IsNullOrEmpty(output) ? "已登出 " + hostname : output);
+            return (true, string.IsNullOrEmpty(output) ? "已登出 " + login : output);
         return (false, string.IsNullOrEmpty(output) ? "登出失敗。" : output);
     }
 }

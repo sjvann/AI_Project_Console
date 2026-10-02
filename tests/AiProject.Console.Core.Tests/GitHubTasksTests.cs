@@ -62,6 +62,19 @@ public class GitHubTasksTests
     }
 
     [Fact]
+    public void LogoutArguments_RequiresHostAndUser()
+    {
+        Assert.Null(GitHubAuth.LogoutArguments("github.com", ""));
+        Assert.Null(GitHubAuth.LogoutArguments("github.com", "not a user"));
+        Assert.Equal(
+            ["auth", "logout", "--hostname", "github.com", "--user", "sjvann"],
+            GitHubAuth.LogoutArguments(null, "sjvann"));
+        Assert.Equal(
+            ["auth", "logout", "--hostname", "ghe.corp.com", "--user", "sjvann"],
+            GitHubAuth.LogoutArguments("https://ghe.corp.com/acme", "sjvann"));
+    }
+
+    [Fact]
     public void ParseIssues_SplitsMineAndUnassigned()
     {
         const string json = """
