@@ -1,0 +1,28 @@
+#!/bin/sh
+# 移除套件時清掉放在各使用者桌面與新帳號範本上的圖示。
+set -e
+
+LAUNCHER_NAME="AI_Project 控制台.desktop"
+
+remove_one() {
+  dir="$1"
+  [ -n "$dir" ] || return 0
+  rm -f "$dir/$LAUNCHER_NAME"
+}
+
+if [ "${1:-}" = "remove" ] || [ "${1:-}" = "purge" ]; then
+  remove_one /etc/skel/Desktop
+  remove_one /etc/skel/桌面
+  for home in /home/*; do
+    [ -d "$home" ] || continue
+    remove_one "$home/Desktop"
+    remove_one "$home/桌面"
+    if [ -f "$home/.config/user-dirs.dirs" ]; then
+      desk=$(sed -n 's/^XDG_DESKTOP_DIR="\(.*\)"/\1/p' "$home/.config/user-dirs.dirs" | head -n 1)
+      desk=$(printf '%s\n' "$desk" | sed "s|\$HOME|$home|g; s|\"||g")
+      remove_one "$desk"
+    fi
+  done
+fi
+
+exit 0

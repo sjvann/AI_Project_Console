@@ -17,6 +17,8 @@
 
 每個 zip／deb 旁有 `.sha256`。
 
+`installer/linux/install.sh` 在使用者機器上要做完這三件事，失敗就以非 0 結束：核對主程式與 `Photino.Native.so` 是否為本機的 `linux-x64`／`linux-arm64`、先 `apt update` 再裝上 `ldd` 回報缺少的 GTK／WebKitGTK 4.1（套件庫最新版，不鎖定版號）、把 `~/.local/bin` 寫進 `~/.bashrc` 與 `~/.profile` 並嘗試開啟視窗。`.deb` 依賴 `libwebkit2gtk-4.1-0`。`postinst` 會更新系統選單，並把圖示放到每個使用者桌面與 `/etc/skel/Desktop`（新帳號也有）。行為測試：`bash installer/linux/test-install.sh`。
+
 ## 在 GitHub 打包（沒有 Mac 時的正確做法）
 
 1. 把含 `scripts/pack-unix.sh` 與 `.github/workflows/pack-unix.yml` 的提交推上遠端。
@@ -50,7 +52,7 @@ gh run watch
 | Linux：ELF 架構、`Photino.Native.so`、`install.sh` | Ubuntu | 可解壓執行 |
 | `.deb` 含 `/opt/AI_Project_Console` 與 `.desktop` | Ubuntu `dpkg-deb` | 安裝程式內容正確 |
 
-**這份清單不能證明：** Photino 視窗在真實 Mac／Linux 桌面能畫出來。那需要 WKWebView／WebKitGTK 的 GUI。沒有 Mac 時請請人用下載的 `.app` 走一次：拖到應用程式 → 右鍵打開 → 選專案目錄。Linux 請在有桌面的 Ubuntu 裝 WebKitGTK 後執行。
+**這份清單不能證明：** Photino 視窗在真實 Mac／Linux 桌面能畫出來。那需要 WKWebView／WebKitGTK 的 GUI。沒有 Mac 時請請人用下載的 `.app` 走一次：拖到應用程式 → 右鍵打開 → 選專案目錄。Linux 請在有桌面的 Ubuntu 執行該包裡的 `./install.sh`（或 `sudo apt install` 同 RID 的 `.deb`）。
 
 ## 本機 Windows 交叉編譯（只查原生庫，非正式檔）
 

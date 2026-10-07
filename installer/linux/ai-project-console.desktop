@@ -7,4 +7,6 @@ Exec=__EXEC__
 Icon=__ICON__
 Terminal=false
 Categories=Development;
+Keywords=AI;Project;控制台;Console;
+StartupNotify=true
 StartupWMClass=AI_Project_Console

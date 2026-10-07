@@ -22,7 +22,7 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 | Windows 10／11（64 位元）、macOS 13+ 或 Linux x64／ARM64 | 擇一 | 從 Releases 下載對應 RID 的安裝包 |
 | [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | Windows | Win10／11 通常已內建；若視窗打不開再裝 |
 | WebKit（系統內建） | macOS | 未公證時第一次請對 `.app` 右鍵「打開」，或 `xattr -cr AI_Project_Console.app` |
-| GTK 3 與 WebKitGTK | Linux | Ubuntu／Debian：`sudo apt install libgtk-3-0 libnotify4 libwebkit2gtk-4.1-0`（沒有 4.1 則裝 `libwebkit2gtk-4.0-0`） |
+| GTK 3、libnotify 與 WebKitGTK 4.1 | Linux | `.deb` 與 `./install.sh` 會先 `apt update`，再裝 `libwebkit2gtk-4.1-0` 在該發行版上的最新版（Ubuntu 24.04／26.04 目前為 2.52.6）。Photino 4 連結這個套件 |
 | [.NET SDK](https://dotnet.microsoft.com/download) | 工作區有 .NET 專案時 | 控制台本身已內含執行環境；**被管理的 .NET 專案**仍需要 `dotnet`。沒裝時環境體檢可協助安裝 |
 | [Node.js LTS](https://nodejs.org/) | 有 `package.json`／前端專案時 | 體檢偵測到會提示；可一鍵用 winget 安裝 |
 | [Python](https://www.python.org/downloads/) | 有 `pyproject.toml`、`requirements.txt` 或 Python 專案時 | 同上。安裝時請勾選 Add to PATH |
@@ -57,10 +57,30 @@ AI_Project 控制台是本機桌面程式。你選一個專案目錄後，它會
 
 ### Linux
 
-1. 下載 `AI_Project_Console-*-linux-x64.zip` 或 `*-linux-arm64.zip`（也可使用對應的 `.deb`）
-2. zip：解壓後執行 `./AI_Project_Console`，或跑 `./install.sh` 裝到使用者目錄並加入應用程式選單
-3. `.deb`：`sudo apt install ./AI_Project_Console-*-linux-*.deb`
-4. 若視窗打不開，先安裝 GTK 3 與 WebKitGTK（見上表）
+先看處理器再下載。終端機執行 `uname -m`：
+
+| `uname -m` | 下載 |
+|------------|------|
+| `x86_64` | `linux-x64` 的 `.deb` 或 zip |
+| `aarch64` | `linux-arm64` 的 `.deb` 或 zip |
+
+下錯架構時，`./AI_Project_Console` 會出現「無法執行二進位檔案：可執行檔格式錯誤」。安裝程式會停下並寫出要改下的檔名，不會顯示已安裝。
+
+**Ubuntu／Debian（建議用 .deb）**
+
+1. 下載與上表相符的 `AI_Project_Console-*-linux-x64.deb` 或 `*-linux-arm64.deb`
+2. 在該檔所在目錄執行 `sudo apt install ./AI_Project_Console-*-linux-x64.deb`（檔名改成你下載的那一個）
+3. apt 會一併安裝 GTK 3、libnotify 與 WebKitGTK 4.1，並把 `ai-project-console` 放到 `/usr/bin`
+4. 所有登入帳號都能在應用程式總覽搜尋「AI_Project 控制台」。安裝程式也會在每個使用者的桌面放上可雙擊的圖示
+
+**zip**
+
+1. 解壓到一個資料夾
+2. 在該資料夾執行 `./install.sh`
+3. 安裝程式會核對架構、用 apt 裝上桌面元件、把 `~/.local/bin` 寫進 shell 設定、加入應用程式選單，並嘗試開啟視窗
+4. 若這個終端機仍找不到 `ai-project-console`，新開一個終端機再執行；或直接執行安裝訊息裡印出的完整路徑
+
+若安裝程式只印出 apt 指令就寫「已安裝」，那一版還沒有代裝依賴。請改用上面的 `.deb`，或見 [常見問題：Linux 安裝](troubleshooting.md#linux-install)。
 
 Windows 的安裝版會用安裝程式覆蓋；zip／macOS／Linux 會下載新壓縮包後覆蓋檔案。也可以「從檔案更新…」選已下載的 setup／zip。
 

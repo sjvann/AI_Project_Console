@@ -88,6 +88,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test install.sh
+        run: bash installer/linux/test-install.sh
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -146,9 +149,9 @@ jobs:
 
           - **AI_Project_Console-$VERSION-osx-arm64.zip**：Apple Silicon。解壓後把 AI_Project_Console.app 拖到「應用程式」。未公證時請右鍵「打開」，或執行 xattr -cr AI_Project_Console.app。
           - **AI_Project_Console-$VERSION-osx-x64.zip**：Intel Mac，安裝方式同上。
-          - **AI_Project_Console-$VERSION-linux-x64.zip**：解壓後執行 ./AI_Project_Console 或 ./install.sh。需 GTK 3 與 WebKitGTK。
-          - **AI_Project_Console-$VERSION-linux-arm64.zip**：ARM64 Linux，方式同上。
-          - **AI_Project_Console-$VERSION-linux-*.deb**：Debian／Ubuntu 安裝包（若有附上）。
+          - **AI_Project_Console-$VERSION-linux-x64.zip**：x86_64。解壓後執行 ./install.sh（核對架構、安裝 WebKitGTK 4.1、加入選單並開啟）。
+          - **AI_Project_Console-$VERSION-linux-arm64.zip**：僅 aarch64，方式同上。uname -m 為 x86_64 請勿使用此檔。
+          - **AI_Project_Console-$VERSION-linux-x64.deb**／**linux-arm64.deb**：建議。sudo apt install ./檔名.deb 會一併安裝 GTK 與 WebKitGTK 4.1。架構須與 uname -m 相符。
 
           Apple Developer ID 公證尚未完成；Gatekeeper 會提示無法驗證開發者。
           EOF

@@ -184,12 +184,15 @@ else
   cat > "$STAGE/README-UNIX.txt" <<EOF
 AI_Project 控制台 $VERSION（$RUNTIME）
 
-免安裝：在本目錄執行 ./AI_Project_Console
-安裝到使用者目錄：./install.sh
+請執行 ./install.sh。
+安裝程式會核對處理器架構、用 apt 安裝 GTK 3 與 WebKitGTK 4.1、加入應用程式選單，並嘗試開啟視窗。
+架構不符或依賴裝不上時會停下，不會顯示已安裝。
 
-需要 GTK 3 與 WebKitGTK。Ubuntu／Debian：
-  sudo apt install libgtk-3-0 libnotify4 libwebkit2gtk-4.1-0
-若套件不存在，改裝 libwebkit2gtk-4.0-0。
+Ubuntu 若有同版 .deb，可改為：
+  sudo apt install ./AI_Project_Console-$VERSION-$RUNTIME.deb
+
+uname -m 為 x86_64 請用 linux-x64；為 aarch64 請用 linux-arm64。
+下錯包時，./AI_Project_Console 會出現「可執行檔格式錯誤」。
 EOF
 
   echo "PACK:zip"
@@ -228,6 +231,10 @@ EOF
       -e "s|__ICON__|$ICON|g" \
       "$ROOT/installer/linux/ai-project-console.desktop" \
       > "$DEB_ROOT/usr/share/applications/ai-project-console.desktop"
+    chmod 644 "$DEB_ROOT/usr/share/applications/ai-project-console.desktop"
+    cp "$ROOT/installer/linux/postinst" "$DEB_ROOT/DEBIAN/postinst"
+    cp "$ROOT/installer/linux/postrm" "$DEB_ROOT/DEBIAN/postrm"
+    chmod 755 "$DEB_ROOT/DEBIAN/postinst" "$DEB_ROOT/DEBIAN/postrm"
     SIZE_KB="$(du -sk "$PAYLOAD" | awk '{print $1}')"
     sed \
       -e "s/__VERSION__/$VERSION/g" \

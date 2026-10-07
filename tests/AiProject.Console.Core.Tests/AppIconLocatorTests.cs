@@ -39,6 +39,53 @@ public class AppIconLocatorTests
     }
 
     [Fact]
+    public void FindAbsolute_PrefersLayoutIconOverStaleFavicon()
+    {
+        var dir = CreateDir();
+        try
+        {
+            var www = Path.Combine(dir, "wwwroot");
+            var brand = Path.Combine(www, "brand");
+            Directory.CreateDirectory(brand);
+            File.WriteAllBytes(Path.Combine(www, "favicon.ico"), TinyPng);
+            var icon = Path.Combine(brand, "app-icon.svg");
+            File.WriteAllText(icon, """<svg xmlns="http://www.w3.org/2000/svg"></svg>""");
+            var pages = Path.Combine(dir, "Pages", "Shared");
+            Directory.CreateDirectory(pages);
+            File.WriteAllText(Path.Combine(pages, "_Layout.cshtml"), """
+                <link rel="icon" href="~/brand/app-icon.svg" type="image/svg+xml" />
+                """);
+
+            Assert.Equal(icon, AppIconLocator.FindAbsolute(dir));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindAbsolute_PrefersBrandAppIconOverFavicon()
+    {
+        var dir = CreateDir();
+        try
+        {
+            var www = Path.Combine(dir, "wwwroot");
+            var brand = Path.Combine(www, "brand");
+            Directory.CreateDirectory(brand);
+            File.WriteAllBytes(Path.Combine(www, "favicon.ico"), TinyPng);
+            var icon = Path.Combine(brand, "app-icon.svg");
+            File.WriteAllText(icon, """<svg xmlns="http://www.w3.org/2000/svg"></svg>""");
+
+            Assert.Equal(icon, AppIconLocator.FindAbsolute(dir));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void FindAbsolute_UsesWwwrootFaviconWhenNoApplicationIcon()
     {
         var dir = CreateDir();

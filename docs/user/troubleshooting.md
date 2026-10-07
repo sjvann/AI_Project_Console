@@ -32,9 +32,38 @@
 
 - Windows 需 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)。系統通常已內建；企業映像若拔掉元件，請向 IT 重裝。
 - macOS 請用對應晶片的 zip（Apple Silicon 用 `osx-arm64`），並依 [Gatekeeper](#gatekeeper) 第一次打開。
-- Linux 需 GTK 3 與 WebKitGTK（`libwebkit2gtk-4.1-0` 或 `libwebkit2gtk-4.0-0`）。zip 請解壓後執行 `./AI_Project_Console`，不要在壓縮檔瀏覽器裡直接開。
+- Linux 需 GTK 3 與 WebKitGTK 4.1（`libwebkit2gtk-4.1-0`）。請用與 `uname -m` 相符的套件，並執行 `./install.sh` 或 `sudo apt install ./….deb`。只印出 apt 指令就結束的舊安裝程式，見 [Linux 安裝](#linux-install)。zip 請解壓後再執行，不要在壓縮檔瀏覽器裡直接開。
 - Windows zip 版請解壓後執行 `AI_Project_Console.exe`，不要在壓縮檔總管裡直接開。
 - 從原始碼執行需要 [.NET 10 SDK](https://dotnet.microsoft.com/download)。一般使用者請改用 [Releases](https://github.com/sjvann/AI_Project_Console/releases)。
+
+## Linux：格式錯誤，或找不到 ai-project-console
+
+<a id="linux-install"></a>
+
+`./AI_Project_Console` 顯示「無法執行二進位檔案：可執行檔格式錯誤」時，這包的處理器與這台電腦不同。執行 `uname -m`：`x86_64` 改下 `linux-x64`；`aarch64` 改下 `linux-arm64`。
+
+`ai-project-console：無此指令` 是因為 zip 安裝把命令放在 `~/.local/bin`，而目前這個終端機的 PATH 還沒有它。新開一個終端機，或執行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+若接著仍是格式錯誤，裝進去的仍是錯的架構。請刪掉錯的下載目錄，改裝相符的套件。Ubuntu 建議：
+
+```bash
+sudo apt install ./AI_Project_Console-*-linux-x64.deb
+```
+
+視窗打不開、並提到 `libwebkit2gtk`：Photino 4 需要 WebKitGTK 4.1（`libwebkit2gtk-4.1-0`）。
+
+```bash
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-0 libnotify4 libgtk-3-0t64 || sudo apt install libwebkit2gtk-4.1-0 libnotify4 libgtk-3-0
+```
+
+`apt update` 之後裝到的是這個 Ubuntu 套件庫裡的最新版。Photino 4 使用 WebKitGTK 4.1（`libwebkit2gtk-4.1-0`）。
+
+較新的 `./install.sh` 與 `.deb` 會在安裝時做完架構核對、依賴與 PATH。若畫面上只出現 apt 提示並且寫著已安裝，用上面的指令把這一次補完。
 
 ## 沒有服務
 

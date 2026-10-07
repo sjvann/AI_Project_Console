@@ -179,7 +179,7 @@ Domain 無 EF／HTTP。Application 開頭授權。規則不進 `.razor`。產品
 
 - **Binds:** P1–P4 發行與營運
 - **Prevents:** 「自架後期」造成兩套不相容的部署；我們雲用私有分支、客戶拿到另一個安裝器
-- **Rule:** P1 出桌面安裝包：Windows 為 Inno Setup `*-win-x64-setup.exe`（目標宿主切換後此檔名規則不變）；macOS 為 `*-osx-arm64.zip`／`*-osx-x64.zip`（內含 `.app`）；Linux 為 `*-linux-x64.zip`／`*-linux-arm64.zip`（可另附 `.deb`）。Unix 正式資產由 GitHub Actions 原生 runner 打包，禁止把 Windows 交叉編譯 zip 當發行檔。P2／P3／P4 各出 **Docker 映像 + 主機安裝器／compose**。我們營運多租戶與客戶自架**使用同一發行產物**，差在設定：`Hosting:Mode = SaaS | SelfHosted`、連線字串、憑證、備份責任方。自架不是後期才發明的路徑，是同一通道的一種運營者。P4 仍是門檻產品（AD-30），但產物形態與 P2／P3 相同。
+- **Rule:** P1 出桌面安裝包：Windows 為 Inno Setup `*-win-x64-setup.exe`（目標宿主切換後此檔名規則不變）；macOS 為 `*-osx-arm64.zip`／`*-osx-x64.zip`（內含 `.app`）；Linux 為 `*-linux-x64.zip`／`*-linux-arm64.zip`（可另附 `.deb`）。Linux 的 `install.sh` 必須核對 ELF 與 `uname -m`，先 `apt update` 再安裝 Photino 4 需要的 GTK 3、libnotify 與 `libwebkit2gtk-4.1-0`（取該發行版套件庫的最新版，不鎖定舊版號），並把 `~/.local/bin` 寫進 shell 設定；架構不符或依賴裝不上時以失敗結束，不得只印提示並宣稱已安裝。`.deb` 的 Depends 含 `libwebkit2gtk-4.1-0`。`postinst` 必須讓所有使用者都能從應用程式選單與桌面圖示開啟。Unix 正式資產由 GitHub Actions 原生 runner 打包，禁止把 Windows 交叉編譯 zip 當發行檔。P2／P3／P4 各出 **Docker 映像 + 主機安裝器／compose**。我們營運多租戶與客戶自架**使用同一發行產物**，差在設定：`Hosting:Mode = SaaS | SelfHosted`、連線字串、憑證、備份責任方。自架不是後期才發明的路徑，是同一通道的一種運營者。P4 仍是門檻產品（AD-30），但產物形態與 P2／P3 相同。
 
 ### AD-13 — 一需求公司一個工作區 `[ADOPTED]`
 

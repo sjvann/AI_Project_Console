@@ -1,0 +1,66 @@
+#!/bin/sh
+# 安裝後刷新系統選單，並在每個使用者的桌面放可雙擊的圖示。
+set -e
+
+SRC=/usr/share/applications/ai-project-console.desktop
+LAUNCHER_NAME="AI_Project 控制台.desktop"
+
+mark_trusted() {
+  user="$1"
+  file="$2"
+  uid=$(id -u "$user" 2>/dev/null || true)
+  bus="/run/user/${uid}/bus"
+  if [ -n "$uid" ] && [ -S "$bus" ] && command -v gio >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1; then
+    runuser -u "$user" -- env DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+      gio set "$file" metadata::trusted true || true
+  fi
+}
+
+desktop_dir_for() {
+  home="$1"
+  if [ -f "$home/.config/user-dirs.dirs" ]; then
+    desk=$(sed -n 's/^XDG_DESKTOP_DIR="\(.*\)"/\1/p' "$home/.config/user-dirs.dirs" | head -n 1)
+    desk=$(printf '%s\n' "$desk" | sed "s|\$HOME|$home|g; s|\"||g")
+    if [ -n "$desk" ]; then
+      printf '%s\n' "$desk"
+      return 0
+    fi
+  fi
+  if [ -d "$home/桌面" ]; then
+    printf '%s\n' "$home/桌面"
+    return 0
+  fi
+  printf '%s\n' "$home/Desktop"
+}
+
+install_one() {
+  dest_dir="$1"
+  owner="$2"
+  mkdir -p "$dest_dir"
+  cp "$SRC" "$dest_dir/$LAUNCHER_NAME"
+  chmod 755 "$dest_dir/$LAUNCHER_NAME"
+  if [ -n "$owner" ]; then
+    chown "$owner:$owner" "$dest_dir/$LAUNCHER_NAME" 2>/dev/null || chown "$owner" "$dest_dir/$LAUNCHER_NAME" || true
+    mark_trusted "$owner" "$dest_dir/$LAUNCHER_NAME"
+  fi
+}
+
+if [ "${1:-}" = "configure" ]; then
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+  fi
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+  fi
+  if [ -f "$SRC" ]; then
+    install_one /etc/skel/Desktop ""
+    for home in /home/*; do
+      [ -d "$home" ] || continue
+      user=$(stat -c '%U' "$home" 2>/dev/null || true)
+      [ -n "$user" ] && [ "$user" != "root" ] || continue
+      install_one "$(desktop_dir_for "$home")" "$user"
+    done
+  fi
+fi
+
+exit 0
