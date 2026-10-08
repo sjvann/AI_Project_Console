@@ -143,10 +143,11 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 | `kind` | 目前只探測 `podman-machine`（也接受 `podman_machine`）。空白時用這個 |
 | `machine` | `podman machine list` 裡的名稱。也可用 `name`。空白時用 `podman-machine-default` |
 | `datastores[].container` | `podman ps` 裡的容器名。機器已啟動才查 |
+| `start` | 環境體檢裡這一列的指令（也可用 `command`）。空白時是 `podman start 容器名`。不要跟虛擬機那一列寫成同一句 `podman machine start` |
 | `port` | 機器與容器都就緒後，再看 `127.0.0.1` 這個埠接不接受連線 |
 | `requiredBy` | `test`（或 `tests`）擋跑測試；其餘字串是服務 id。也可用 `required_by`。空白則只顯示、不擋動作 |
 
-虛擬機沒起來時，句子是「Podman 虛擬機未啟動：機器名」（命令不在、機器不存在、啟動中會各用不同句子）。虛擬機已啟動但容器或埠還沒好，才是「虛擬機已啟動，資料庫未就緒：標籤」。沒有這兩段宣告時，控制台不查 Podman。
+虛擬機沒起來時，句子是「Podman 虛擬機未啟動：機器名」（命令不在、機器不存在、啟動中會各用不同句子）。那一列的指令是 `podman machine start 機器名`。資料庫列即使因為虛擬機沒開而還沒查容器，指令仍是啟動該資料庫（`start`，或 `podman start 容器名`），不會再抄一次虛擬機指令。虛擬機已啟動但容器或埠還沒好，才是「虛擬機已啟動，資料庫未就緒：標籤」。沒有這兩段宣告時，控制台不查 Podman。
 
 ## 啟動順序與前端
 

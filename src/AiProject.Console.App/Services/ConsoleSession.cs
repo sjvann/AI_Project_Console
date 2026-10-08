@@ -250,6 +250,7 @@ public sealed partial class ConsoleSession : IDisposable
     private DateTimeOffset _doctorHintUtc = DateTimeOffset.MinValue;
     private string _doctorHintAttention = "";
     public bool DoctorCopied { get; private set; }
+    public string? DoctorCopiedLine { get; private set; }
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
     public JobResultView? JobResult { get; private set; }
@@ -2829,6 +2830,7 @@ public sealed partial class ConsoleSession : IDisposable
         _doctorHintUtc = DateTimeOffset.UtcNow;
         _doctorHintAttention = RuntimeReport.Attention ?? "";
         DoctorCopied = false;
+        DoctorCopiedLine = null;
         Dialog = "doctor";
         Notify();
         _ = RefreshGitStatusThenNotifyAsync();
@@ -2842,11 +2844,31 @@ public sealed partial class ConsoleSession : IDisposable
         {
             await Js.InvokeVoidAsync("aiConsole.copyText", DoctorView.ToText()).ConfigureAwait(false);
             DoctorCopied = true;
+            DoctorCopiedLine = null;
             JobText = "已複製環境體檢報告。";
         }
         catch
         {
             DoctorCopied = false;
+            JobText = "無法複製到剪貼簿。";
+        }
+        Notify();
+    }
+
+    public async Task CopyDoctorLineAsync(string label, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || Js is null)
+            return;
+        try
+        {
+            await Js.InvokeVoidAsync("aiConsole.copyText", text).ConfigureAwait(false);
+            DoctorCopied = false;
+            DoctorCopiedLine = label;
+            JobText = "已複製指令。";
+        }
+        catch
+        {
+            DoctorCopiedLine = null;
             JobText = "無法複製到剪貼簿。";
         }
         Notify();
@@ -4506,6 +4528,7 @@ public sealed partial class ConsoleSession : IDisposable
         CompleteLeaveGate(false);
         DoctorView = null;
         DoctorCopied = false;
+        DoctorCopiedLine = null;
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
@@ -5863,6 +5886,7 @@ public sealed partial class ConsoleSession : IDisposable
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;
+        DoctorCopiedLine = null;
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;

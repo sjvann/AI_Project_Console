@@ -19,7 +19,8 @@ public sealed record DatastoreDeclaration(
     string RuntimeId,
     string Container,
     int? Port,
-    IReadOnlyList<string> RequiredBy);
+    IReadOnlyList<string> RequiredBy,
+    string? Start = null);
 
 public enum RuntimeProbeState
 {
@@ -181,7 +182,10 @@ public static class WorkspaceRuntimeManifest
             var runtimeId = JsonUtil.Pick(JsonUtil.Str(obj["runtime"]), JsonUtil.Str(obj["runtimeId"]), JsonUtil.Str(obj["runtime_id"]));
             var container = JsonUtil.Pick(JsonUtil.Str(obj["container"]), JsonUtil.Str(obj["containerName"]), JsonUtil.Str(obj["container_name"]));
             var required = ReadRequiredBy(obj["requiredBy"] ?? obj["required_by"]);
-            list.Add(new DatastoreDeclaration(id, label, runtimeId, container, ReadPort(obj["port"]), required));
+            var start = JsonUtil.Pick(JsonUtil.Str(obj["start"]), JsonUtil.Str(obj["command"]));
+            list.Add(new DatastoreDeclaration(
+                id, label, runtimeId, container, ReadPort(obj["port"]), required,
+                string.IsNullOrWhiteSpace(start) ? null : start.Trim()));
         }
         return list;
     }

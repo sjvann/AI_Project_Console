@@ -44,7 +44,13 @@
                                     }
                                     @if (!string.IsNullOrEmpty(item.HowTo))
                                     {
-                                        <pre class="doctor-howto">@item.HowTo</pre>
+                                        <div class="doctor-howto-line">
+                                            <pre class="doctor-howto">@item.HowTo</pre>
+                                            <button type="button" class="btn-sec doctor-copy"
+                                                    @onclick="@(() => S.CopyDoctorLineAsync(item.Label, item.HowTo!))">
+                                                @(S.DoctorCopiedLine == item.Label ? "已複製" : "複製")
+                                            </button>
+                                        </div>
                                     }
                                     @if (!string.IsNullOrEmpty(item.ActionId) && !string.IsNullOrEmpty(item.ActionLabel))
                                     {

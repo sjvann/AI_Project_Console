@@ -82,6 +82,22 @@ public class WorkspaceRuntimeTests
         Assert.Equal("Podman 虛擬機未啟動：podman-machine-default", RuntimeGate.TestMessage(report));
         Assert.Equal("Podman 虛擬機未啟動：podman-machine-default", RuntimeGate.ServiceMessage(report, ["company-web"]));
         Assert.Null(RuntimeGate.ServiceMessage(report, ["other"]));
+        Assert.Equal("podman machine start podman-machine-default", report.Runtimes[0].HowTo);
+        Assert.Equal("podman start company-db", report.Datastores[0].HowTo);
+    }
+
+    [Fact]
+    public void DatastoreStart_OverridesContainerCommand()
+    {
+        var catalog = Sample(stores:
+        [
+            new DatastoreDeclaration(
+                "company-db", "公司庫", "podman", "company-db", 5432, ["test"],
+                "py -3 deploy/scripts/start_postgres_podman.py"),
+        ]);
+        var report = WorkspaceRuntimeEvaluator.Evaluate(catalog, Stopped("podman-machine-default"));
+        Assert.Equal("podman machine start podman-machine-default", report.Runtimes[0].HowTo);
+        Assert.Equal("py -3 deploy/scripts/start_postgres_podman.py", report.Datastores[0].HowTo);
     }
 
     [Fact]

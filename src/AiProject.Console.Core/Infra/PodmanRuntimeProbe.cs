@@ -331,14 +331,15 @@ public static class WorkspaceRuntimeEvaluator
                 null,
                 store.RequiredBy);
         }
+        var detail = string.Join(" ", reasons);
         return new DatastoreProbeItem(
             store.Id,
             store.Label,
             store.RuntimeId,
             RuntimeProbeState.Blocked,
             RuntimeMessages.DatastoreDown(store.Label),
-            string.Join(" ", reasons),
-            string.Join(" ", reasons),
+            detail,
+            DatastoreCommand(store),
             store.RequiredBy);
     }
 
@@ -367,8 +368,20 @@ public static class WorkspaceRuntimeEvaluator
             RuntimeProbeState.Blocked,
             runtime.Headline,
             runtime.Detail,
-            runtime.HowTo,
+            DatastoreCommand(store),
             store.RequiredBy);
+
+    /// <summary>
+    /// 資料庫列自己的指令。不抄虛擬機那一列，也不把探測錯誤原文當成指令。
+    /// </summary>
+    static string? DatastoreCommand(DatastoreDeclaration store)
+    {
+        if (!string.IsNullOrWhiteSpace(store.Start))
+            return store.Start.Trim();
+        if (!string.IsNullOrWhiteSpace(store.Container))
+            return $"podman start {store.Container}";
+        return null;
+    }
 
     static RuntimeProbeItem Blocked(RuntimeDeclaration declared, string headline, string? detail, string? howTo) =>
         new(declared.Id, declared.Kind, declared.Machine, RuntimeProbeState.Blocked, headline, detail, howTo);
