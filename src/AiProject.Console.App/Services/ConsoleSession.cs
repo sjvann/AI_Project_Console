@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using AiProject.Console.Core;
 using AiProject.Console.Core.Actions;
@@ -138,8 +139,8 @@ public sealed partial class ConsoleSession : IDisposable
     public string WarnText { get; private set; } = "";
     public string GitStatusText { get; private set; } = "";
     public string LogFilter { get; private set; } = "";
-    public Dictionary<string, string> StartErrors { get; } = new();
-    public Dictionary<string, string> ServiceActivities { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentDictionary<string, string> StartErrors { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentDictionary<string, string> ServiceActivities { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool JobBusy => Occupancy.IsActive;
     public string LeftTab { get; set; } = "svc";
     public string RightTab => LeftTab switch
@@ -198,7 +199,8 @@ public sealed partial class ConsoleSession : IDisposable
     public string WorkHoursPersonLabel => _workHours.PersonLabel;
     public string WorkHoursPersonKey => _workHours.PersonKey;
     public string? SelectedServiceId { get; private set; }
-    public Dictionary<string, bool> Health { get; } = new();
+    public IReadOnlyDictionary<string, bool> Health { get; private set; } =
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<BuildState> Projects { get; private set; } = [];
     public bool StaleOnly { get; set; }
     public bool FollowLog { get; set; } = true;
@@ -1407,12 +1409,13 @@ public sealed partial class ConsoleSession : IDisposable
             SelectedServiceId = catalog.Services.FirstOrDefault()?.Id;
             LastBuildFailure = null;
             CompileHelpEnabled = false;
-            Health.Clear();
+            var health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (var svc in catalog.Services)
             {
                 if (ServiceCatalogBuilder.IsCurrentConsole(catalog, svc))
-                    Health[svc.Id] = true;
+                    health[svc.Id] = true;
             }
+            Health = health;
             StartErrors.Clear();
             ServiceActivities.Clear();
             _collapsedServiceGroups.Clear();
@@ -1488,15 +1491,17 @@ public sealed partial class ConsoleSession : IDisposable
     private void ApplyRefreshedCatalog(ProjectCatalog next)
     {
         var keep = next.Services.Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var id in Health.Keys.Where(k => !keep.Contains(k)).ToList())
-            Health.Remove(id);
+        var health = new Dictionary<string, bool>(Health, StringComparer.OrdinalIgnoreCase);
+        foreach (var id in health.Keys.Where(k => !keep.Contains(k)).ToList())
+            health.Remove(id);
         foreach (var id in StartErrors.Keys.Where(k => !keep.Contains(k)).ToList())
-            StartErrors.Remove(id);
+            StartErrors.TryRemove(id, out _);
         foreach (var svc in next.Services)
         {
             if (ServiceCatalogBuilder.IsCurrentConsole(next, svc))
-                Health[svc.Id] = true;
+                health[svc.Id] = true;
         }
+        Health = health;
         if (SelectedServiceId is null || !keep.Contains(SelectedServiceId))
             SelectedServiceId = next.Services.FirstOrDefault()?.Id;
         _iconUrlCache.Clear();
@@ -1811,18 +1816,25 @@ public sealed partial class ConsoleSession : IDisposable
         if (!_native.Confirm("登出 GitHub", $"要登出 {GithubAccount.Display()} 嗎？\n登出後，GitHub 管理的專案需要重新登入。"))
             return;
 
+        var loggingOut = GithubAccount;
         GithubAuthBusy = true;
         JobText = "登出 GitHub…";
         Notify();
         try
         {
-            var (ok, message) = await GitHubAuth.LogoutAsync(Catalog?.Root, ActiveGitHost, _cts.Token).ConfigureAwait(false);
+            var (ok, message) = await GitHubAuth.LogoutAsync(
+                Catalog?.Root, loggingOut.Host, loggingOut.Login, _cts.Token).ConfigureAwait(false);
             await RefreshGithubAuthAsync().ConfigureAwait(false);
             ClearIssueLists();
             if (!ok && GithubLoggedIn)
             {
                 _native.Warn("登出 GitHub", string.IsNullOrEmpty(message) ? "登出失敗。" : message);
                 JobText = "GitHub 登出失敗";
+                return;
+            }
+            if (GithubLoggedIn)
+            {
+                JobText = $"已登出 {loggingOut.Display()}，目前是 {GithubAccount.Display()}";
                 return;
             }
             JobText = "已登出 GitHub";
@@ -5737,10 +5749,10 @@ public sealed partial class ConsoleSession : IDisposable
 
     private async Task PollLoopAsync()
     {
-        try
+        var healthEvery = 0;
+        while (!_cts.IsCancellationRequested)
         {
-            var healthEvery = 0;
-            while (!_cts.IsCancellationRequested)
+            try
             {
                 ObserveForeignOccupancy();
                 FlushBuildLog(force: false);
@@ -5761,9 +5773,7 @@ public sealed partial class ConsoleSession : IDisposable
                 {
                     var catalog = Catalog;
                     var health = await ProcessSupervisor.ProbeAllHealthAsync(catalog).ConfigureAwait(false);
-                    Health.Clear();
-                    foreach (var kv in health)
-                        Health[kv.Key] = kv.Value;
+                    Health = health;
                     StartErrorMap.ClearHealthy(StartErrors, health);
                     var dead = Runtime is null ? null : ProcessSupervisor.DeadStartedIds(catalog, Runtime);
                     ServiceActivityMap.Reconcile(ServiceActivities, health, StartErrors, dead);
@@ -5793,10 +5803,22 @@ public sealed partial class ConsoleSession : IDisposable
                 Notify();
                 await Task.Delay(800, _cts.Token).ConfigureAwait(false);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // shutdown
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception)
+            {
+                // 一輪失敗不能關掉整個輪詢，否則清單會永遠停在「啟動中」。
+                try
+                {
+                    await Task.Delay(800, _cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
         }
     }
 
@@ -5827,7 +5849,7 @@ public sealed partial class ConsoleSession : IDisposable
         SelectedServiceId = null;
         LastBuildFailure = null;
         CompileHelpEnabled = false;
-        Health.Clear();
+        Health = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         StartErrors.Clear();
         ServiceActivities.Clear();
         _collapsedServiceGroups.Clear();
@@ -6111,8 +6133,32 @@ public sealed partial class ConsoleSession : IDisposable
     {
         if (results.Count == 0)
             return;
+        var succeeded = new List<string>();
         foreach (var (id, _, error) in results)
+        {
             StartErrorMap.Apply(StartErrors, id, error);
+            if (error is null && !string.IsNullOrWhiteSpace(id))
+                succeeded.Add(id);
+        }
+        if (Catalog is not null)
+        {
+            foreach (var svc in Catalog.Services)
+            {
+                if (svc.HostedBy is not null
+                    && succeeded.Contains(svc.HostedBy, StringComparer.OrdinalIgnoreCase)
+                    && !succeeded.Contains(svc.Id, StringComparer.OrdinalIgnoreCase))
+                    succeeded.Add(svc.Id);
+            }
+        }
+        if (succeeded.Count > 0)
+        {
+            var health = new Dictionary<string, bool>(Health, StringComparer.OrdinalIgnoreCase);
+            foreach (var id in succeeded)
+                health[id] = true;
+            Health = health;
+            ServiceActivityMap.ClearMatching(ServiceActivities, succeeded, ServiceActivityMap.Starting);
+            ServiceActivityMap.ClearMatching(ServiceActivities, succeeded, ServiceActivityMap.Restarting);
+        }
         ServiceActivityMap.ClearFailed(ServiceActivities, StartErrors);
         var failed = results.Where(r => r.Error is not null).ToList();
         if (failed.Count > 0)

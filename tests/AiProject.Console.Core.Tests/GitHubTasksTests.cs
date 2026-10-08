@@ -62,6 +62,53 @@ public class GitHubTasksTests
     }
 
     [Fact]
+    public void LogoutArguments_RequiresHostAndUser()
+    {
+        Assert.Null(GitHubAuth.LogoutArguments("github.com", ""));
+        Assert.Null(GitHubAuth.LogoutArguments("github.com", "not a user"));
+        Assert.Equal(
+            ["auth", "logout", "--hostname", "github.com", "--user", "sjvann"],
+            GitHubAuth.LogoutArguments(null, "sjvann"));
+        Assert.Equal(
+            ["auth", "logout", "--hostname", "ghe.corp.com", "--user", "sjvann"],
+            GitHubAuth.LogoutArguments("https://ghe.corp.com/acme", "sjvann"));
+        Assert.Equal(
+            ["auth", "logout", "--hostname", "GHE.Corp.com", "--user", "sjvann"],
+            GitHubAuth.LogoutArguments("GHE.Corp.com", "sjvann", exactHost: true));
+    }
+
+    [Fact]
+    public void MatchLogoutAccount_PicksRequestedUserOnSharedHost()
+    {
+        const string json = """
+            {"hosts":{"github.com":[
+              {"host":"github.com","login":"sjvann","active":true},
+              {"host":"github.com","login":"sjvannTMU","active":false}
+            ],"GHE.Corp.com":[
+              {"host":"GHE.Corp.com","login":"sjvann","active":true}
+            ]}}
+            """;
+        var accounts = GitHubAuth.ParseAuthStatusHosts(json);
+        Assert.Equal(3, accounts.Count);
+
+        var requested = GitHubAuth.MatchLogoutAccount(accounts, "github.com", "sjvannTMU");
+        Assert.Equal("github.com", requested?.Host);
+        Assert.Equal("sjvannTMU", requested?.Login);
+
+        var active = GitHubAuth.MatchLogoutAccount(accounts, "GITHUB.COM", "");
+        Assert.Equal("sjvann", active?.Login);
+        Assert.True(active?.Active);
+
+        var enterprise = GitHubAuth.MatchLogoutAccount(accounts, "https://ghe.corp.com/acme", "Sjvann");
+        Assert.Equal("GHE.Corp.com", enterprise?.Host);
+        Assert.Equal("sjvann", enterprise?.Login);
+
+        Assert.Null(GitHubAuth.MatchLogoutAccount(accounts, "github.com", "missing"));
+        Assert.Empty(GitHubAuth.ParseAuthStatusHosts(""));
+        Assert.Empty(GitHubAuth.ParseAuthStatusHosts("{"));
+    }
+
+    [Fact]
     public void ParseIssues_SplitsMineAndUnassigned()
     {
         const string json = """

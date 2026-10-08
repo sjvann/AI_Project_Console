@@ -38,6 +38,8 @@ public static class GithubAccountStatus
 
 public sealed record GithubLoginPrompt(string DeviceCode, string BrowserUrl, bool BrowserOpened);
 
+internal sealed record GhKnownAccount(string Host, string Login, bool Active);
+
 public static class GitHubAuth
 {
     public const int LoginTimeoutMs = 600_000;
@@ -212,23 +214,143 @@ public static class GitHubAuth
         }
     }
 
+    internal static IReadOnlyList<GhKnownAccount> ParseAuthStatusHosts(string? json)
+    {
+        var raw = (json ?? "").Trim();
+        if (raw.Length == 0)
+            return [];
+        try
+        {
+            var hosts = JsonUtil.Obj(JsonNode.Parse(raw))?["hosts"] as JsonObject;
+            if (hosts is null)
+                return [];
+            var list = new List<GhKnownAccount>();
+            foreach (var kv in hosts)
+            {
+                if (kv.Value is not JsonArray accounts)
+                    continue;
+                foreach (var node in accounts)
+                {
+                    var obj = JsonUtil.Obj(node);
+                    if (obj is null)
+                        continue;
+                    var login = JsonUtil.Str(obj["login"]);
+                    if (!LooksLikeLogin(login))
+                        continue;
+                    var accountHost = JsonUtil.Str(obj["host"]);
+                    if (string.IsNullOrEmpty(accountHost))
+                        accountHost = kv.Key;
+                    list.Add(new GhKnownAccount(accountHost, login, ReadBool(obj["active"])));
+                }
+            }
+            return list;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    internal static GhKnownAccount? MatchLogoutAccount(
+        IReadOnlyList<GhKnownAccount> accounts,
+        string? host,
+        string? user)
+    {
+        var hostname = GitHost.Normalize(host);
+        var onHost = new List<GhKnownAccount>();
+        foreach (var account in accounts)
+        {
+            if (string.Equals(GitHost.Normalize(account.Host), hostname, StringComparison.OrdinalIgnoreCase))
+                onHost.Add(account);
+        }
+        if (onHost.Count == 0)
+            return null;
+        var login = (user ?? "").Trim();
+        if (login.Length > 0)
+        {
+            foreach (var account in onHost)
+            {
+                if (string.Equals(account.Login, login, StringComparison.OrdinalIgnoreCase))
+                    return account;
+            }
+            return null;
+        }
+        if (onHost.Count == 1)
+            return onHost[0];
+        foreach (var account in onHost)
+        {
+            if (account.Active)
+                return account;
+        }
+        return null;
+    }
+
+    internal static IReadOnlyList<string>? LogoutArguments(string? host, string? user, bool exactHost = false)
+    {
+        var login = (user ?? "").Trim();
+        if (!LooksLikeLogin(login))
+            return null;
+        var hostname = exactHost ? (host ?? "").Trim() : GitHost.Normalize(host);
+        if (string.IsNullOrEmpty(hostname))
+            return null;
+        return ["auth", "logout", "--hostname", hostname, "--user", login];
+    }
+
     public static async Task<(bool Ok, string Message)> LogoutAsync(
         string? cwd = null,
         string? host = null,
+        string? user = null,
         CancellationToken ct = default)
     {
         if (!GitHubService.GhAvailable())
             return (false, "尚未安裝 GitHub CLI（gh）。");
         var hostname = GitHost.Normalize(host);
+        var login = (user ?? "").Trim();
+        if (!LooksLikeLogin(login))
+        {
+            var current = await CurrentAsync(cwd, hostname, ct).ConfigureAwait(false);
+            login = current.Login;
+        }
+
+        var exactHost = false;
+        var (statusCode, statusOut, _) = await GhCli.RunCaptureAsync(
+            ["auth", "status", "--json", "hosts"],
+            cwd,
+            timeoutMs: 30_000,
+            ct: ct).ConfigureAwait(false);
+        if (statusCode == 0)
+        {
+            var accounts = ParseAuthStatusHosts(statusOut);
+            if (accounts.Count > 0)
+            {
+                var matched = MatchLogoutAccount(accounts, hostname, login);
+                if (matched is null)
+                {
+                    return LooksLikeLogin(login)
+                        ? (false, $"找不到 {hostname} 上的帳號 {login}。")
+                        : (false, "無法判斷要登出的帳號。請先確認已登入 GitHub。");
+                }
+                hostname = matched.Host;
+                login = matched.Login;
+                exactHost = true;
+            }
+        }
+
+        var args = LogoutArguments(hostname, login, exactHost);
+        if (args is null)
+            return (false, "無法判斷要登出的帳號。請先確認已登入 GitHub。");
         var (code, output) = await CliUtil.RunAsync(
             "gh",
-            ["auth", "logout", "--hostname", hostname],
+            args,
             cwd,
             60_000,
             ct,
             stdin: "Y\n").ConfigureAwait(false);
         if (code == 0)
-            return (true, string.IsNullOrEmpty(output) ? "已登出 " + hostname : output);
+            return (true, string.IsNullOrEmpty(output) ? "已登出 " + login : output);
         return (false, string.IsNullOrEmpty(output) ? "登出失敗。" : output);
     }
+
+    static bool ReadBool(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<bool>(out var flag) && flag;
 }

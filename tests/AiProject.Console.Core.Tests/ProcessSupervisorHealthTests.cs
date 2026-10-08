@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json.Nodes;
@@ -74,6 +75,64 @@ public class ProcessSupervisorHealthTests
         finally
         {
             listener.Stop();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ProbeAllHealth_ReturnsWhilePeerStaysSilent()
+    {
+        var silent = new TcpListener(IPAddress.Loopback, 0);
+        silent.Start();
+        var silentPort = ((IPEndPoint)silent.LocalEndpoint).Port;
+        var live = new TcpListener(IPAddress.Loopback, 0);
+        live.Start();
+        var livePort = ((IPEndPoint)live.LocalEndpoint).Port;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var accept = Task.Run(async () =>
+        {
+            try
+            {
+                using var client = await silent.AcceptTcpClientAsync(cts.Token);
+                await Task.Delay(Timeout.Infinite, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, cts.Token);
+        var root = Path.Combine(Path.GetTempPath(), "probe-silent-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var catalog = new ProjectCatalog
+            {
+                Root = root,
+                Name = "t",
+                Services =
+                [
+                    new ServiceEntry("live", "Live", "Live", "Live", null, "tcp:" + livePort, "", "g"),
+                    new ServiceEntry("silent", "Silent", "Silent", "Silent", silentPort, "http://127.0.0.1:" + silentPort + "/health", "", "g"),
+                ],
+                Projects = [],
+                StartOrder = [],
+                Frontend = "",
+                Manifest = new JsonObject(),
+                Scan = new ScanResult(root, []),
+            };
+
+            var sw = Stopwatch.StartNew();
+            var health = await ProcessSupervisor.ProbeAllHealthAsync(catalog);
+
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(6), sw.Elapsed.ToString());
+            Assert.True(health["live"]);
+            Assert.False(health["silent"]);
+        }
+        finally
+        {
+            cts.Cancel();
+            silent.Stop();
+            live.Stop();
+            try { await accept; } catch (OperationCanceledException) { }
             Directory.Delete(root, recursive: true);
         }
     }

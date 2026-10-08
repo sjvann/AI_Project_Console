@@ -4,7 +4,7 @@ Section: devel
 Priority: optional
 Architecture: __ARCH__
 Maintainer: sjvann <https://github.com/sjvann/AI_Project_Console>
-Depends: libc6 (>= 2.31), libgtk-3-0, libnotify4, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-0
+Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify4, libwebkit2gtk-4.1-0
 Installed-Size: __SIZE__
 Homepage: https://github.com/sjvann/AI_Project_Console
 Description: AI_Project 控制台

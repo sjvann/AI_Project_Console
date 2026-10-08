@@ -167,6 +167,7 @@ public static class TechStackDetector
 
     /// <summary>
     /// npm 套件清單：<c>name</c> 是字串。外掛描述（name 為物件、或帶 entryDll）不是。
+    /// 沒有 npm 相依的 FHIR 套件樣本（<c>fhirVersion</c>）也不是。
     /// </summary>
     public static bool IsNpmManifest(string path)
     {
@@ -175,15 +176,61 @@ public static class TechStackDetector
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
                 return false;
-            var root = doc.RootElement;
-            if (root.TryGetProperty("entryDll", out _) || root.TryGetProperty("entry_dll", out _))
-                return false;
-            return root.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String;
+            return IsNpmManifest(doc.RootElement);
         }
         catch (Exception)
         {
             return false;
         }
+    }
+
+    static bool IsNpmManifest(JsonElement root)
+    {
+        if (root.TryGetProperty("entryDll", out _) || root.TryGetProperty("entry_dll", out _))
+            return false;
+        if (!root.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String)
+            return false;
+        return !IsFhirContentPackage(root);
+    }
+
+    /// <summary>
+    /// FHIR IG／套件清單。相依欄位是 FHIR 套件，不是 npm。
+    /// 沒有 npm 相依時 <c>npm install</c> 不會建立 <c>node_modules</c>。
+    /// </summary>
+    static bool IsFhirContentPackage(JsonElement root)
+    {
+        var marked = (root.TryGetProperty("fhirVersion", out var one) && one.ValueKind == JsonValueKind.String)
+            || (root.TryGetProperty("fhirVersions", out var many) && many.ValueKind == JsonValueKind.Array);
+        return marked && !HasNpmDependencies(root);
+    }
+
+    /// <summary>package.json 是否宣告了 npm 要安裝的相依。空物件不算。</summary>
+    public static bool DeclaresNpmDependencies(string projectDir)
+    {
+        var path = Path.Combine(projectDir, "package.json");
+        if (!File.Exists(path))
+            return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.ValueKind == JsonValueKind.Object && HasNpmDependencies(doc.RootElement);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    static bool HasNpmDependencies(JsonElement root)
+    {
+        foreach (var key in new[] { "dependencies", "devDependencies", "optionalDependencies", "peerDependencies" })
+        {
+            if (root.TryGetProperty(key, out var deps)
+                && deps.ValueKind == JsonValueKind.Object
+                && deps.EnumerateObject().Any())
+                return true;
+        }
+        return false;
     }
 
     /// <summary>PEP 723 行內腳本。檔名即使是 setup.py 也不是 setuptools 專案。</summary>
@@ -205,7 +252,7 @@ public static class TechStackDetector
         }
     }
 
-    /// <summary>這個檔會讓控制台要求還原套件。外掛清單與 PEP 723 腳本不會。</summary>
+    /// <summary>這個檔會讓控制台要求還原套件。外掛清單、PEP 723 腳本與無相依的 FHIR 套件樣本不會。</summary>
     public static bool IsInstallableManifest(string path)
     {
         var name = Path.GetFileName(path);

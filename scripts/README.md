@@ -85,9 +85,9 @@ gh release create v0.3.8 --title "v0.3.8 AI_Project 控制台" --notes @"
 - **AI_Project_Console-0.3.8-win-x64-setup.exe**：安裝程式（開始選單捷徑，可選桌面捷徑；安裝到目前使用者的 Local AppData）
 - **AI_Project_Console-0.3.8-win-x64.zip**：免安裝壓縮包，解壓後執行 ``AI_Project_Console.exe``
 - **AI_Project_Console-0.3.8-osx-arm64.zip**／**osx-x64.zip**：macOS `.app`（請用 GitHub Actions Pack Unix 產出，不要用 Windows 交叉編譯 zip）
-- **AI_Project_Console-0.3.8-linux-x64.zip**／**linux-arm64.zip**：Linux 免安裝包；另可有 `.deb`
+- **AI_Project_Console-0.3.8-linux-x64.zip**／**linux-arm64.zip**：解壓後執行 `./install.sh`（`uname -m` 為 x86_64 用 x64，aarch64 用 arm64）。另可有 `.deb`，Ubuntu 用 `sudo apt install ./….deb`
 
-Windows 10/11 需已安裝 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（系統通常已內建）。macOS 未公證時請右鍵打開。Linux 需 GTK 3 與 WebKitGTK。
+Windows 10/11 需已安裝 [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（系統通常已內建）。macOS 未公證時請右鍵打開。Linux 的 `./install.sh` 與 `.deb` 會安裝 GTK 3 與 WebKitGTK 4.1。
 "@ dist\AI_Project_Console-0.3.8-win-x64-setup.exe dist\AI_Project_Console-0.3.8-win-x64.zip
 ```
 

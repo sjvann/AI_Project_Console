@@ -130,7 +130,12 @@ else
   else
     fail "缺少 Photino.Native.so"
   fi
-  [[ -f "$TMP/install.sh" || -f "$(dirname "$EXE")/install.sh" ]] || fail "缺少 install.sh"
+  INST="$TMP/install.sh"
+  [[ -f "$INST" ]] || INST="$(dirname "$EXE")/install.sh"
+  [[ -f "$INST" ]] || fail "缺少 install.sh"
+  grep -q "安裝未完成" "$INST" || fail "install.sh 失敗時必須停下，不能只印依賴提示"
+  grep -q "libwebkit2gtk-4.1-0" "$INST" || fail "install.sh 必須安裝 libwebkit2gtk-4.1-0"
+  grep -q "ai-project-console user bin" "$INST" || fail "install.sh 必須把使用者 bin 寫進 shell 設定"
   if [[ "$HOST" == Linux ]]; then
     [[ -x "$EXE" ]] || fail "主程式沒有執行權限（zip 必須在 Linux 打包）"
     file "$EXE" | grep -qi "ELF" || fail "主程式不是 ELF"
@@ -161,13 +166,19 @@ else
   DEB="$ROOT/dist/AI_Project_Console-$VERSION-$RUNTIME.deb"
   if [[ -f "$DEB" && "$HOST" == Linux ]] && command -v dpkg-deb >/dev/null; then
     echo "CHECK:deb"
-    dpkg-deb --info "$DEB"
+    dpkg-deb --info "$DEB" | tee "$TMP/deb-info.txt"
+    grep -q "libwebkit2gtk-4.1-0" "$TMP/deb-info.txt" || fail ".deb 未依賴 libwebkit2gtk-4.1-0"
     # 不要把 --contents 直接管到 grep -q：檔案很多時 grep 提前關閉會讓 tar SIGPIPE，pipefail 整段失敗。
     dpkg-deb --contents "$DEB" > "$TMP/deb-contents.txt"
     grep -F "opt/AI_Project_Console/AI_Project_Console" "$TMP/deb-contents.txt" >/dev/null \
       || fail ".deb 沒有 /opt/AI_Project_Console/AI_Project_Console"
     grep -F "usr/share/applications/ai-project-console.desktop" "$TMP/deb-contents.txt" >/dev/null \
       || fail ".deb 沒有 desktop 檔"
+    dpkg-deb --ctrl-tarfile "$DEB" | tar -t > "$TMP/deb-ctrl.txt"
+    grep -qx "./postinst" "$TMP/deb-ctrl.txt" || grep -qx "postinst" "$TMP/deb-ctrl.txt" \
+      || fail ".deb 沒有 postinst（不會把圖示放到各使用者桌面）"
+    grep -qx "./postrm" "$TMP/deb-ctrl.txt" || grep -qx "postrm" "$TMP/deb-ctrl.txt" \
+      || fail ".deb 沒有 postrm"
   fi
 fi
 
