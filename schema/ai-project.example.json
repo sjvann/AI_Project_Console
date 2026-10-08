@@ -175,5 +175,10 @@
     "region": "eastasia",
     "openUrl": "",
     "workflow": "deploy-azure.yml"
+  },
+  "machine": {
+    "bind": "",
+    "port": "",
+    "openUrl": ""
   }
 }

@@ -76,7 +76,7 @@ public class InfoReportTests
             Assert.Equal("info", report.Tone);
             Assert.Equal("edit-deploy", report.PrimaryAction);
             Assert.Contains(report.Sections, s => s.Id == "target");
-            Assert.Contains("本機執行", report.HeadlineDetail);
+            Assert.Contains("localhost", report.HeadlineDetail);
             Assert.Equal(report.Text, DeployConfigResolver.StatusReport(catalog));
         }
         finally

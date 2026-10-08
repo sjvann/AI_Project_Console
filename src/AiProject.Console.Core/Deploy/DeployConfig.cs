@@ -93,6 +93,96 @@ public sealed class OnpremConfig
     }
 }
 
+public sealed class MachineConfig
+{
+    public string Bind { get; set; } = "";
+    public string Port { get; set; } = "";
+    public string OpenUrl { get; set; } = "";
+
+    public bool IsComplete() =>
+        IsExposedBind(Bind) && IsExposedUrl(OpenUrl) && IsOptionalPort(Port);
+
+    public JsonObject AsObject() => new()
+    {
+        ["bind"] = Bind.Trim(),
+        ["port"] = Port.Trim(),
+        ["openUrl"] = OpenUrl.Trim(),
+    };
+
+    public static MachineConfig FromMapping(JsonNode? raw)
+    {
+        var obj = JsonUtil.Obj(raw);
+        if (obj is null)
+            return new MachineConfig();
+        return new MachineConfig
+        {
+            Bind = JsonUtil.Pick(JsonUtil.Str(obj["bind"]), JsonUtil.Str(obj["listen"])),
+            Port = JsonUtil.Str(obj["port"]),
+            OpenUrl = JsonUtil.Pick(JsonUtil.Str(obj["openUrl"]), JsonUtil.Str(obj["open_url"])),
+        };
+    }
+
+    public static bool IsExposedBind(string bind)
+    {
+        var host = HostOf(bind);
+        if (string.IsNullOrEmpty(host))
+            return false;
+        return host is "0.0.0.0" or "::" or "*" or "+" || !IsLoopbackHost(host);
+    }
+
+    public static bool IsExposedUrl(string url)
+    {
+        var host = HostOf(url);
+        return !string.IsNullOrEmpty(host) && !IsLoopbackHost(host);
+    }
+
+    public static bool IsOptionalPort(string port)
+    {
+        if (string.IsNullOrWhiteSpace(port))
+            return true;
+        return int.TryParse(port.Trim(), out var n) && n is >= 1 and <= 65535;
+    }
+
+    public static string HostOf(string value)
+    {
+        var text = value.Trim();
+        if (string.IsNullOrEmpty(text))
+            return "";
+        if (text is "0.0.0.0" or "::" or "*" or "+" or "[::]")
+            return text is "[::]" ? "::" : text;
+        if (text.Contains("://", StringComparison.Ordinal))
+        {
+            if (Uri.TryCreate(text, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host))
+                return uri.IdnHost;
+            return "";
+        }
+        var slash = text.IndexOf('/');
+        if (slash >= 0)
+            text = text[..slash];
+        if (text.StartsWith('['))
+        {
+            var end = text.IndexOf(']');
+            return end > 1 ? text[1..end] : "";
+        }
+        var colon = text.LastIndexOf(':');
+        if (colon > 0 && text.IndexOf(':') == colon)
+            text = text[..colon];
+        return text;
+    }
+
+    public static bool IsLoopbackHost(string host)
+    {
+        var text = host.Trim().Trim('[', ']');
+        var zone = text.IndexOf('%');
+        if (zone >= 0)
+            text = text[..zone];
+        return text.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || text.Equals("::1", StringComparison.OrdinalIgnoreCase)
+            || text.Equals("0:0:0:0:0:0:0:1", StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith("127.", StringComparison.Ordinal);
+    }
+}
+
 public sealed class AzureConfig
 {
     public string SubscriptionId { get; set; } = "";
@@ -137,6 +227,7 @@ public sealed class AzureConfig
 public static class DeployTargets
 {
     public const string None = "none";
+    public const string Machine = "machine";
     public const string Gcp = "gcp";
     public const string Onprem = "onprem";
     public const string Azure = "azure";
@@ -144,6 +235,7 @@ public static class DeployTargets
     public static readonly IReadOnlyList<(string Key, string Label)> All =
     [
         (None, "不下發（僅本機）"),
+        (Machine, "本機對外"),
         (Gcp, "Google Cloud (GCP)"),
         (Onprem, "自家機房／遠端伺服器"),
         (Azure, "Microsoft Azure"),
@@ -159,7 +251,8 @@ public static class DeployTargets
 
     public static readonly Dictionary<string, string> Hints = new()
     {
-        [None] = "此專案只在本機執行，不發佈到雲端或遠端伺服器。",
+        [None] = "此專案只在這台電腦上給自己用（localhost），不對區網或網際網路開放。",
+        [Machine] = "服務跑在這台電腦上，監聽區網或所有介面。其他人用對外網址連進來。",
         [Gcp] = "部署到 GCP Compute Engine。需填 Project ID、Zone、Instance。",
         [Onprem] = "發佈到公司或自家機房的另一台伺服器（SSH、WinRM、IIS 或網路磁碟）。",
         [Azure] = "部署到 Azure App Service／同類資源。需填訂閱、資源群組與應用程式名稱。",
@@ -182,6 +275,7 @@ public sealed class DeployConfig
     public GcpConfig Gcp { get; set; } = new();
     public OnpremConfig Onprem { get; set; } = new();
     public AzureConfig Azure { get; set; } = new();
+    public MachineConfig Machine { get; set; } = new();
 
     public string NormalizedTarget()
     {
@@ -192,6 +286,7 @@ public sealed class DeployConfig
     public bool IsComplete() => NormalizedTarget() switch
     {
         DeployTargets.None => true,
+        DeployTargets.Machine => Machine.IsComplete(),
         DeployTargets.Gcp => Gcp.IsComplete(),
         DeployTargets.Onprem => Onprem.IsComplete(),
         DeployTargets.Azure => Azure.IsComplete(),
@@ -200,6 +295,7 @@ public sealed class DeployConfig
 
     public string PublicUrl() => NormalizedTarget() switch
     {
+        DeployTargets.Machine => Machine.OpenUrl.Trim(),
         DeployTargets.Gcp => Gcp.Host.Trim(),
         DeployTargets.Onprem => JsonUtil.Pick(Onprem.OpenUrl, Onprem.Host),
         DeployTargets.Azure => Azure.OpenUrl.Trim(),
@@ -212,6 +308,7 @@ public sealed class DeployConfig
         ["gcp"] = Gcp.AsObject(),
         ["onprem"] = Onprem.AsObject(),
         ["azure"] = Azure.AsObject(),
+        ["machine"] = Machine.AsObject(),
     };
 }
 
@@ -223,6 +320,7 @@ public static class DeployConfigResolver
         var gcp = GcpConfig.FromMapping(JsonUtil.Obj(obj["gcp"]) ?? gcpFallback);
         var onprem = OnpremConfig.FromMapping(obj["onprem"]);
         var azure = AzureConfig.FromMapping(obj["azure"]);
+        var machine = MachineConfig.FromMapping(obj["machine"]);
         var target = JsonUtil.Str(obj["target"]);
         if (string.IsNullOrEmpty(target))
         {
@@ -232,12 +330,14 @@ public static class DeployConfigResolver
                 target = DeployTargets.Onprem;
             else if (!string.IsNullOrEmpty(azure.SubscriptionId) || !string.IsNullOrEmpty(azure.AppName))
                 target = DeployTargets.Azure;
+            else if (!string.IsNullOrEmpty(machine.Bind) || !string.IsNullOrEmpty(machine.OpenUrl))
+                target = DeployTargets.Machine;
             else
                 target = DeployTargets.None;
         }
         if (DeployTargets.All.All(t => t.Key != target))
             target = DeployTargets.None;
-        return new DeployConfig { Target = target, Gcp = gcp, Onprem = onprem, Azure = azure };
+        return new DeployConfig { Target = target, Gcp = gcp, Onprem = onprem, Azure = azure, Machine = machine };
     }
 
     public static DeployConfig FromManifest(ProjectCatalog? catalog)
@@ -250,6 +350,8 @@ public static class DeployConfigResolver
             merged["onprem"] = onprem.DeserializeClone();
         if (merged["azure"] is null && doc["azure"] is JsonObject azure)
             merged["azure"] = azure.DeserializeClone();
+        if (merged["machine"] is null && doc["machine"] is JsonObject machine)
+            merged["machine"] = machine.DeserializeClone();
         return FromMapping(merged, doc["gcp"]);
     }
 
@@ -285,6 +387,7 @@ public static class DeployConfigResolver
             Gcp = MergeGcp(local.Gcp, manifest.Gcp),
             Onprem = MergeOnprem(local.Onprem, manifest.Onprem),
             Azure = MergeAzure(local.Azure, manifest.Azure),
+            Machine = MergeMachine(local.Machine, manifest.Machine),
         };
     }
 
@@ -309,6 +412,7 @@ public static class DeployConfigResolver
         doc["gcp"] = cfg.Gcp.AsObject();
         doc["onprem"] = cfg.Onprem.AsObject();
         doc["azure"] = cfg.Azure.AsObject();
+        doc["machine"] = cfg.Machine.AsObject();
         if (doc["name"] is null)
             doc["name"] = catalog.Name;
         JsonUtil.SaveObject(path, doc);
@@ -360,12 +464,13 @@ public static class DeployConfigResolver
         lines.Add("");
         if (target == DeployTargets.None)
         {
-            lines.Add("此專案只在本機執行，不發佈到雲端或遠端伺服器。");
+            const string localOnly = "此專案只在這台電腦上給自己用（localhost），不對區網或網際網路開放。";
+            lines.Add(localOnly);
             return new InfoReport(
                 Title: "部署狀態",
                 Hint: DeployTargets.Hints.GetValueOrDefault(target) ?? "",
                 Headline: targetLabel,
-                HeadlineDetail: "此專案只在本機執行，不發佈到雲端或遠端伺服器。",
+                HeadlineDetail: localOnly,
                 Tone: "info",
                 Sections:
                 [
@@ -376,7 +481,7 @@ public static class DeployConfigResolver
                             new InfoField("專案目錄", catalog.Root),
                             new InfoField("發佈目標", targetLabel, Badge: "本機", Tone: "info"),
                         ],
-                        Note: "若要開啟線上，請先改選發佈目標。"),
+                        Note: "若要讓別人連到這台電腦，改選「本機對外」。若要發到雲端或另一台伺服器，改選對應目標。"),
                 ],
                 Text: string.Join('\n', lines),
                 PrimaryAction: "edit-deploy",
@@ -384,7 +489,23 @@ public static class DeployConfigResolver
         }
 
         var fields = new List<InfoField>();
-        if (target == DeployTargets.Gcp)
+        if (target == DeployTargets.Machine)
+        {
+            var m = cfg.Machine;
+            lines.AddRange(
+            [
+                $"綁定位址：{OrUnset(m.Bind)}",
+                $"連接埠：{OrUnset(m.Port, "（沿用服務自己的埠）")}",
+                $"對外網址：{OrUnset(m.OpenUrl)}",
+            ]);
+            fields.AddRange(
+            [
+                new InfoField("綁定位址", OrUnset(m.Bind), Tone: MachineConfig.IsExposedBind(m.Bind) ? null : "warn"),
+                new InfoField("連接埠", OrUnset(m.Port, "（沿用服務自己的埠）"), Tone: MachineConfig.IsOptionalPort(m.Port) ? null : "warn"),
+                new InfoField("對外網址", OrUnset(m.OpenUrl), Tone: MachineConfig.IsExposedUrl(m.OpenUrl) ? null : "warn"),
+            ]);
+        }
+        else if (target == DeployTargets.Gcp)
         {
             var g = cfg.Gcp;
             var wfOk = WorkflowExists(catalog, g);
@@ -487,10 +608,10 @@ public static class DeployConfigResolver
         var target = cfg.NormalizedTarget();
         if (target == DeployTargets.None)
         {
-            const string text = "目前選擇不下發。若之後要發佈，請在「部署設定…」改選目標。";
+            const string text = "目前選擇不下發。服務只給這台電腦自己開。若要對區網或網際網路開放，請在「部署設定…」改選「本機對外」。";
             return new InfoReport(
                 Title: "部署說明",
-                Hint: "這個專案目前只在本機執行。",
+                Hint: "這個專案目前只在這台電腦上給自己用。",
                 Headline: DeployTargets.TargetLabel(target),
                 HeadlineDetail: text,
                 Tone: "info",
@@ -499,6 +620,9 @@ public static class DeployConfigResolver
                 PrimaryAction: "edit-deploy",
                 PrimaryLabel: "編輯設定");
         }
+
+        if (target == DeployTargets.Machine)
+            return MachineHint(cfg);
 
         if (target == DeployTargets.Gcp)
         {
@@ -680,6 +804,54 @@ public static class DeployConfigResolver
             OpenUrl = JsonUtil.Pick(local.OpenUrl, manifest.OpenUrl),
             KeyPath = JsonUtil.Pick(local.KeyPath, manifest.KeyPath),
         };
+    }
+
+    private static MachineConfig MergeMachine(MachineConfig local, MachineConfig manifest) => new()
+    {
+        Bind = JsonUtil.Pick(local.Bind, manifest.Bind),
+        Port = JsonUtil.Pick(local.Port, manifest.Port),
+        OpenUrl = JsonUtil.Pick(local.OpenUrl, manifest.OpenUrl),
+    };
+
+    private static InfoReport MachineHint(DeployConfig cfg)
+    {
+        var m = cfg.Machine;
+        var bind = string.IsNullOrWhiteSpace(m.Bind) ? "0.0.0.0" : m.Bind.Trim();
+        var port = string.IsNullOrWhiteSpace(m.Port) ? "<port>" : m.Port.Trim();
+        var listenHost = bind is "::" ? "[::]" : bind;
+        var listen = $"http://{listenHost}:{port}";
+        var note = $"啟動時讓程序聽在綁定位址，例如 ASPNETCORE_URLS={listen}，並在這台電腦的防火牆放行該連接埠。同一區網用對外網址連入。若要從網際網路進來，在路由器做連接埠轉送，或在這台電腦上掛反向代理；服務仍留在這台電腦。";
+        var lines = new List<string>
+        {
+            "本機對外說明", "",
+            "服務跑在這台電腦上，聽在綁定位址。控制台記住位址與對外網址，不代開防火牆，也不把檔案推到別台機器。", "",
+            $"綁定位址：{OrUnset(m.Bind)}",
+            $"連接埠：{OrUnset(m.Port, "（沿用服務自己的埠）")}",
+            $"對外網址：{OrUnset(m.OpenUrl)}", "",
+            note,
+        };
+        return new InfoReport(
+            Title: "部署說明",
+            Hint: "服務留在這台電腦，聽在區網或所有介面。控制台不代開防火牆。",
+            Headline: "本機對外",
+            HeadlineDetail: MachineConfig.IsExposedUrl(m.OpenUrl) ? m.OpenUrl.Trim() : "請填其他人連進來的網址。",
+            Tone: cfg.IsComplete() ? "ok" : "warn",
+            Sections:
+            [
+                new InfoSection(
+                    "machine",
+                    "這台電腦",
+                    [
+                        new InfoField("綁定位址", OrUnset(m.Bind), Tone: MachineConfig.IsExposedBind(m.Bind) ? "ok" : "warn"),
+                        new InfoField("連接埠", OrUnset(m.Port, "（沿用服務自己的埠）")),
+                        new InfoField("對外網址", OrUnset(m.OpenUrl), Tone: MachineConfig.IsExposedUrl(m.OpenUrl) ? "ok" : "warn"),
+                        new InfoField("監聽範例", listen),
+                    ],
+                    Note: note),
+            ],
+            Text: string.Join('\n', lines),
+            PrimaryAction: MachineConfig.IsExposedUrl(m.OpenUrl) ? "open-deploy" : "edit-deploy",
+            PrimaryLabel: MachineConfig.IsExposedUrl(m.OpenUrl) ? "開啟線上" : "編輯設定");
     }
 
     private static AzureConfig MergeAzure(AzureConfig local, AzureConfig manifest) => new()

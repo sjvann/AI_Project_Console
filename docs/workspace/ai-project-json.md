@@ -160,7 +160,9 @@ Copy-Item schema/ai-project.example.json .\ai-project.json
 
 ## GitHub 與部署
 
-可與畫面「GitHub 設定」「部署設定」互相寫入。結構見範例檔的 `github`、`deploy`、`gcp`、`onprem`、`azure`。`github.host`／`github.kind` 指定認證對象（公開 GitHub 或企業主機）。使用者操作見 [GitHub](../user/github.md)、[部署](../user/deploy.md)、[需求工作台](../user/intake.md)。
+可與畫面「GitHub 設定」「部署設定」互相寫入。結構見範例檔的 `github`、`deploy`、`gcp`、`onprem`、`azure`、`machine`。`github.host`／`github.kind` 指定認證對象（公開 GitHub 或企業主機）。使用者操作見 [GitHub](../user/github.md)、[部署](../user/deploy.md)、[需求工作台](../user/intake.md)。
+
+`deploy.target` 為 `machine` 時，服務留在這台電腦並對區網或網際網路開放。`machine.bind` 是監聽位址（`0.0.0.0` 或區網 IP），`machine.port` 可空白並沿用服務自己的埠，`machine.openUrl` 是別人連進來的網址。這三欄都不要填 localhost。
 
 ## 文件根目錄
 

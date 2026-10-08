@@ -40,7 +40,7 @@
 
 - [產品規格](product/README.md) — 買家、六大模組、UI／UX、路線圖（規劃與現況分開標）
 - [銷售套件](salekit/README.md) — 一頁紙、投影片、演示腳本、採購 FAQ
-- [部署](user/deploy.md) — 本機以外的發佈目標
+- [部署](user/deploy.md) — 發佈目標：雲端、另一台伺服器，或本機對外
 - [工作區設定](workspace/ai-project-json.md) — 服務清單、產品線與各專案用途
 - [MCP](agent/mcp.md) — 讓 Agent 回呼控制台
 
