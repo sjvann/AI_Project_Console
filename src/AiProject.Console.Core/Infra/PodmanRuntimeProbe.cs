@@ -340,16 +340,10 @@ public static class WorkspaceRuntimeEvaluator
             store.RuntimeId,
             RuntimeProbeState.Blocked,
             RuntimeMessages.DatastoreDown(store.Label),
-<<<<<<< HEAD
-            string.Join(" ", reasons),
-            string.IsNullOrWhiteSpace(store.Ensure) ? string.Join(" ", reasons) : store.Ensure.Trim(),
-            store.RequiredBy,
-            store.Ensure);
-=======
             detail,
             DatastoreCommand(store),
-            store.RequiredBy);
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
+            store.RequiredBy,
+            store.Ensure);
     }
 
     static DatastoreProbeItem Inherit(DatastoreDeclaration store, IReadOnlyDictionary<string, RuntimeProbeItem> runtimes)
@@ -378,22 +372,17 @@ public static class WorkspaceRuntimeEvaluator
             RuntimeProbeState.Blocked,
             runtime.Headline,
             runtime.Detail,
-<<<<<<< HEAD
-            string.IsNullOrWhiteSpace(store.Ensure) ? runtime.HowTo : store.Ensure.Trim(),
+            DatastoreCommand(store),
             store.RequiredBy,
             store.Ensure);
-=======
-            DatastoreCommand(store),
-            store.RequiredBy);
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
 
     /// <summary>
     /// 資料庫列自己的指令。不抄虛擬機那一列，也不把探測錯誤原文當成指令。
     /// </summary>
     static string? DatastoreCommand(DatastoreDeclaration store)
     {
-        if (!string.IsNullOrWhiteSpace(store.Start))
-            return store.Start.Trim();
+        if (!string.IsNullOrWhiteSpace(store.Ensure))
+            return store.Ensure.Trim();
         if (!string.IsNullOrWhiteSpace(store.Container))
             return $"podman start {store.Container}";
         return null;

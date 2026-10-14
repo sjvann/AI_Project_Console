@@ -252,11 +252,7 @@ public sealed partial class ConsoleSession : IDisposable
     private DateTimeOffset _doctorHintUtc = DateTimeOffset.MinValue;
     private string _doctorHintAttention = "";
     public bool DoctorCopied { get; private set; }
-<<<<<<< HEAD
-    public string? DoctorHowToCopied { get; private set; }
-=======
     public string? DoctorCopiedLine { get; private set; }
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
     public JobResultView? JobResult { get; private set; }
@@ -2846,11 +2842,7 @@ public sealed partial class ConsoleSession : IDisposable
         _doctorHintUtc = DateTimeOffset.UtcNow;
         _doctorHintAttention = RuntimeReport.Attention ?? "";
         DoctorCopied = false;
-<<<<<<< HEAD
-        DoctorHowToCopied = null;
-=======
         DoctorCopiedLine = null;
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
         Dialog = "doctor";
         Notify();
         _ = RefreshGitStatusThenNotifyAsync();
@@ -2875,25 +2867,13 @@ public sealed partial class ConsoleSession : IDisposable
         Notify();
     }
 
-<<<<<<< HEAD
-    public async Task CopyDoctorHowToAsync(string text)
-=======
     public async Task CopyDoctorLineAsync(string label, string text)
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
     {
         if (string.IsNullOrWhiteSpace(text) || Js is null)
             return;
         try
         {
             await Js.InvokeVoidAsync("aiConsole.copyText", text).ConfigureAwait(false);
-<<<<<<< HEAD
-            DoctorHowToCopied = text;
-            JobText = "已複製啟動指令。";
-        }
-        catch
-        {
-            DoctorHowToCopied = null;
-=======
             DoctorCopied = false;
             DoctorCopiedLine = label;
             JobText = "已複製指令。";
@@ -2901,7 +2881,6 @@ public sealed partial class ConsoleSession : IDisposable
         catch
         {
             DoctorCopiedLine = null;
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
             JobText = "無法複製到剪貼簿。";
         }
         Notify();
@@ -4561,11 +4540,7 @@ public sealed partial class ConsoleSession : IDisposable
         CompleteLeaveGate(false);
         DoctorView = null;
         DoctorCopied = false;
-<<<<<<< HEAD
-        DoctorHowToCopied = null;
-=======
         DoctorCopiedLine = null;
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
@@ -5933,11 +5908,7 @@ public sealed partial class ConsoleSession : IDisposable
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;
-<<<<<<< HEAD
-        DoctorHowToCopied = null;
-=======
         DoctorCopiedLine = null;
->>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
