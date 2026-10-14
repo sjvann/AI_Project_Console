@@ -876,7 +876,13 @@
                 </select>
             </div>
             <p class="hint">@(DeployTargets.Hints.GetValueOrDefault(d.NormalizedTarget()))</p>
-            @if (d.NormalizedTarget() == DeployTargets.Gcp)
+            @if (d.NormalizedTarget() == DeployTargets.Machine)
+            {
+                <div class="field"><span>綁定位址</span><input @bind="d.Machine.Bind" placeholder="0.0.0.0" /></div>
+                <div class="field"><span>連接埠</span><input @bind="d.Machine.Port" placeholder="沿用服務自己的埠" /></div>
+                <div class="field"><span>對外網址</span><input @bind="d.Machine.OpenUrl" placeholder="http://192.168.1.20:5100" /></div>
+            }
+            else if (d.NormalizedTarget() == DeployTargets.Gcp)
             {
                 <div class="field"><span>Project ID</span><input @bind="d.Gcp.ProjectId" /></div>
                 <div class="field"><span>Zone</span><input @bind="d.Gcp.Zone" /></div>

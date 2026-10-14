@@ -20,7 +20,11 @@ public sealed record DatastoreDeclaration(
     string Container,
     int? Port,
     IReadOnlyList<string> RequiredBy,
+<<<<<<< HEAD
     string Ensure = "");
+=======
+    string? Start = null);
+>>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
 
 public enum RuntimeProbeState
 {
@@ -183,8 +187,15 @@ public static class WorkspaceRuntimeManifest
             var runtimeId = JsonUtil.Pick(JsonUtil.Str(obj["runtime"]), JsonUtil.Str(obj["runtimeId"]), JsonUtil.Str(obj["runtime_id"]));
             var container = JsonUtil.Pick(JsonUtil.Str(obj["container"]), JsonUtil.Str(obj["containerName"]), JsonUtil.Str(obj["container_name"]));
             var required = ReadRequiredBy(obj["requiredBy"] ?? obj["required_by"]);
+<<<<<<< HEAD
             var ensure = JsonUtil.Pick(JsonUtil.Str(obj["ensure"]), JsonUtil.Str(obj["start"]));
             list.Add(new DatastoreDeclaration(id, label, runtimeId, container, ReadPort(obj["port"]), required, ensure));
+=======
+            var start = JsonUtil.Pick(JsonUtil.Str(obj["start"]), JsonUtil.Str(obj["command"]));
+            list.Add(new DatastoreDeclaration(
+                id, label, runtimeId, container, ReadPort(obj["port"]), required,
+                string.IsNullOrWhiteSpace(start) ? null : start.Trim()));
+>>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
         }
         return list;
     }

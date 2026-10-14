@@ -47,7 +47,13 @@
                                         <div class="doctor-howto-line">
                                             <pre class="doctor-howto">@item.HowTo</pre>
                                             <button type="button" class="btn-sec doctor-copy"
+<<<<<<< HEAD
                                                     @onclick="@(() => S.CopyDoctorHowToAsync(item.HowTo!))">@(S.DoctorHowToCopied == item.HowTo ? "已複製" : "複製")</button>
+=======
+                                                    @onclick="@(() => S.CopyDoctorLineAsync(item.Label, item.HowTo!))">
+                                                @(S.DoctorCopiedLine == item.Label ? "已複製" : "複製")
+                                            </button>
+>>>>>>> 8776220c4e2e7cd2ec02a0e68cb2666f283b0388
                                         </div>
                                     }
                                     @if (!string.IsNullOrEmpty(item.ActionId) && !string.IsNullOrEmpty(item.ActionLabel))
