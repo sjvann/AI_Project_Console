@@ -23,6 +23,7 @@ public class WorkspaceRuntimeTests
               "runtime": "podman",
               "container": "company-db",
               "port": 5432,
+              "ensure": "py -3 deploy/dev/ensure.py",
               "required_by": ["test", "company-web"]
             }
           ]
@@ -36,6 +37,7 @@ public class WorkspaceRuntimeTests
         Assert.Equal("company-db", stores[0].Container);
         Assert.Equal(5432, stores[0].Port);
         Assert.Equal(["test", "company-web"], stores[0].RequiredBy);
+        Assert.Equal("py -3 deploy/dev/ensure.py", stores[0].Ensure);
     }
 
     [Fact]
@@ -162,13 +164,50 @@ public class WorkspaceRuntimeTests
     }
 
     [Fact]
-    public void Doctor_IncludesBlockedHeadline()
+    public void Doctor_ListsOnlyTheDatabaseRequirement()
     {
         var report = Evaluate(Stopped("podman-machine-default"));
         var doctor = DoctorSnapshot.Build(Sample(), report);
         var section = doctor.Sections.Single(s => s.Id == "runtime");
-        Assert.Contains(section.Items, item => item.Value.Contains("Podman 虛擬機未啟動：podman-machine-default", StringComparison.Ordinal));
-        Assert.Contains("Podman 虛擬機未啟動：podman-machine-default", doctor.ToText());
+        var item = Assert.Single(section.Items);
+        Assert.Equal("公司庫", item.Label);
+        Assert.Equal("需要啟動資料庫：公司庫", item.Value);
+        Assert.Contains("需要啟動資料庫：公司庫", doctor.ToText());
+        Assert.DoesNotContain("  - Podman 虛擬機", doctor.ToText());
+    }
+
+    [Fact]
+    public void Doctor_EnsureCommand_IsTheOnlyStartStep()
+    {
+        const string command = "python Scripts\\ensure-profile.py";
+        var catalog = Sample(ensure: command);
+        var report = WorkspaceRuntimeEvaluator.Evaluate(catalog, Stopped("podman-machine-default"));
+        var doctor = DoctorSnapshot.Build(catalog, report);
+        var item = Assert.Single(doctor.Sections.Single(s => s.Id == "runtime").Items);
+        Assert.Equal("需要啟動資料庫：公司庫", item.Value);
+        Assert.Equal(command, item.HowTo);
+        Assert.Contains(command, doctor.ToText());
+        Assert.DoesNotContain("podman machine start", item.HowTo);
+        Assert.DoesNotContain("podman start", item.HowTo);
+    }
+
+    [Fact]
+    public void Doctor_DatabaseDown_ShowsEnsureCommand()
+    {
+        const string command = "python Scripts\\ensure-profile.py";
+        var catalog = Sample(ensure: command);
+        var snapshot = Listed(("podman-machine-default", PodmanMachineObservation.Running)) with
+        {
+            ContainersKnown = true,
+            RunningContainers = new HashSet<string>(StringComparer.Ordinal),
+        };
+        var report = WorkspaceRuntimeEvaluator.Evaluate(catalog, snapshot, _ => false);
+        Assert.Equal(command, report.Datastores[0].HowTo);
+        Assert.Contains("容器 company-db 不在執行中", report.Datastores[0].Detail);
+        var item = DoctorSnapshot.Build(catalog, report).Sections.Single(s => s.Id == "runtime").Items
+            .Single(row => row.Label == "公司庫");
+        Assert.Equal(command, item.HowTo);
+        Assert.DoesNotContain("podman start", item.HowTo ?? "");
     }
 
     [Fact]
@@ -203,7 +242,7 @@ public class WorkspaceRuntimeTests
         return new PodmanSnapshot(true, true, map, false, new HashSet<string>(StringComparer.Ordinal), null);
     }
 
-    static ProjectCatalog Sample(IReadOnlyList<string>? requiredBy = null, IReadOnlyList<RuntimeDeclaration>? runtimes = null, IReadOnlyList<DatastoreDeclaration>? stores = null)
+    static ProjectCatalog Sample(IReadOnlyList<string>? requiredBy = null, IReadOnlyList<RuntimeDeclaration>? runtimes = null, IReadOnlyList<DatastoreDeclaration>? stores = null, string ensure = "")
     {
         runtimes ??= [new RuntimeDeclaration("podman", WorkspaceRuntimeManifest.PodmanMachineKind, "podman-machine-default")];
         stores ??=
@@ -214,7 +253,8 @@ public class WorkspaceRuntimeTests
                 "podman",
                 "company-db",
                 5432,
-                requiredBy ?? ["test", "company-web"]),
+                requiredBy ?? ["test", "company-web"],
+                ensure),
         ];
         return new ProjectCatalog
         {

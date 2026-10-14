@@ -212,11 +212,16 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
             var runtimeItems = BuildRuntimeItems(catalog, runtime);
             if (runtimeItems.Count > 0)
             {
+                var runtimeNote = runtime is not { Datastores.Count: > 0 }
+                    ? "工作區 ai-project.json 宣告的 Podman 虛擬機。編譯不看這層；跑測試與被點名的服務啟動會先看。"
+                    : runtime.Datastores.Any(row => !string.IsNullOrWhiteSpace(row.Ensure))
+                        ? "這裡只列啟動資料庫。虛擬機沒開時，下方指令會一併啟動。"
+                        : "這裡只列啟動資料庫，不另外列虛擬機。";
                 sections.Add(new(
                     "runtime",
                     "執行環境",
                     runtimeItems,
-                    "工作區 ai-project.json 宣告的 Podman 虛擬機與資料庫。編譯不看這層；跑測試與被點名的服務啟動會先看。"));
+                    runtimeNote));
             }
         }
         sections.Add(new("agent", "Agent 後端", agentItems, "可在設定切換目前後端。", "prefs-agent"));
@@ -329,8 +334,24 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         }
 
         var items = new List<DoctorItem>();
+        var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in runtime.Datastores)
+        {
+            if (!string.IsNullOrEmpty(row.RuntimeId))
+                covered.Add(row.RuntimeId);
+            var ready = row.State == RuntimeProbeState.Ready;
+            items.Add(new(
+                row.Label,
+                DatastoreRequirementText(row),
+                ready ? DoctorLevel.Ok : DoctorLevel.Missing,
+                Detail: DatastoreDetail(row),
+                HowTo: ready ? null : row.HowTo,
+                Badge: ready ? "就緒" : "未就緒"));
+        }
         foreach (var row in runtime.Runtimes)
         {
+            if (covered.Contains(row.Id))
+                continue;
             items.Add(new(
                 row.Machine,
                 row.Headline,
@@ -339,17 +360,26 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
                 HowTo: row.HowTo,
                 Badge: row.State == RuntimeProbeState.Ready ? "已啟動" : "未就緒"));
         }
-        foreach (var row in runtime.Datastores)
-        {
-            items.Add(new(
-                row.Label,
-                row.Headline,
-                row.State == RuntimeProbeState.Ready ? DoctorLevel.Ok : DoctorLevel.Missing,
-                Detail: row.Detail,
-                HowTo: row.HowTo,
-                Badge: row.State == RuntimeProbeState.Ready ? "就緒" : "未就緒"));
-        }
         return items;
+    }
+
+    internal static string DatastoreRequirementText(DatastoreProbeItem row) =>
+        row.State == RuntimeProbeState.Ready
+            ? row.Headline
+            : $"需要啟動資料庫：{row.Label}";
+
+    static string? DatastoreDetail(DatastoreProbeItem row)
+    {
+        if (row.State == RuntimeProbeState.Ready)
+            return null;
+        if (!string.IsNullOrWhiteSpace(row.Detail))
+            return row.Detail;
+        if (!string.IsNullOrWhiteSpace(row.Ensure))
+            return null;
+        if (!string.IsNullOrWhiteSpace(row.Headline)
+            && !row.Headline.Equals(DatastoreRequirementText(row), StringComparison.Ordinal))
+            return row.Headline;
+        return null;
     }
 
     static List<DoctorItem> BuildToolchainItems(
@@ -524,10 +554,23 @@ public sealed record DoctorSnapshot(IReadOnlyList<DoctorSection> Sections, strin
         {
             lines.Add("");
             lines.Add("執行環境：");
-            foreach (var row in runtime.Runtimes)
-                lines.Add($"  - {row.Headline}");
+            var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in runtime.Datastores)
-                lines.Add($"  - {row.Headline}" + (string.IsNullOrEmpty(row.Detail) ? "" : $"（{row.Detail}）"));
+            {
+                if (!string.IsNullOrEmpty(row.RuntimeId))
+                    covered.Add(row.RuntimeId);
+                var text = DatastoreRequirementText(row);
+                if (!string.IsNullOrEmpty(row.Detail))
+                    text += $"（{row.Detail}）";
+                lines.Add($"  - {text}");
+                if (row.State != RuntimeProbeState.Ready && !string.IsNullOrWhiteSpace(row.HowTo))
+                    lines.Add($"    {row.HowTo}");
+            }
+            foreach (var row in runtime.Runtimes)
+            {
+                if (!covered.Contains(row.Id))
+                    lines.Add($"  - {row.Headline}");
+            }
         }
         else if (WorkspaceRuntimeManifest.Declared(catalog))
         {

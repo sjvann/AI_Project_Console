@@ -252,6 +252,7 @@ public sealed partial class ConsoleSession : IDisposable
     private DateTimeOffset _doctorHintUtc = DateTimeOffset.MinValue;
     private string _doctorHintAttention = "";
     public bool DoctorCopied { get; private set; }
+    public string? DoctorHowToCopied { get; private set; }
     public ReleaseListView? ReleaseList { get; private set; }
     public InfoReport? InfoReport { get; private set; }
     public JobResultView? JobResult { get; private set; }
@@ -2841,6 +2842,7 @@ public sealed partial class ConsoleSession : IDisposable
         _doctorHintUtc = DateTimeOffset.UtcNow;
         _doctorHintAttention = RuntimeReport.Attention ?? "";
         DoctorCopied = false;
+        DoctorHowToCopied = null;
         Dialog = "doctor";
         Notify();
         _ = RefreshGitStatusThenNotifyAsync();
@@ -2859,6 +2861,24 @@ public sealed partial class ConsoleSession : IDisposable
         catch
         {
             DoctorCopied = false;
+            JobText = "無法複製到剪貼簿。";
+        }
+        Notify();
+    }
+
+    public async Task CopyDoctorHowToAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || Js is null)
+            return;
+        try
+        {
+            await Js.InvokeVoidAsync("aiConsole.copyText", text).ConfigureAwait(false);
+            DoctorHowToCopied = text;
+            JobText = "已複製啟動指令。";
+        }
+        catch
+        {
+            DoctorHowToCopied = null;
             JobText = "無法複製到剪貼簿。";
         }
         Notify();
@@ -4518,6 +4538,7 @@ public sealed partial class ConsoleSession : IDisposable
         CompleteLeaveGate(false);
         DoctorView = null;
         DoctorCopied = false;
+        DoctorHowToCopied = null;
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;
@@ -5885,6 +5906,7 @@ public sealed partial class ConsoleSession : IDisposable
         Dialog = null;
         DoctorView = null;
         DoctorCopied = false;
+        DoctorHowToCopied = null;
         ReleaseList = null;
         InfoReport = null;
         JobResult = null;

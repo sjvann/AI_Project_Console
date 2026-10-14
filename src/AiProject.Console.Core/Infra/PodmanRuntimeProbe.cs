@@ -302,7 +302,8 @@ public static class WorkspaceRuntimeEvaluator
                 RuntimeMessages.UnknownRuntime(store.Label, store.RuntimeId),
                 null,
                 "datastores[].runtime 要對到 runtimes[].id。",
-                store.RequiredBy);
+                store.RequiredBy,
+                store.Ensure);
         }
         if (runtime.State != RuntimeProbeState.Ready)
             return Inherit(store, runtime);
@@ -329,7 +330,8 @@ public static class WorkspaceRuntimeEvaluator
                 $"{store.Label} 已就緒",
                 null,
                 null,
-                store.RequiredBy);
+                store.RequiredBy,
+                store.Ensure);
         }
         return new DatastoreProbeItem(
             store.Id,
@@ -338,8 +340,9 @@ public static class WorkspaceRuntimeEvaluator
             RuntimeProbeState.Blocked,
             RuntimeMessages.DatastoreDown(store.Label),
             string.Join(" ", reasons),
-            string.Join(" ", reasons),
-            store.RequiredBy);
+            string.IsNullOrWhiteSpace(store.Ensure) ? string.Join(" ", reasons) : store.Ensure.Trim(),
+            store.RequiredBy,
+            store.Ensure);
     }
 
     static DatastoreProbeItem Inherit(DatastoreDeclaration store, IReadOnlyDictionary<string, RuntimeProbeItem> runtimes)
@@ -354,7 +357,8 @@ public static class WorkspaceRuntimeEvaluator
                 RuntimeMessages.UnknownRuntime(store.Label, store.RuntimeId),
                 null,
                 null,
-                store.RequiredBy);
+                store.RequiredBy,
+                store.Ensure);
         }
         return Inherit(store, runtime);
     }
@@ -367,8 +371,9 @@ public static class WorkspaceRuntimeEvaluator
             RuntimeProbeState.Blocked,
             runtime.Headline,
             runtime.Detail,
-            runtime.HowTo,
-            store.RequiredBy);
+            string.IsNullOrWhiteSpace(store.Ensure) ? runtime.HowTo : store.Ensure.Trim(),
+            store.RequiredBy,
+            store.Ensure);
 
     static RuntimeProbeItem Blocked(RuntimeDeclaration declared, string headline, string? detail, string? howTo) =>
         new(declared.Id, declared.Kind, declared.Machine, RuntimeProbeState.Blocked, headline, detail, howTo);

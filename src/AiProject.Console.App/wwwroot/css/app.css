@@ -404,6 +404,9 @@ button.gh-id.is-muted { color: var(--muted); }
 .doctor-action { margin-top: 6px; padding: 0; }
 .doctor-action-btn { margin-top: 8px; }
 .doctor-howto { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--row-alt); color: var(--text); font: 12px/1.5 "Cascadia Mono", Consolas, monospace; font-weight: 400; white-space: pre-wrap; grid-column: 1 / -1; }
+.doctor-howto-line { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.doctor-howto-line > .doctor-howto { flex: 1; margin: 0; min-width: 0; grid-column: auto; }
+.doctor-copy { flex: none; white-space: nowrap; }
 .doctor-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; }
 select.history { max-width: 360px; padding: 6px 8px; }
 label.check { display: flex; align-items: center; gap: 6px; color: var(--muted); }
