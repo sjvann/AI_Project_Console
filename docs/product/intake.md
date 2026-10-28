@@ -4,7 +4,7 @@ title: 進件（產品）
 
 # 進件（產品）
 
-**現況：** 控制台需求工作台已出貨。畫面與關卡見 [需求工作台](../user/intake.md)。資料寫在目前工作區 `docs/product/intake.json`（以及 `intake-assets/`），那是**被管專案**的進件，不是本規格書。一筆進件開一張 GitHub Issue；必填標題與說明，指派與截圖可選。
+**現況：** 控制台需求工作台已出貨。畫面與關卡見 [需求工作台](../user/intake.md)。資料寫在目前工作區 `docs/product/intake.json`（以及 `intake-assets/`），那是**被管專案**的進件，不是本規格書。一筆進件開一張 GitHub Issue；必填標題與說明。指派從此倉 GitHub 可指派帳號下拉選擇，可留空；截圖可選。
 
 **規劃：**
 

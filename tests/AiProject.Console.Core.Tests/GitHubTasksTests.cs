@@ -5,6 +5,28 @@ namespace AiProject.Console.Core.Tests;
 
 public class GitHubTasksTests
 {
+    [Theory]
+    [InlineData("", 0)]
+    [InlineData(" \n\t", 0)]
+    [InlineData("ada\nAda\n  hubot \r\nnot a login!!\n-bad\n", 2)]
+    public void ParseLogins_KeepsDistinctGithubLogins(string stdout, int count)
+    {
+        var logins = GitHubIssues.ParseLogins(stdout);
+        Assert.Equal(count, logins.Count);
+        if (count == 2)
+            Assert.Equal(["ada", "hubot"], logins);
+    }
+
+    [Theory]
+    [InlineData("octocat", true)]
+    [InlineData("a-b", true)]
+    [InlineData("-ab", false)]
+    [InlineData("ab-", false)]
+    [InlineData("not a login", false)]
+    [InlineData("", false)]
+    public void IsLogin_MatchesGithubLogin(string value, bool expected) =>
+        Assert.Equal(expected, GitHubIssues.IsLogin(value));
+
     [Fact]
     public void LooksGithubHosted_FromSlugOrUrl()
     {

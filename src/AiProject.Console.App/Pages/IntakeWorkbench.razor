@@ -89,7 +89,13 @@
                 <div class="field"><span>標題</span><input @bind="intake.Title" @bind:after="S.PersistIntake" /></div>
                 <div class="field">
                     <span>指派</span>
-                    <input @bind="intake.Assignee" @bind:after="S.PersistIntake" placeholder="GitHub 帳號（可選）" list="collab-list" />
+                    <select aria-label="指派" value="@AssigneeValue(intake)" @onchange="e => SetAssignee(intake, e)">
+                        <option value="">未指派</option>
+                        @foreach (var login in AssigneeChoices(intake))
+                        {
+                            <option value="@login">@login</option>
+                        }
+                    </select>
                 </div>
                 @if (string.IsNullOrWhiteSpace(intake.GithubSlug))
                 {
@@ -97,6 +103,10 @@
                 }
             </div>
             <p class="hint">目標倉由目前專案自動帶入。必填標題與說明；指派與截圖可選。</p>
+            @if (!string.IsNullOrEmpty(S.AssignableHint))
+            {
+                <p class="hint">@S.AssignableHint</p>
+            }
             <div class="field" style="align-items:start"><span>說明</span><textarea @bind="intake.Body" @bind:after="S.PersistIntake"></textarea></div>
             @if (intake.Items.FirstOrDefault(i => i.HasIssue) is { } issued)
             {
@@ -119,12 +129,6 @@
             </div>
             <p class="hint">可選。發出時會跟進件表一併提交並推到遠端，Issue 會附上連結。</p>
             <IntakeVisualList Items="intake.Sketches" />
-            <datalist id="collab-list">
-                @foreach (var login in S.Collaborators)
-                {
-                    <option value="@login"></option>
-                }
-            </datalist>
 
             <div class="intake-actions">
                 <button class="btn-primary" disabled="@(S.IntakeBusy || intake.IsPaused || intake.IsRecalled || intake.IssuedCount > 0)" @onclick="S.PublishSelectedAsync">發出並指派</button>
@@ -170,6 +174,32 @@
 </div>
 
 @code {
+    string AssigneeValue(IntakeRecord intake)
+    {
+        var current = (intake.Assignee ?? "").Trim().TrimStart('@');
+        if (string.IsNullOrEmpty(current))
+            return "";
+        return S.AssignableLogins.FirstOrDefault(login =>
+            string.Equals(login, current, StringComparison.OrdinalIgnoreCase)) ?? current;
+    }
+
+    IEnumerable<string> AssigneeChoices(IntakeRecord intake)
+    {
+        var current = AssigneeValue(intake);
+        var listed = S.AssignableLogins.Any(login =>
+            string.Equals(login, current, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(current) && !listed)
+            yield return current;
+        foreach (var login in S.AssignableLogins)
+            yield return login;
+    }
+
+    void SetAssignee(IntakeRecord intake, ChangeEventArgs e)
+    {
+        intake.Assignee = (e.Value?.ToString() ?? "").Trim().TrimStart('@');
+        S.PersistIntake();
+    }
+
     protected override async Task OnAfterRenderAsync(bool first)
     {
         await Js.InvokeVoidAsync("aiConsole.initSplitter", "intake-split", new

@@ -5952,7 +5952,8 @@ public sealed partial class ConsoleSession : IDisposable
         SelectedIntakeId = null;
         IntakeHint = "";
         IntakeBusy = false;
-        Collaborators = [];
+        AssignableLogins = [];
+        AssignableHint = "";
         GovernanceIssues = [];
         ClearIssueLists();
         ClearDocsState();

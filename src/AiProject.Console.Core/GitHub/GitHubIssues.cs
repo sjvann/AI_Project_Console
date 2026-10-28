@@ -295,7 +295,8 @@ public static class GitHubIssues
             throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法關閉 Issue #{number}。" : output);
     }
 
-    public static async Task<IReadOnlyList<string>> ListCollaboratorsAsync(
+    /// <summary>此倉可被指派 Issue 的帳號。呼叫失敗回 null；成功但沒有人回空清單。</summary>
+    public static async Task<IReadOnlyList<string>?> ListAssignableAsync(
         string cwd,
         GithubConfig cfg,
         CancellationToken ct = default)
@@ -303,14 +304,41 @@ public static class GitHubIssues
         var slug = cfg.Slug();
         if (string.IsNullOrEmpty(slug))
             return [];
-        var args = new List<string> { "api", $"repos/{slug}/collaborators", "--jq", ".[].login" };
+        var args = new List<string>
+        {
+            "api", "--paginate",
+            $"repos/{slug}/assignees?per_page=100",
+            "--jq", ".[].login",
+        };
         var (code, stdout, _) = await GhCli.RunCaptureAsync(args, cwd, cfg, 60_000, ct).ConfigureAwait(false);
-        if (code != 0 || string.IsNullOrWhiteSpace(stdout))
-            return [];
-        return stdout.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(s => !string.IsNullOrWhiteSpace(s))
+        if (code != 0)
+            return null;
+        return ParseLogins(stdout);
+    }
+
+    public static IReadOnlyList<string> ParseLogins(string? stdout) =>
+        (stdout ?? "")
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(IsLogin)
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    public static bool IsLogin(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        var login = value.Trim();
+        if (login.Length is < 1 or > 39)
+            return false;
+        if (login[0] == '-' || login[^1] == '-')
+            return false;
+        foreach (var c in login)
+        {
+            if (c is not ((>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '-'))
+                return false;
+        }
+        return true;
     }
 
     public static (int Number, string Url) ParseCreated(string output, GithubConfig? cfg = null)

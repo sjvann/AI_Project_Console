@@ -11,7 +11,8 @@ public sealed partial class ConsoleSession
     public string? SelectedIntakeId { get; private set; }
     public string IntakeHint { get; private set; } = "";
     public bool IntakeBusy { get; private set; }
-    public IReadOnlyList<string> Collaborators { get; private set; } = [];
+    public IReadOnlyList<string> AssignableLogins { get; private set; } = [];
+    public string AssignableHint { get; private set; } = "";
     public IReadOnlyList<GithubIssue> GovernanceIssues { get; private set; } = [];
     public string HoldNoteDraft { get; set; } = "";
 
@@ -461,31 +462,62 @@ public sealed partial class ConsoleSession
         }
     }
 
-    public async Task LoadCollaboratorsAsync()
+    async Task ApplyAssignableAsync(GithubConfig cfg)
     {
         if (Catalog is null)
             return;
         try
         {
-            var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
-            Collaborators = await GitHubIssues.ListCollaboratorsAsync(Catalog.Root, cfg, _cts.Token).ConfigureAwait(false);
+            if (!GithubLoggedIn || !GitIssuesReady || string.IsNullOrEmpty(cfg.Slug()))
+            {
+                AssignableLogins = [];
+                AssignableHint = "";
+            }
+            else
+            {
+                var list = await GitHubIssues.ListAssignableAsync(Catalog.Root, cfg, _cts.Token).ConfigureAwait(false);
+                if (list is null)
+                {
+                    AssignableHint = AssignableLogins.Count == 0
+                        ? "讀不到 GitHub 可指派帳號，仍可不指派。"
+                        : "";
+                }
+                else
+                {
+                    AssignableLogins = list;
+                    AssignableHint = list.Count == 0 ? "此倉沒有可指派帳號，仍可不指派。" : "";
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
         catch
         {
-            Collaborators = [];
+            AssignableHint = AssignableLogins.Count == 0
+                ? "讀不到 GitHub 可指派帳號，仍可不指派。"
+                : "";
         }
         Notify();
     }
 
     async Task RefreshIntakeRemoteAsync()
     {
-        if (Catalog is null || IntakeDoc.Intakes.Count == 0)
+        if (Catalog is null)
             return;
         IntakeBusy = true;
+        AssignableHint = "";
         Notify();
         try
         {
             var cfg = await GithubConfigResolver.ResolveAsync(Catalog).ConfigureAwait(false);
+            var assignableTask = ApplyAssignableAsync(cfg);
+            if (IntakeDoc.Intakes.Count == 0)
+            {
+                await assignableTask.ConfigureAwait(false);
+                return;
+            }
             var numbers = IntakeDoc.Intakes.SelectMany(i => i.Items)
                 .Where(i => i.HasIssue)
                 .Select(i => i.IssueNumber!.Value)
@@ -494,6 +526,7 @@ public sealed partial class ConsoleSession
             if (numbers.Count == 0)
             {
                 DeriveLocalStages();
+                await assignableTask.ConfigureAwait(false);
                 return;
             }
             if (GitIssuesReady && GithubLoggedIn)
@@ -525,8 +558,7 @@ public sealed partial class ConsoleSession
                 IntakeLifecycle.ApplyTraces(intake, map);
             }
             IntakeStore.Save(Catalog.Root, IntakeDoc);
-            if (Collaborators.Count == 0)
-                await LoadCollaboratorsAsync().ConfigureAwait(false);
+            await assignableTask.ConfigureAwait(false);
         }
         catch (Exception ex)
         {
