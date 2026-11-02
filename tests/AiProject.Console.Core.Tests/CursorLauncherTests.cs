@@ -56,6 +56,45 @@ public class CursorLauncherTests
     }
 
     [Fact]
+    public void LinuxInstallCandidates_IncludeDebAndUserPaths()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "cursor-home-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(home, "Applications"));
+        var appImage = Path.Combine(home, "Applications", "Cursor-1.0.AppImage");
+        File.WriteAllText(appImage, "image");
+        try
+        {
+            var paths = CursorLauncher.LinuxInstallCandidates(home);
+            Assert.Contains("/usr/bin/cursor", paths);
+            Assert.Contains("/usr/share/cursor/resources/app/bin/cursor", paths);
+            Assert.Contains(Path.Combine(home, ".local", "bin", "cursor"), paths);
+            Assert.Contains(appImage, paths);
+        }
+        finally
+        {
+            Directory.Delete(home, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void WorkspaceArgs_OnLinuxStartWithNoSandbox()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cursor-args-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var args = CursorLauncher.WorkspaceArgs(root, noSandbox: true);
+            Assert.Equal("--no-sandbox", args[0]);
+            Assert.Contains(Path.GetFullPath(root), args);
+            Assert.DoesNotContain("--no-sandbox", CursorLauncher.WorkspaceArgs(root, noSandbox: false));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void TitleMatches_FullPathInTitle()
     {
         var root = Path.Combine(Path.GetTempPath(), "ai-ws-title-" + Guid.NewGuid().ToString("N"));

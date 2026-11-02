@@ -32,6 +32,7 @@ public sealed record PackedReleaseAssets(
 public static class ConsoleReleasePack
 {
     public const string WindowsRuntime = "win-x64";
+    public const string UnixWorkflowFile = "pack-unix.yml";
 
     public static bool LooksPackable(string? root)
     {
@@ -45,6 +46,12 @@ public static class ConsoleReleasePack
 
     public static string IssPath(string root) =>
         Path.Combine(Path.GetFullPath(root), "installer", "windows", "setup.iss");
+
+    public static string UnixWorkflowPath(string root) =>
+        Path.Combine(Path.GetFullPath(root), ".github", "workflows", UnixWorkflowFile);
+
+    public static bool HasUnixWorkflow(string? root) =>
+        !string.IsNullOrWhiteSpace(root) && File.Exists(UnixWorkflowPath(root));
 
     public static string BareVersion(string? tag)
     {
@@ -103,15 +110,63 @@ public static class ConsoleReleasePack
         return string.Join('\n', lines);
     }
 
-    public static string MergeNotes(string? userNotes, PackedReleaseAssets packed)
+    public static string UnixDownloadNotes(string version)
+    {
+        var v = (version ?? "").Trim();
+        return string.Join('\n',
+        [
+            "### macOS／Linux",
+            "",
+            $"- **AI_Project_Console-{v}-osx-arm64.zip**：Apple Silicon。解壓後把 AI_Project_Console.app 拖到「應用程式」。未公證時請右鍵「打開」。",
+            $"- **AI_Project_Console-{v}-osx-x64.zip**：Intel Mac，安裝方式同上。",
+            $"- **AI_Project_Console-{v}-linux-x64.zip**：x86_64。解壓後執行 ./install.sh。",
+            $"- **AI_Project_Console-{v}-linux-arm64.zip**：aarch64，方式同上。uname -m 為 x86_64 請勿使用此檔。",
+            $"- **AI_Project_Console-{v}-linux-x64.deb**／**linux-arm64.deb**：`sudo apt install ./檔名.deb`。架構須與 uname -m 相符。",
+            "",
+            "macOS／Linux 由 GitHub Actions 的 Pack Unix 附加到這個 Release，不使用 Windows 交叉編譯的 zip。",
+        ]);
+    }
+
+    public static string MergeNotes(string? userNotes, PackedReleaseAssets packed, bool includeUnix = false)
     {
         var extra = (userNotes ?? "").Trim();
-        if (!packed.HasSetup && !packed.HasZip)
-            return extra;
-        if (extra.Contains("-setup.exe", StringComparison.OrdinalIgnoreCase))
-            return extra;
-        var download = DownloadNotes(packed);
-        return string.IsNullOrEmpty(extra) ? download : extra + "\n\n" + download;
+        var body = extra;
+        var hasWindowsNotes = extra.Contains("-setup.exe", StringComparison.OrdinalIgnoreCase);
+        if ((packed.HasSetup || packed.HasZip) && !hasWindowsNotes)
+        {
+            var download = DownloadNotes(packed);
+            body = string.IsNullOrEmpty(extra) ? download : extra + "\n\n" + download;
+        }
+        if (!includeUnix || body.Contains("osx-arm64.zip", StringComparison.OrdinalIgnoreCase))
+            return body;
+        var unix = UnixDownloadNotes(packed.Version);
+        return string.IsNullOrEmpty(body) ? unix : body.TrimEnd() + "\n\n" + unix;
+    }
+
+    public static IReadOnlyList<string> UnixWorkflowArgs(string version, string? gitRef)
+    {
+        var args = new List<string>
+        {
+            "workflow", "run", UnixWorkflowFile,
+            "-f", "version=" + (version ?? "").Trim(),
+            "-f", "upload_release=true",
+        };
+        if (!string.IsNullOrWhiteSpace(gitRef))
+        {
+            args.Add("--ref");
+            args.Add(gitRef.Trim());
+        }
+        return args;
+    }
+
+    public static string UnixDispatchMessage(string version, string? runUrl)
+    {
+        var msg =
+            $"已啟動 Pack Unix（{version}）。macOS（osx-arm64、osx-x64）與 Linux（linux-x64、linux-arm64 的 zip 與 .deb）會在該工作流程完成後出現在同一個 Release。"
+            + "工作流程用的是遠端已推送的程式，請先發布再發行。";
+        if (!string.IsNullOrWhiteSpace(runUrl))
+            msg += "\n" + runUrl.Trim();
+        return msg;
     }
 
     public static PackedReleaseAssets FromAssetPaths(string tag, IEnumerable<string> paths, string runtimeId = WindowsRuntime)

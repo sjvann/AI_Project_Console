@@ -31,19 +31,32 @@ internal static class IdeWorkspaceLaunch
         string root,
         bool reuseWindow = false,
         IEnumerable<string>? extraPaths = null,
-        string? displayName = null)
+        string? displayName = null,
+        IReadOnlyList<string>? leadingArgs = null)
     {
         var target = Path.GetFullPath(root);
         if (!File.Exists(target) && !Directory.Exists(target))
             return $"路徑不存在：{target}";
+        var args = new List<string>();
+        if (leadingArgs is not null)
+            args.AddRange(leadingArgs);
+        args.AddRange(OpenArgs(target, reuseWindow, extraPaths));
+        return Start(cli, args, displayName);
+    }
+
+    internal static string? Start(string cli, IReadOnlyList<string> args, string? displayName = null)
+    {
+        var capture = OperatingSystem.IsWindows();
         var psi = new ProcessStartInfo(cli)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = capture,
+            RedirectStandardError = capture,
         };
-        foreach (var arg in OpenArgs(target, reuseWindow, extraPaths))
+        if (!capture)
+            psi.Environment.Remove("ELECTRON_RUN_AS_NODE");
+        foreach (var arg in args)
             psi.ArgumentList.Add(arg);
         try
         {

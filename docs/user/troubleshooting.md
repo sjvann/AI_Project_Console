@@ -127,6 +127,7 @@ sudo apt install libwebkit2gtk-4.1-0 libnotify4 libgtk-3-0t64 || sudo apt instal
 |------|------|
 | 設定裡後端不可用 | 換已安裝的後端，或填 CLI 路徑覆寫 |
 | Cursor 沒開 New Agent | 確認已裝 Cursor；可改勾「同時開啟」並手動在 Cursor 貼提示 |
+| Ubuntu 上按了沒有打開 Cursor | 安裝官方 `.deb`（會有 `/usr/bin/cursor`）。控制台會改找 `/usr/share/cursor` 與 `~/.local/bin`，並加上 `--no-sandbox`（Ubuntu 24.04 的沙箱常讓視窗起不來）。只放著 AppImage、沒有可執行的 `cursor` 時仍會失敗 |
 | VS Code／Windsurf | 設計就是開資料夾 + 複製提示，請到 Copilot／Cascade 貼上 |
 | 自訂命令沒跑 | 檢查 `{root}`／`{promptFile}` 範本與 PATH |
 
@@ -158,7 +159,7 @@ sudo apt install libwebkit2gtk-4.1-0 libnotify4 libgtk-3-0t64 || sudo apt instal
 
 - 開發模式（`dotnet run`）不能用「立即更新」覆蓋。
 - 橫幅被「稍後再說」略過後，同一版號不會再煩你，直到更新的 tag。
-- 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少你這個平台的安裝檔（Windows 要 `*-win-x64-setup.exe`；macOS／Linux 要檔名含目前 RID 的 `.zip`）。Windows 請用 GitHub 操作台「發行 Release…」補上；macOS／Linux 請跑 Pack Unix 工作流程。
+- 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少你這個平台的安裝檔（Windows 要 `*-win-x64-setup.exe`；macOS／Linux 要檔名含目前 RID 的 `.zip`）。用 GitHub 操作台「發行 Release…」會先上傳 Windows，並啟動 Pack Unix；macOS／Linux 的 zip 要等 Actions 的 Pack Unix 跑完才出現。
 - 發行進度停在「編譯 Windows 執行檔」：這一步可能要 1–3 分鐘，視窗會顯示已過時間與紀錄。找不到 Inno Setup 會立刻失敗並附上安裝連結。
 - 可到設定按「檢查更新」（會問是否包含 RC）。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。也可「從檔案更新…」選已下載的 setup／zip。
 

@@ -461,6 +461,72 @@ public class DailyWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task SwitchBranch_KeepsSlashInLocalName()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-slash-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+            await GitHubService.CommitAsync(root, "seed");
+            await CliUtil.RunAsync("git", ["branch", "-M", "main"], root);
+            await GitHubService.CreateBranchAsync(root, "variant/nursing-home");
+            await GitHubService.SwitchBranchAsync(root, "main");
+
+            var switched = await GitHubService.SwitchBranchAsync(root, "variant/nursing-home");
+            Assert.Contains("variant/nursing-home", switched);
+            var brief = await GitHubService.TryBriefStatusAsync(root);
+            Assert.Equal("variant/nursing-home", brief?.Branch);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task SwitchBranch_StripsRemotePrefixOnly()
+    {
+        if (!CliUtil.CommandExists("git"))
+            return;
+        var origin = Path.Combine(Path.GetTempPath(), "ai-console-origin-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "ai-console-remote-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(origin);
+        Directory.CreateDirectory(root);
+        try
+        {
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init", "--bare"], origin)).Code);
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["init"], root)).Code);
+            await CliUtil.RunAsync("git", ["config", "user.email", "test@example.com"], root);
+            await CliUtil.RunAsync("git", ["config", "user.name", "Test"], root);
+            File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+            await GitHubService.CommitAsync(root, "seed");
+            await CliUtil.RunAsync("git", ["branch", "-M", "main"], root);
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["remote", "add", "origin", origin], root)).Code);
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["push", "-u", "origin", "main"], root)).Code);
+            await GitHubService.CreateBranchAsync(root, "feat/login");
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["push", "-u", "origin", "feat/login"], root)).Code);
+            await GitHubService.SwitchBranchAsync(root, "main");
+            Assert.Equal(0, (await CliUtil.RunAsync("git", ["branch", "-D", "feat/login"], root)).Code);
+
+            var switched = await GitHubService.SwitchBranchAsync(root, "origin/feat/login");
+            Assert.Contains("feat/login", switched);
+            var brief = await GitHubService.TryBriefStatusAsync(root);
+            Assert.Equal("feat/login", brief?.Branch);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+            TryDeleteDirectory(origin);
+        }
+    }
+
     static void TryDeleteDirectory(string root)
     {
         if (!Directory.Exists(root))

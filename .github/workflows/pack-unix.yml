@@ -1,6 +1,8 @@
 name: Pack Unix
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -25,8 +27,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: pack-unix-${{ github.ref }}-${{ inputs.version || github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: pack-unix-${{ github.event.release.tag_name || inputs.version || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -39,7 +41,12 @@ jobs:
       - id: set
         name: Resolve version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
+          if [ "${{ github.event_name }}" = "release" ]; then
+            ver="${{ github.event.release.tag_name }}"
+            ver="${ver#v}"
+            ver="${ver#V}"
+            echo "value=$ver" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.version }}" ]; then
             echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           else
             ver=$(grep -oP 'public const string Version = "\K[^"]+' src/AiProject.Console.Core/AppInfo.cs | head -n 1)
@@ -114,7 +121,7 @@ jobs:
           if-no-files-found: error
 
   upload:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_release }}
+    if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.upload_release) }}
     needs: [version, macos, linux]
     runs-on: ubuntu-latest
     steps:
