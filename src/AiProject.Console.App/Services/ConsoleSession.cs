@@ -4122,6 +4122,9 @@ public sealed partial class ConsoleSession : IDisposable
         extra += ReleaseIncludeSource
             ? "\n會另外上傳原始碼 zip（git archive）。"
             : "\n不另傳原始碼壓縮檔。GitHub 頁面底部仍可能顯示 Source code 連結（平台無法關閉）。";
+        var workflowNote = ReleaseWorkflow.ConfirmNote(Catalog.Root, tag);
+        if (!string.IsNullOrEmpty(workflowNote))
+            extra += "\n" + workflowNote;
         if (!_native.Confirm("發行 Release", $"將在 GitHub 建立 Release（{kind}）：\n{tag}\n標題：{title}{extra}\n\n確定發行？"))
             return;
         var notes = ReleaseNotes;

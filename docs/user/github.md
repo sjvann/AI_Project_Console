@@ -79,7 +79,7 @@ Pulse 有未提交時會直接出現「提交…」。
 
 | 動作 | 說明 |
 |------|------|
-| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 Windows 的 `*-win-x64-setup.exe`／zip。macOS／Linux 請另外跑 GitHub Actions Pack Unix。過程會開進度視窗（步驟＋紀錄）；編譯可能要數分鐘 |
+| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 Windows 的 `*-win-x64-setup.exe`／zip。macOS／Linux 請另外跑 GitHub Actions Pack Unix。其他專案若有會上傳 Release 資產、且可用 `tag` 輸入手動啟動的工作流程：這個 `v` tag 自己不會觸發時，控制台改請**遠端預設分支**上的那支工作流程打包，不必先把工作流程拉進本次 tag。過程會開進度視窗（步驟＋紀錄）；編譯可能要數分鐘 |
 | **Release 列表** | `gh release list` |
 | **開啟 Releases** | 瀏覽器開 GitHub Releases |
 | **開啟倉庫** | 瀏覽器開倉庫首頁 |

@@ -1397,23 +1397,94 @@ public static class GitHubService
         GithubConfig? cfg = null,
         IProgress<string>? progress = null)
     {
+        string message;
         try
         {
-            return await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
+            message = await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (
-            LooksLikeReleaseExists(ex.Message)
-            && (req.IncludeSource || req.Assets is { Count: > 0 }))
+        catch (InvalidOperationException ex) when (LooksLikeReleaseExists(ex.Message))
         {
-            var assets = await PrepareReleaseAssetsAsync(catalog, req, cfg, progress).ConfigureAwait(false);
-            if (assets.Count == 0)
-                throw;
-            progress?.Report(ReleaseRunState.StageLine("upload", "Release 已存在，改為補上傳安裝包…"));
-            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, assets, cfg, progress).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(uploaded)
-                ? $"Release {req.Tag.Trim()} 已存在，已補上安裝包。"
-                : uploaded;
+            message = string.IsNullOrWhiteSpace(ex.Message)
+                ? $"Release {req.Tag.Trim()} 已存在。"
+                : ex.Message.Trim();
+            if (req.IncludeSource || req.Assets is { Count: > 0 })
+            {
+                var assets = await PrepareReleaseAssetsAsync(catalog, req, cfg, progress).ConfigureAwait(false);
+                if (assets.Count > 0)
+                {
+                    progress?.Report(ReleaseRunState.StageLine("upload", "Release 已存在，改為補上傳安裝包…"));
+                    var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, assets, cfg, progress).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(uploaded))
+                        message = uploaded;
+                }
+            }
         }
+
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var follow = await StartProjectReleaseWorkflowAsync(catalog, req, cfg, progress).ConfigureAwait(false);
+        return string.IsNullOrEmpty(follow) ? message : message.TrimEnd() + "\n" + follow;
+    }
+
+    /// <summary>
+    /// 控制台打的 v tag 若不會觸發該 commit 上的發行工作流程，就改請遠端預設分支啟動。
+    /// 打包定義以預設分支為準，不必先把工作流程拉進本次 tag。
+    /// </summary>
+    public static async Task<string> StartProjectReleaseWorkflowAsync(
+        ProjectCatalog catalog,
+        ReleaseRequest req,
+        GithubConfig cfg,
+        IProgress<string>? progress = null)
+    {
+        if (req.Draft)
+            return "";
+        var tag = ReleaseWorkflow.CanonicalTag(req.Tag);
+        if (string.IsNullOrEmpty(tag))
+            return "";
+        var dir = Path.Combine(catalog.Root, ".github", "workflows");
+        if (!Directory.Exists(dir))
+            return "";
+        var commit = string.IsNullOrWhiteSpace(req.Target) ? "HEAD" : req.Target.Trim();
+        var messages = new List<string>();
+        foreach (var file in ReleaseWorkflow.WorkflowFiles(dir))
+        {
+            var name = Path.GetFileName(file);
+            string? local = null;
+            try
+            {
+                local = await File.ReadAllTextAsync(file).ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+            var atTag = await GitShowAsync(catalog.Root, commit, ".github/workflows/" + name).ConfigureAwait(false);
+            var plan = ReleaseWorkflow.Plan(name, atTag, local, tag, cfg.DefaultBranch);
+            if (plan is null)
+                continue;
+            progress?.Report(ReleaseRunState.StageLine(
+                "upload",
+                $"正在請 {plan.Ref} 的 {plan.File} 打包各平台安裝檔…"));
+            var args = ReleaseWorkflow.WorkflowRunArgs(plan);
+            GhCli.AddRepo(args, cfg);
+            var (code, output) = await GhCli.RunAsync(args, catalog.Root, cfg, 60_000).ConfigureAwait(false);
+            if (code != 0)
+            {
+                throw new InvalidOperationException(
+                    "Release 已建立，但無法啟動打包工作流程："
+                    + (string.IsNullOrWhiteSpace(output) ? plan.File : output.Trim()));
+            }
+            messages.Add(
+                $"已請預設分支 {plan.Ref} 的 {plan.File} 為 {plan.Tag} 打包各平台安裝檔。完成後會附在這個 Release，不必先把工作流程拉進 tag。");
+        }
+        return string.Join("\n", messages);
+    }
+
+    static async Task<string?> GitShowAsync(string root, string commit, string path)
+    {
+        var spec = commit + ":" + path.Replace('\\', '/');
+        var (code, stdout, _) = await CliUtil.RunCaptureAsync(
+            "git", ["show", spec], root, 30_000).ConfigureAwait(false);
+        return code == 0 ? stdout : null;
     }
 
     public static async Task<string> UploadReleaseAssetsAsync(
