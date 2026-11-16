@@ -106,6 +106,11 @@ public class ConsoleReleasePackTests
 
             var already = ConsoleReleasePack.MergeNotes("已含 AI_Project_Console-0.6.10-win-x64-setup.exe", packed);
             Assert.Equal("已含 AI_Project_Console-0.6.10-win-x64-setup.exe", already);
+
+            var withUnix = ConsoleReleasePack.MergeNotes(already, packed, includeUnix: true);
+            Assert.Contains("osx-arm64.zip", withUnix);
+            Assert.Contains("linux-x64.deb", withUnix);
+            Assert.Contains("win-x64-setup.exe", withUnix);
         }
         finally
         {
@@ -176,6 +181,33 @@ public class ConsoleReleasePackTests
     }
 
     [Fact]
+    public void UnixWorkflow_ArgsAndDispatchMessage()
+    {
+        var root = NewTemp();
+        try
+        {
+            Assert.False(ConsoleReleasePack.HasUnixWorkflow(root));
+            var workflow = ConsoleReleasePack.UnixWorkflowPath(root);
+            Directory.CreateDirectory(Path.GetDirectoryName(workflow)!);
+            File.WriteAllText(workflow, "name: Pack Unix\n");
+            Assert.True(ConsoleReleasePack.HasUnixWorkflow(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+
+        var args = ConsoleReleasePack.UnixWorkflowArgs("0.6.25", "main");
+        Assert.Equal(
+            ["workflow", "run", "pack-unix.yml", "-f", "version=0.6.25", "-f", "upload_release=true", "--ref", "main"],
+            args);
+        var message = ConsoleReleasePack.UnixDispatchMessage("0.6.25", "https://github.com/example/actions/runs/1");
+        Assert.Contains("osx-arm64", message);
+        Assert.Contains("linux-arm64", message);
+        Assert.Contains("https://github.com/example/actions/runs/1", message);
+    }
+
+    [Fact]
     public void ReleaseRunState_PublishOnlySkipsPack()
     {
         var run = ReleaseRunState.PublishOnly();
@@ -185,6 +217,10 @@ public class ConsoleReleasePackTests
         run.Succeed("https://github.com/sjvann/AI_Project_Console/releases/tag/v0.6.10");
         Assert.Equal(ReleaseStepStatus.Done, run.Steps.First(s => s.Id == "upload").Status);
         Assert.False(run.Busy);
+
+        var withUnix = ReleaseRunState.PublishOnly(includeUnix: true);
+        Assert.Contains(withUnix.Steps, s => s.Id == "unix" && s.Status == ReleaseStepStatus.Pending);
+        Assert.Equal(ReleaseStepStatus.Skipped, withUnix.Steps.First(s => s.Id == "publish").Status);
     }
 
     [Fact]

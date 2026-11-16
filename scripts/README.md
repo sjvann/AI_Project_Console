@@ -70,7 +70,7 @@ gh workflow run pack-unix.yml -f version=0.3.8 -f upload_release=true
 powershell -ExecutionPolicy Bypass -File scripts/pack-unix.ps1 -Version 0.3.8 -Runtime osx-arm64
 ```
 
-也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節 **Windows** 打包，並把兩個檔附上 Release。畫面會顯示步驟與紀錄（編譯可能要數分鐘）。沒有 `*-win-x64-setup.exe` 時，已安裝 Windows 使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。macOS／Linux 使用者依對應 RID 的 zip。
+也可在控制台 GitHub 操作台按「發行 Release…」：會代跑本節 **Windows** 打包，把兩個檔附上 Release，並啟動 Pack Unix，把 macOS／Linux zip 與 `.deb` 附加到同一個 Release（完成前 Release 頁只有 Windows）。畫面會顯示步驟與紀錄（Windows 編譯可能要數分鐘）。沒有 `*-win-x64-setup.exe` 時，已安裝 Windows 使用者按「立即更新」只能開 GitHub 頁，不會啟動安裝程式。macOS／Linux 使用者依對應 RID 的 zip，檔案由 Pack Unix 產生。
 
 ## 4. 建立 GitHub Release
 

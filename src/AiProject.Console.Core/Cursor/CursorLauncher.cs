@@ -24,17 +24,79 @@ public static class CursorLauncher
     public static string? ResolveCli()
     {
         var found = CliUtil.FindOnPath("cursor");
-        if (found is not null)
+        if (CanLaunch(found))
             return found;
         if (OperatingSystem.IsWindows())
         {
             var local = Environment.GetEnvironmentVariable("LOCALAPPDATA")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "Local");
             var cmd = Path.Combine(local, "Programs", "cursor", "resources", "app", "bin", "cursor.cmd");
-            if (File.Exists(cmd))
+            if (CanLaunch(cmd))
                 return cmd;
         }
+        if (OperatingSystem.IsLinux())
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            foreach (var candidate in LinuxInstallCandidates(home))
+            {
+                if (CanLaunch(candidate))
+                    return candidate;
+            }
+        }
         return null;
+    }
+
+    public static IReadOnlyList<string> LinuxInstallCandidates(string home)
+    {
+        var list = new List<string>
+        {
+            "/usr/bin/cursor",
+            "/usr/local/bin/cursor",
+            "/usr/share/cursor/resources/app/bin/cursor",
+            "/usr/share/cursor/bin/cursor",
+            "/snap/bin/cursor",
+            "/usr/share/cursor/cursor",
+            "/opt/cursor/cursor",
+            "/opt/Cursor/cursor",
+            "/opt/cursor.appimage",
+        };
+        if (!string.IsNullOrWhiteSpace(home))
+        {
+            list.Add(Path.Combine(home, ".local", "bin", "cursor"));
+            list.Add(Path.Combine(home, ".local", "share", "cursor", "cursor"));
+            list.Add(Path.Combine(home, "cursor.AppImage"));
+            list.Add(Path.Combine(home, "Cursor.AppImage"));
+            AddCursorAppImages(list, Path.Combine(home, "Applications"));
+            AddCursorAppImages(list, Path.Combine(home, ".local", "bin"));
+        }
+        AddCursorAppImages(list, "/opt");
+        return list;
+    }
+
+    public static IReadOnlyList<string> WorkspaceArgs(string path, bool noSandbox, bool reuseWindow = false, IEnumerable<string>? extraPaths = null)
+    {
+        var args = new List<string>();
+        if (noSandbox)
+            args.Add("--no-sandbox");
+        args.AddRange(IdeWorkspaceLaunch.OpenArgs(path, reuseWindow, extraPaths));
+        return args;
+    }
+
+    internal static bool CanLaunch(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+        if (OperatingSystem.IsWindows())
+            return true;
+        try
+        {
+            var mode = File.GetUnixFileMode(path);
+            return (mode & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return true;
+        }
     }
 
     public static bool IsCursorRunning() => LocalAppCloser.IsRunning("Cursor", "cursor");
@@ -45,8 +107,14 @@ public static class CursorLauncher
     {
         var cli = ResolveCli();
         if (cli is null)
-            return "找不到 Cursor CLI（請確認已安裝並把 cursor 加到 PATH）";
-        return IdeWorkspaceLaunch.OpenFolder(cli, path, reuseWindow, extraPaths, "Cursor");
+            return "找不到 Cursor。Ubuntu 請安裝官方 .deb（/usr/bin/cursor），或把 cursor 加到 PATH。";
+        return IdeWorkspaceLaunch.OpenFolder(
+            cli,
+            path,
+            reuseWindow,
+            extraPaths,
+            "Cursor",
+            OperatingSystem.IsLinux() ? ["--no-sandbox"] : null);
     }
 
     public static string? CloseCursor(string? workspaceRoot = null) => LocalAppCloser.Close(
@@ -262,6 +330,12 @@ public static class CursorLauncher
     public static string? OpenPromptDeeplink(string prompt)
     {
         var url = PromptDeeplinkUrl(FitPromptForDeeplink(prompt));
+        if (OperatingSystem.IsLinux())
+        {
+            var cli = ResolveCli();
+            if (cli is not null)
+                return IdeWorkspaceLaunch.Start(cli, ["--no-sandbox", url], "Cursor");
+        }
         try
         {
             if (OperatingSystem.IsWindows())
@@ -276,6 +350,27 @@ public static class CursorLauncher
             return $"無法開啟 Cursor New Agent：{ex.Message}";
         }
         return null;
+    }
+
+    static void AddCursorAppImages(List<string> list, string dir)
+    {
+        if (!Directory.Exists(dir))
+            return;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*.AppImage"))
+            {
+                var name = Path.GetFileName(file);
+                if (name.Contains("cursor", StringComparison.OrdinalIgnoreCase) && !list.Contains(file))
+                    list.Add(file);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     public static string? OpenProjectForNewAgent(string root) => OpenInCursor(root);

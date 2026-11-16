@@ -36,7 +36,7 @@ Debug 建置不產生 `AI_Project_Console.exe`（改由 `dotnet.exe` 載入 DLL�
 dotnet publish src/AiProject.Console.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-macOS／Linux 正式包由 GitHub Actions 產出，見 [macOS／Linux 安裝包](pack-unix.md)。此路徑的 `dotnet publish -r osx-arm64` 僅供開發，不會出現在 GitHub Releases 的 Windows 安裝包流程裡。
+macOS／Linux 正式包由 GitHub Actions 產出，見 [macOS／Linux 安裝包](pack-unix.md)。控制台「發行 Release…」會在 Windows 資產上傳後啟動該工作流程。此路徑的 `dotnet publish -r osx-arm64` 僅供開發，不會被控制台當成發行檔上傳。
 
 ## 方案結構
 

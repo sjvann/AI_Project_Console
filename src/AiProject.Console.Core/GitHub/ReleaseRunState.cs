@@ -63,13 +63,13 @@ public sealed class ReleaseRunState
     }
 
     public static ReleaseRunState PackOnly() =>
-        Create("打包 Windows 安裝包", includeUpload: false, skipPack: false);
+        Create("打包 Windows 安裝包", includeUpload: false, skipPack: false, includeUnix: false);
 
-    public static ReleaseRunState PackAndPublish() =>
-        Create("打包並發行 Release", includeUpload: true, skipPack: false);
+    public static ReleaseRunState PackAndPublish(bool includeUnix = false) =>
+        Create("打包並發行 Release", includeUpload: true, skipPack: false, includeUnix);
 
-    public static ReleaseRunState PublishOnly() =>
-        Create("發行 Release", includeUpload: true, skipPack: true);
+    public static ReleaseRunState PublishOnly(bool includeUnix = false) =>
+        Create("發行 Release", includeUpload: true, skipPack: true, includeUnix);
 
     public static string StageLine(string stageId, string message) =>
         StagePrefix + stageId + "|" + message;
@@ -205,7 +205,7 @@ public sealed class ReleaseRunState
         return i < 0 ? t : t[..i];
     }
 
-    static ReleaseRunState Create(string title, bool includeUpload, bool skipPack)
+    static ReleaseRunState Create(string title, bool includeUpload, bool skipPack, bool includeUnix)
     {
         var steps = new List<ReleaseStepState>
         {
@@ -246,14 +246,23 @@ public sealed class ReleaseRunState
             {
                 Id = "upload",
                 Label = "上傳到 GitHub",
-                Hint = "建立 Release 並附加安裝包，視檔案大小與網速而定。",
+                Hint = "建立 Release 並附加 Windows 安裝包，視檔案大小與網速而定。",
+            });
+        }
+        if (includeUnix)
+        {
+            steps.Add(new ReleaseStepState
+            {
+                Id = "unix",
+                Label = "打包 macOS／Linux",
+                Hint = "GitHub Actions 在 macOS 與 Ubuntu 產出 zip 與 deb，完成後附加到這個 Release。",
             });
         }
         if (skipPack)
         {
             foreach (var step in steps)
             {
-                if (step.Id != "upload")
+                if (step.Id is not ("upload" or "unix"))
                     step.Status = ReleaseStepStatus.Skipped;
             }
         }

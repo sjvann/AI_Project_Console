@@ -15,7 +15,7 @@ public sealed class CursorAgentBackend : IAgentBackend
     {
         var cli = Resolve(cliOverride);
         return cli is null
-            ? new AgentDetectResult(false, "找不到 Cursor CLI（請安裝 Cursor 並把 cursor 加到 PATH）")
+            ? new AgentDetectResult(false, "找不到 Cursor。Ubuntu 請安裝官方 .deb，或把 cursor 加到 PATH。")
             : new AgentDetectResult(true, "可用 — " + cli, cli);
     }
 

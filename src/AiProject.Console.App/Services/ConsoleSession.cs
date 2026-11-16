@@ -293,15 +293,25 @@ public sealed partial class ConsoleSession : IDisposable
     public bool ReleaseIncludeSource { get; set; }
     public List<string> ReleaseAssets { get; } = [];
     public bool ReleasePackable { get; private set; }
+    public bool ReleasePacksUnix { get; private set; }
     public bool ReleaseHasSetup => ConsoleReleasePack.HasSetupAsset(ReleaseAssets);
-    public string ReleasePackHint =>
-        !ReleasePackable
-            ? ""
-            : ReleaseHasSetup
-                ? "已附上 *-win-x64-setup.exe。已安裝使用者按「立即更新」會啟動安裝程式。"
+    public string ReleasePackHint
+    {
+        get
+        {
+            if (!ReleasePackable)
+                return "";
+            var unix = ReleasePacksUnix
+                ? "發行時會啟動 GitHub Actions，把 macOS 與 Linux 安裝包附加到同一個 Release。"
+                : "";
+            var win = ReleaseHasSetup
+                ? "已附上 *-win-x64-setup.exe。已安裝的 Windows 使用者按「立即更新」會啟動安裝程式。"
                 : ReleaseDraft
-                    ? "草稿可不附安裝包。正式發行前請打包，否則自動更新會改開 GitHub 頁。"
-                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先打包再上傳，畫面會顯示步驟與紀錄（編譯可能要 1–3 分鐘）。沒有這個檔，自動更新只能開 GitHub 頁。";
+                    ? "草稿可不附 Windows 安裝包。正式發行前請打包，否則 Windows 自動更新會改開 GitHub 頁。"
+                    : "尚未附加 *-win-x64-setup.exe。按「發行」會先打包 Windows 再上傳。沒有這個檔，Windows 自動更新只能開 GitHub 頁。";
+            return win + unix;
+        }
+    }
     public string CommitMessage { get; set; } = "";
     public string CommitSubject { get; set; } = "";
     public string CommitBody { get; set; } = "";
@@ -4112,13 +4122,16 @@ public sealed partial class ConsoleSession : IDisposable
         }
         var packable = ReleasePackable;
         var draft = ReleaseDraft;
+        var includeUnix = packable && ConsoleReleasePack.HasUnixWorkflow(Catalog.Root);
         var needsPack = ConsoleReleasePack.RequiresInstaller(packable, draft)
             && !ConsoleReleasePack.HasSetupAsset(ReleaseAssets);
         var title = string.IsNullOrWhiteSpace(ReleaseTitle) ? tag : ReleaseTitle.Trim();
         var kind = draft ? "草稿" : ReleasePrerelease ? "預發行" : "正式發行";
         var extra = ConsoleReleasePack.RequiresInstaller(packable, draft)
-            ? "\n\n會附加 Windows 安裝包（沒有則先打包，並把版號寫進 AppInfo 等檔案）。畫面會顯示步驟與紀錄，編譯可能要數分鐘。已安裝使用者才能自動啟動安裝程式。"
+            ? "\n\n會附加 Windows 安裝包（沒有則先打包，並把版號寫進 AppInfo 等檔案）。畫面會顯示步驟與紀錄，編譯可能要數分鐘。已安裝的 Windows 使用者才能自動啟動安裝程式。"
             : "";
+        if (includeUnix)
+            extra += "\n\nWindows 上傳後會啟動 Pack Unix：macOS（osx-arm64、osx-x64）與 Linux（linux-x64、linux-arm64 的 zip 與 .deb）在 GitHub Actions 完成後附加到同一個 Release。請先把版號推送到遠端。";
         extra += ReleaseIncludeSource
             ? "\n會另外上傳原始碼 zip（git archive）。"
             : "\n不另傳原始碼壓縮檔。GitHub 頁面底部仍可能顯示 Source code 連結（平台無法關閉）。";
@@ -4134,26 +4147,30 @@ public sealed partial class ConsoleSession : IDisposable
         var generateNotes = ReleaseGenerateNotes;
         var makeLatest = ReleaseMakeLatest;
         var includeSource = ReleaseIncludeSource;
-        var run = needsPack ? ReleaseRunState.PackAndPublish() : ReleaseRunState.PublishOnly();
+        var run = needsPack ? ReleaseRunState.PackAndPublish(includeUnix) : ReleaseRunState.PublishOnly(includeUnix);
         var ok = await RunReleaseProgressAsync(run, returnDialog: null, fn: async progress =>
         {
+            PackedReleaseAssets? packed = null;
             if (ConsoleReleasePack.RequiresInstaller(packable, draft))
             {
                 if (!ConsoleReleasePack.HasSetupAsset(assets))
                 {
-                    var packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
+                    packed = await ConsoleReleasePack.PackAsync(Catalog.Root, tag, progress, _cts.Token).ConfigureAwait(false);
                     foreach (var p in packed.ExistingPaths())
                     {
                         if (!assets.Contains(p))
                             assets.Add(p);
                     }
-                    notes = ConsoleReleasePack.MergeNotes(notes, packed);
                 }
                 else
-                    notes = ConsoleReleasePack.MergeNotes(notes, ConsoleReleasePack.FromAssetPaths(tag, assets));
+                    packed = ConsoleReleasePack.FromAssetPaths(tag, assets);
                 if (!ConsoleReleasePack.HasSetupAsset(assets))
                     throw new InvalidOperationException("正式發行此控制台必須附加 *-win-x64-setup.exe，否則已安裝使用者的自動更新會改開 GitHub 頁。");
             }
+            else if (includeUnix)
+                packed = ConsoleReleasePack.FromAssetPaths(tag, assets);
+            if (packed is not null)
+                notes = ConsoleReleasePack.MergeNotes(notes, packed, includeUnix);
             notes = ReleaseSource.MergeNotes(notes, includeSource);
             var req = new ReleaseRequest(
                 Tag: tag,
@@ -4165,7 +4182,8 @@ public sealed partial class ConsoleSession : IDisposable
                 GenerateNotes: generateNotes,
                 MakeLatest: makeLatest,
                 IncludeSource: includeSource,
-                Assets: assets);
+                Assets: assets,
+                PackUnix: includeUnix);
             return await GitHubService.PublishReleaseAsync(Catalog, req, progress: progress).ConfigureAwait(false);
         }).ConfigureAwait(false);
         if (ok)
@@ -4891,7 +4909,7 @@ public sealed partial class ConsoleSession : IDisposable
         ReleaseMakeLatest = true;
         ReleaseIncludeSource = false;
         ReleaseAssets.Clear();
-        ReleasePackable = ConsoleReleasePack.LooksPackable(Catalog!.Root);
+        SetReleasePackFlags(ConsoleReleasePack.LooksPackable(Catalog!.Root));
         ReleaseLatestTag = "";
         Dialog = "release";
         Notify();
@@ -4907,7 +4925,7 @@ public sealed partial class ConsoleSession : IDisposable
             Notify();
             return;
         }
-        ReleasePackable = inspect.Packable;
+        SetReleasePackFlags(inspect.Packable);
         ReleaseLatestTag = inspect.LatestGithubTag;
         if (inspect.Packable && !inspect.LatestHasSetup && !string.IsNullOrEmpty(inspect.LatestGithubTag))
             ReleaseTag = inspect.LatestGithubTag;
@@ -4926,6 +4944,12 @@ public sealed partial class ConsoleSession : IDisposable
         AttachReleaseDistAssets();
         Dialog = "release";
         Notify();
+    }
+
+    void SetReleasePackFlags(bool packable)
+    {
+        ReleasePackable = packable;
+        ReleasePacksUnix = packable && Catalog is not null && ConsoleReleasePack.HasUnixWorkflow(Catalog.Root);
     }
 
     void AttachReleaseDistAssets()
@@ -5942,7 +5966,7 @@ public sealed partial class ConsoleSession : IDisposable
         ReleaseGenerateNotes = true;
         ReleaseMakeLatest = true;
         ReleaseIncludeSource = false;
-        ReleasePackable = false;
+        SetReleasePackFlags(false);
         ReleaseAssets.Clear();
         _pendingOpenCursor = false;
         GithubAuthBusy = false;

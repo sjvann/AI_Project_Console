@@ -4,6 +4,8 @@
 
 沒有 Mac 時，**不要**把本機 Windows 交叉編譯的 zip 當成正式發行檔。Windows 產出的 zip 會丢掉 Unix 執行權限，也不能 ad-hoc 簽署。正式資產一律由 GitHub Actions 的 `macos-latest`／`ubuntu-latest` 打包並驗證。
 
+GitHub Release 一公開（含預發行，不含草稿），這個工作流程會自己啟動，用該 tag 打包並附加資產。這段 `on: release` 必須已經在預設分支上，否則公開 Release 不會觸發。控制台「發行 Release…」在 Windows 安裝包上傳後也會執行 `gh workflow run pack-unix.yml --ref v版號 -f version=… -f upload_release=true`。Ubuntu 上的 `linux-x64`／`linux-arm64` 與 macOS 要等該次 Actions 完成，檔案才出現在 Release 頁。
+
 ## 資產（與自動更新檔名對齊）
 
 自動更新依 RID 找檔名含該 RID 且以 `.zip` 結尾的資產（與 Windows 的 `*-win-x64.zip` 同一規則）。
