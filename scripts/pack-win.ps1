@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.6.27",
+    [string]$Version = "0.6.28",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [switch]$SkipSign,
