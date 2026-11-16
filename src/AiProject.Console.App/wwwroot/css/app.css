@@ -381,9 +381,11 @@ button.gh-id.is-muted { color: var(--muted); }
 .app-dialog-body { flex: 1; overflow: auto; padding: 12px 18px 4px; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .app-dialog-actions { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
 .release-list { max-height: 360px; overflow: auto; margin: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
-.release-row { display: grid; grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 8px 10px; font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
+.release-row { display: flex; align-items: stretch; width: 100%; border-bottom: 1px solid var(--border); }
 .release-row:last-child { border-bottom: none; }
-.release-row:hover { background: var(--sel); }
+.release-open { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; text-align: left; background: none; border: none; border-radius: 0; padding: 8px 10px; font: 600 13px "Segoe UI", "Noto Sans TC", sans-serif; color: var(--text); }
+.release-open:hover { background: var(--sel); }
+.release-delete { align-self: center; margin-right: 8px; padding: 4px 8px; }
 .release-tag { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; white-space: nowrap; }
 .release-title { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .release-badges { display: inline-flex; gap: 8px; white-space: nowrap; }

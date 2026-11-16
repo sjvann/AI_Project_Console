@@ -4640,6 +4640,26 @@ public sealed partial class ConsoleSession : IDisposable
         _ = GitHubService.OpenReleasesAsync(Catalog, tag: item.Tag);
     }
 
+    public async Task DeleteReleaseAsync(ReleaseItem item)
+    {
+        if (!RequireCatalog() || !item.CanDelete)
+            return;
+        if (JobBusy)
+        {
+            _native.Info("忙碌中", "請等待目前工作完成，再刪除 Release。");
+            return;
+        }
+        if (!_native.Confirm(
+            "刪除 Release",
+            $"要刪除 {item.Tag} 的 GitHub Release 與附加檔嗎？\n\ngit tag 會留下。Latest 不能刪。刪了不能從控制台還原。"))
+            return;
+        await RunJobAsync("刪除 Release…", async () =>
+            (string?)await GitHubService.DeleteReleaseAsync(Catalog!, item.Tag).ConfigureAwait(false)).ConfigureAwait(false);
+        if (JobText is "錯誤" or "已取消")
+            return;
+        await OpenReleaseListAsync().ConfigureAwait(false);
+    }
+
     public void OpenReleaseListOnGithub()
     {
         if (Catalog is null || string.IsNullOrEmpty(ReleaseList?.ReleasesUrl))

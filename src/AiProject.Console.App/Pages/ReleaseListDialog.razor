@@ -18,25 +18,31 @@
             <div class="release-list" role="list">
                 @foreach (var item in list.Items)
                 {
-                    <button type="button" class="release-row" role="listitem" title="在瀏覽器開啟" @onclick="@(() => S.OpenReleaseItem(item))">
-                        <span class="release-tag">@item.Tag</span>
-                        <span class="release-title">@(string.IsNullOrEmpty(item.Title) ? "—" : item.Title)</span>
-                        <span class="release-badges">
-                            @if (item.IsLatest)
-                            {
-                                <span class="doctor-status doctor-ok">Latest</span>
-                            }
-                            @if (item.IsDraft)
-                            {
-                                <span class="doctor-status doctor-warn">草稿</span>
-                            }
-                            @if (item.IsPrerelease)
-                            {
-                                <span class="doctor-status doctor-info">預發行</span>
-                            }
-                        </span>
-                        <span class="release-when">@(string.IsNullOrEmpty(item.PublishedText) ? "—" : item.PublishedText)</span>
-                    </button>
+                    <div class="release-row" role="listitem">
+                        <button type="button" class="release-open" title="在瀏覽器開啟" @onclick="@(() => S.OpenReleaseItem(item))">
+                            <span class="release-tag">@item.Tag</span>
+                            <span class="release-title">@(string.IsNullOrEmpty(item.Title) ? "—" : item.Title)</span>
+                            <span class="release-badges">
+                                @if (item.IsLatest)
+                                {
+                                    <span class="doctor-status doctor-ok">Latest</span>
+                                }
+                                @if (item.IsDraft)
+                                {
+                                    <span class="doctor-status doctor-warn">草稿</span>
+                                }
+                                @if (item.IsPrerelease)
+                                {
+                                    <span class="doctor-status doctor-info">預發行</span>
+                                }
+                            </span>
+                            <span class="release-when">@(string.IsNullOrEmpty(item.PublishedText) ? "—" : item.PublishedText)</span>
+                        </button>
+                        @if (item.CanDelete)
+                        {
+                            <button type="button" class="btn-danger release-delete" disabled="@S.JobBusy" title="刪除這個 Release 與附加檔，git tag 保留" @onclick="@(() => S.DeleteReleaseAsync(item))">刪除</button>
+                        }
+                    </div>
                 }
             </div>
         }
@@ -56,7 +62,7 @@
 
     string Hint =>
         S.ReleaseList is { Items.Count: > 0 }
-            ? "點一列可到該版本的 GitHub 頁。Latest、草稿與預發行用徽章標示。"
+            ? "點一列可到該版本的 GitHub 頁。不是 Latest 的舊版可以刪除 Release 與附加檔；git tag 保留。Latest 不能刪。"
             : "從 GitHub 讀取的最近發行。";
 
     static string Tone(ReleaseListView list) => list.Items.Count == 0 ? "info" : "ok";

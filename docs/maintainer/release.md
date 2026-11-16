@@ -11,3 +11,5 @@
 5. GitHub Actions **Pack Unix**（`version`＝同一版號，勾選 `upload_release`）附加 macOS／Linux zip 與 `.deb`。控制台「發行 Release…」會在 Windows 資產上傳後代跑這一步。
 
 本機 Windows 打包前置：.NET 10 SDK、[Inno Setup 6 或 7](https://jrsoftware.org/isinfo.php)、已登入的 GitHub CLI。要簽署時另需 .NET 8 Runtime、`az login` 與 `installer/windows/trusted-signing.json`。Unix 包前置見 [macOS／Linux 安裝包](pack-unix.md)。
+
+舊版安裝包要收掉時，用操作台 **Release 列表** 刪除該筆 Release。只刪 GitHub Release 與附加檔，不刪 git tag，也不動標成 Latest 的那一版。

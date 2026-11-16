@@ -79,12 +79,8 @@ Pulse 有未提交時會直接出現「提交…」。
 
 | 動作 | 說明 |
 |------|------|
-<<<<<<< HEAD
-| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 Windows 的 `*-win-x64-setup.exe`／zip。macOS／Linux 請另外跑 GitHub Actions Pack Unix。其他專案若有會上傳 Release 資產、且可用 `tag` 輸入手動啟動的工作流程：這個 `v` tag 自己不會觸發時，控制台改請**遠端預設分支**上的那支工作流程打包，不必先把工作流程拉進本次 tag。過程會開進度視窗（步驟＋紀錄）；編譯可能要數分鐘 |
-=======
-| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 Windows 的 `*-win-x64-setup.exe`／zip，並啟動 Pack Unix，把 macOS／Linux 的 zip 與 `.deb` 附加到同一個 Release。過程會開進度視窗（步驟＋紀錄）；Windows 編譯可能要數分鐘，macOS／Linux 在 GitHub Actions 完成後才出現 |
->>>>>>> 04db1c940610ce2ec416f266d419176b63f9305d
-| **Release 列表** | `gh release list` |
+| **發行 Release…** | SemVer 版號（可 Major／Minor／Patch 遞增）、標題、說明；可草稿、預發行、標 Latest、附加檔案。發行**此控制台**時會打包並附上 Windows 的 `*-win-x64-setup.exe`／zip，並啟動 Pack Unix，把 macOS／Linux 的 zip 與 `.deb` 附加到同一個 Release。其他專案若有會上傳 Release 資產、且可用 `tag` 輸入手動啟動的工作流程：這個 `v` tag 自己不會觸發時，控制台改請**遠端預設分支**上的那支工作流程打包，不必先把工作流程拉進本次 tag。過程會開進度視窗（步驟＋紀錄）；Windows 編譯可能要數分鐘，macOS／Linux 在 GitHub Actions 完成後才出現 |
+| **Release 列表** | 最近發行。不是 Latest 的舊版可刪除 GitHub Release 與附加檔；git tag 保留。Latest 不能刪，自動更新靠它 |
 | **開啟 Releases** | 瀏覽器開 GitHub Releases |
 | **開啟倉庫** | 瀏覽器開倉庫首頁 |
 | **建立／開啟 PR** | 已有 PR 則看檢查摘要（能不能請人審）。沒有則用提交說明建立。必須已在功能分支上提交並發布；從預設分支（如 `main`）開會失敗。從「我的任務」視窗建立時會在說明寫入 `Closes #編號`；自己或 Agent 做完再建立。討論後若不是問題請改按「結案」。行內討論仍開遠端網頁 |

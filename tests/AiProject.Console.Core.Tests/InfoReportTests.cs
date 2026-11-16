@@ -20,6 +20,17 @@ public class InfoReportTests
         Assert.Contains("控制台", named.Line());
         Assert.Contains("draft", named.Line());
         Assert.Contains("pre", named.Line());
+        Assert.False(same.CanDelete);
+        Assert.True(named.CanDelete);
+        Assert.False(new ReleaseItem("  ", "old", false, false, false, "").CanDelete);
+    }
+
+    [Fact]
+    public void DeleteReleaseArgs_OmitsTagCleanup()
+    {
+        var args = GitHubService.DeleteReleaseArgs("v0.1.0", new GithubConfig { Owner = "acme", Repo = "app" });
+        Assert.Equal(["release", "delete", "v0.1.0", "--yes", "--repo", "acme/app"], args);
+        Assert.DoesNotContain("--cleanup-tag", args);
     }
 
     [Fact]

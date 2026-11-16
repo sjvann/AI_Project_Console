@@ -233,6 +233,8 @@ public sealed record ReleaseItem(
         }
     }
 
+    public bool CanDelete => !IsLatest && !string.IsNullOrWhiteSpace(Tag);
+
     public string Line()
     {
         var flags = new List<string>();
@@ -1417,21 +1419,13 @@ public static class GitHubService
         GithubConfig? cfg = null,
         IProgress<string>? progress = null)
     {
-<<<<<<< HEAD
         string message;
         try
         {
             message = await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
-=======
-        string result;
-        try
-        {
-            result = await CreateReleaseAsync(catalog, req, cfg, progress).ConfigureAwait(false);
->>>>>>> 04db1c940610ce2ec416f266d419176b63f9305d
         }
         catch (InvalidOperationException ex) when (LooksLikeReleaseExists(ex.Message))
         {
-<<<<<<< HEAD
             message = string.IsNullOrWhiteSpace(ex.Message)
                 ? $"Release {req.Tag.Trim()} 已存在。"
                 : ex.Message.Trim();
@@ -1513,78 +1507,6 @@ public static class GitHubService
         var (code, stdout, _) = await CliUtil.RunCaptureAsync(
             "git", ["show", spec], root, 30_000).ConfigureAwait(false);
         return code == 0 ? stdout : null;
-=======
-            var assets = await PrepareReleaseAssetsAsync(catalog, req, cfg, progress).ConfigureAwait(false);
-            if (assets.Count == 0)
-                throw;
-            progress?.Report(ReleaseRunState.StageLine("upload", "Release 已存在，改為補上傳安裝包…"));
-            var uploaded = await UploadReleaseAssetsAsync(catalog, req.Tag, assets, cfg, progress).ConfigureAwait(false);
-            result = string.IsNullOrWhiteSpace(uploaded)
-                ? $"Release {req.Tag.Trim()} 已存在，已補上安裝包。"
-                : uploaded;
-        }
-        if (!req.PackUnix)
-            return result;
-        var unix = await DispatchUnixPackAsync(catalog, req, cfg, progress).ConfigureAwait(false);
-        return string.IsNullOrWhiteSpace(result) ? unix : result.TrimEnd() + "\n" + unix;
-    }
-
-    public static async Task<string> DispatchUnixPackAsync(
-        ProjectCatalog catalog,
-        ReleaseRequest req,
-        GithubConfig? cfg = null,
-        IProgress<string>? progress = null)
-    {
-        if (!ConsoleReleasePack.HasUnixWorkflow(catalog.Root))
-            throw new InvalidOperationException("這個專案沒有 .github/workflows/pack-unix.yml，無法打包 macOS／Linux。");
-        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
-        var version = ConsoleReleasePack.BareVersion(req.Tag);
-        var tagRef = string.IsNullOrEmpty(version) ? null : "v" + version;
-        progress?.Report(ReleaseRunState.StageLine("unix", "正在啟動 Pack Unix（Ubuntu 打包 Linux，macOS 一併產出）…"));
-        var (code, output) = await RunUnixWorkflowAsync(catalog, cfg, version, tagRef).ConfigureAwait(false);
-        if (code != 0 && !string.IsNullOrEmpty(tagRef))
-            (code, output) = await RunUnixWorkflowAsync(catalog, cfg, version, gitRef: null).ConfigureAwait(false);
-        if (code != 0)
-        {
-            var detail = string.IsNullOrWhiteSpace(output) ? "gh workflow run 失敗。" : output.Trim();
-            throw new InvalidOperationException(
-                "Windows 安裝包已在這個 Release 上，但 Ubuntu／macOS 的 Pack Unix 沒有啟動。請確認版號已推送，且預設分支有 .github/workflows/pack-unix.yml。\n"
-                + detail);
-        }
-        var url = FirstHttpUrl(output);
-        WorkflowRun? run = null;
-        for (var i = 0; i < 4 && run is not { IsInProgress: true }; i++)
-        {
-            await Task.Delay(2000).ConfigureAwait(false);
-            run = await GitHubLifecycle.LatestRunAsync(catalog.Root, cfg, ConsoleReleasePack.UnixWorkflowFile).ConfigureAwait(false);
-        }
-        if (run is not { IsInProgress: true } && string.IsNullOrEmpty(url))
-            throw new InvalidOperationException("gh 已接受要求，但 Actions 裡沒有進行中的 Pack Unix。請到倉庫的 Actions 頁確認 Pack Unix 是否排隊。");
-        url = string.IsNullOrEmpty(url) ? run?.Url : url;
-        progress?.Report(ReleaseRunState.StageLine("unix", "Ubuntu／macOS 打包已在 GitHub Actions 執行。"));
-        return ConsoleReleasePack.UnixDispatchMessage(version, url);
-    }
-
-    static async Task<(int Code, string Output)> RunUnixWorkflowAsync(
-        ProjectCatalog catalog,
-        GithubConfig cfg,
-        string version,
-        string? gitRef)
-    {
-        var args = ConsoleReleasePack.UnixWorkflowArgs(version, gitRef).ToList();
-        GhCli.AddRepo(args, cfg);
-        return await GhCli.RunAsync(args, catalog.Root, cfg, 120_000).ConfigureAwait(false);
-    }
-
-    static string? FirstHttpUrl(string? text)
-    {
-        var t = text ?? "";
-        var i = t.IndexOf("https://", StringComparison.OrdinalIgnoreCase);
-        if (i < 0)
-            return null;
-        var end = t.IndexOfAny([' ', '\r', '\n', '\t'], i);
-        return end < 0 ? t[i..] : t[i..end];
->>>>>>> 04db1c940610ce2ec416f266d419176b63f9305d
     }
 
     public static async Task<string> UploadReleaseAssetsAsync(
@@ -1683,6 +1605,33 @@ public static class GitHubService
         {
             return [];
         }
+    }
+
+    public static IReadOnlyList<string> DeleteReleaseArgs(string tag, GithubConfig? cfg)
+    {
+        var args = new List<string> { "release", "delete", tag.Trim(), "--yes" };
+        GhCli.AddRepo(args, cfg);
+        return args;
+    }
+
+    public static async Task<string> DeleteReleaseAsync(ProjectCatalog catalog, string tag, GithubConfig? cfg = null)
+    {
+        if (!GhAvailable())
+            throw new InvalidOperationException("需要 GitHub CLI（gh）。請安裝：https://cli.github.com/");
+        tag = (tag ?? "").Trim();
+        if (string.IsNullOrEmpty(tag))
+            throw new InvalidOperationException("沒有可刪除的版號。");
+        cfg ??= await GithubConfigResolver.ResolveAsync(catalog).ConfigureAwait(false);
+        var current = await ListReleaseItemsAsync(catalog, cfg, 30).ConfigureAwait(false);
+        var match = current.FirstOrDefault(item => string.Equals(item.Tag, tag, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+            throw new InvalidOperationException($"找不到 Release {tag}。");
+        if (!match.CanDelete)
+            throw new InvalidOperationException($"{tag} 是 Latest，自動更新靠它，不能刪。");
+        var (code, output) = await GhCli.RunAsync(DeleteReleaseArgs(tag, cfg), catalog.Root, cfg, 120_000).ConfigureAwait(false);
+        if (code != 0)
+            throw new InvalidOperationException(string.IsNullOrEmpty(output) ? $"無法刪除 Release {tag}。" : output);
+        return $"已刪除 Release {tag}。git tag 仍在。";
     }
 
     public static async Task<IReadOnlyList<ReleaseItem>> ListReleaseItemsAsync(ProjectCatalog catalog, GithubConfig cfg, int limit)
