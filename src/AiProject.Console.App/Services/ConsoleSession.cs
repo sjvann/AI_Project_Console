@@ -3137,7 +3137,7 @@ public sealed partial class ConsoleSession : IDisposable
             (kind == InstallKind.Development
                 ? "目前是從原始碼／開發目錄執行。套用會覆蓋目前執行目錄，不會改 Git 原始碼。\n\n"
                 : "") +
-            $"將用本機檔案安裝：\n{path}\n\n會開啟安裝程式。安裝時控制台可能會關閉並在完成後重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
+            $"將用本機檔案安裝：\n{path}\n\n控制台會先關閉，結束後才安裝並重開。\n已啟動的專案服務不會自動停止。\n\n確定更新？"))
             return;
 
         if (!TryBeginOccupancy("套用更新…", OccupancyKind.Update))
@@ -3147,13 +3147,6 @@ public sealed partial class ConsoleSession : IDisposable
         {
             var fromInstaller = mode == UpdateApplyMode.Installer;
             SelfUpdate.LaunchApply(path, mode, silent: !fromInstaller);
-            if (fromInstaller)
-            {
-                JobText = "安裝程式已開啟";
-                EndOccupancy();
-                Notify();
-                return;
-            }
             _native.Close();
         }
         catch (Exception ex)

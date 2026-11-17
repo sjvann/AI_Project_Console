@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
@@ -254,10 +255,12 @@ public static class SelfUpdate
         var exe = Path.Combine(target, OperatingSystem.IsWindows() ? AppInfo.ExeName : AppInfo.UnixExeName);
         if (mode == UpdateApplyMode.Installer)
         {
+            // 安裝程式必須等這個行程結束才複製。還開著就靜默安裝時，
+            // Inno 會略過被占用的檔案、仍回報完成，重開的是舊版。
             StartInstaller(downloadedPath, target, silent);
             return silent
-                ? "已啟動安裝程式，控制台即將關閉並重開。"
-                : "已啟動安裝程式。";
+                ? "已排程安裝。控制台即將關閉，結束後才覆蓋檔案並重開。"
+                : "已排程安裝。控制台即將關閉，結束後才開啟安裝程式。";
         }
 
         if (mode != UpdateApplyMode.PortableZip)
@@ -275,7 +278,7 @@ public static class SelfUpdate
     {
         var dir = "/DIR=\"" + Path.GetFullPath(installDir) + "\"";
         if (silent)
-            return "/SILENT /CLOSEAPPLICATIONS /NORESTART /SUPPRESSMSGBOXES " + dir;
+            return "/SILENT /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /NORESTART /SUPPRESSMSGBOXES " + dir;
         return pinDirectory ? "/NORESTART " + dir : "/NORESTART";
     }
 
@@ -286,11 +289,17 @@ public static class SelfUpdate
         try
         {
             var staged = StageUpdateFile(setupPath);
+            var target = Path.GetFullPath(installDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var exe = Path.Combine(target, AppInfo.ExeName);
+            var log = Path.Combine(StagingDirectory(), "setup-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+            var scriptPath = Path.Combine(StagingDirectory(), "apply-setup.ps1");
             var pinDir = DetectInstallKind() != InstallKind.Development;
-            var args = BuildInstallerArguments(installDir, silent, pinDir);
-            var pid = DetachedProcess.Start(staged, args, showWindow: !silent, workingDirectory: Path.GetDirectoryName(staged));
-            Thread.Sleep(400);
-            return pid;
+            File.WriteAllText(
+                scriptPath,
+                BuildInstallerRestartScript(staged, target, Environment.ProcessId, exe, silent, log, pinDir),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            StartHelperScript(scriptPath);
+            return Environment.ProcessId;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
@@ -339,22 +348,37 @@ public static class SelfUpdate
         }
     }
 
-    public static string BuildInstallerRestartScript(string setupPath, string installDir, int pid, string exePath, bool silent = true)
+    public static string BuildInstallerRestartScript(
+        string setupPath,
+        string installDir,
+        int pid,
+        string exePath,
+        bool silent = true,
+        string? logPath = null,
+        bool pinDirectory = true)
     {
         var setup = PsQuote(Path.GetFullPath(setupPath));
         var target = PsQuote(Path.GetFullPath(installDir));
         var exe = PsQuote(Path.GetFullPath(exePath));
         var exeName = PsQuote(Path.GetFileNameWithoutExtension(exePath));
+        var logItem = string.IsNullOrWhiteSpace(logPath)
+            ? ""
+            : ",'/LOG=\"" + Path.GetFullPath(logPath).Replace("'", "''") + "\"'";
+        var dirItem = pinDirectory ? ",('/DIR=\"' + $target + '\"')" : "";
         var setupArgs = silent
-            ? "@('/SILENT','/CLOSEAPPLICATIONS','/NORESTART','/SUPPRESSMSGBOXES',('/DIR=\"' + $target + '\"'))"
-            : "@('/NORESTART',('/DIR=\"' + $target + '\"'))";
+            ? "@('/SILENT','/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS','/NORESTART','/SUPPRESSMSGBOXES'" + dirItem + logItem + ")"
+            : "@('/NORESTART','/CLOSEAPPLICATIONS'" + dirItem + logItem + ")";
         return
             "$ErrorActionPreference = 'Stop'\r\n" +
             "while (Get-Process -Id " + pid + " -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }\r\n" +
             "Start-Sleep -Seconds 1\r\n" +
             "$setup = " + setup + "\r\n" +
             "$target = " + target + "\r\n" +
-            "Start-Process -FilePath $setup -ArgumentList " + setupArgs + " -Wait\r\n" +
+            "$proc = Start-Process -FilePath $setup -ArgumentList " + setupArgs + " -Wait -PassThru\r\n" +
+            "if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 2) {\r\n" +
+            "  Add-Type -AssemblyName PresentationFramework\r\n" +
+            "  [System.Windows.MessageBox]::Show(('安裝未完成（代碼 ' + $proc.ExitCode + '）。請關閉控制台後，改從 GitHub Releases 手動執行 setup.exe。'), 'AI_Project 控制台')\r\n" +
+            "}\r\n" +
             "Start-Sleep -Seconds 1\r\n" +
             "if (-not (Get-Process -Name " + exeName + " -ErrorAction SilentlyContinue)) {\r\n" +
             "  Start-Process -FilePath " + exe + "\r\n" +

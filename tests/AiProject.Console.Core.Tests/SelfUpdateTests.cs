@@ -179,11 +179,14 @@ public class SelfUpdateTests
         var exe = Path.Combine(dir, "AI_Project_Console.exe");
         var script = SelfUpdate.BuildInstallerRestartScript(setup, dir, 4242, exe);
         Assert.Contains("Get-Process -Id 4242", script, StringComparison.Ordinal);
-        Assert.Contains("-Wait", script, StringComparison.Ordinal);
+        Assert.Contains("-Wait -PassThru", script, StringComparison.Ordinal);
         Assert.Contains("/SILENT", script, StringComparison.Ordinal);
+        Assert.Contains("/FORCECLOSEAPPLICATIONS", script, StringComparison.Ordinal);
+        Assert.Contains("$proc.ExitCode", script, StringComparison.Ordinal);
         Assert.Contains("/DIR=", script, StringComparison.Ordinal);
         var visible = SelfUpdate.BuildInstallerRestartScript(setup, dir, 4242, exe, silent: false);
         Assert.DoesNotContain("/SILENT", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain("/FORCECLOSEAPPLICATIONS", visible, StringComparison.Ordinal);
         var silentArgs = SelfUpdate.BuildInstallerArguments(dir, silent: true, pinDirectory: true);
         Assert.Contains("/SILENT", silentArgs, StringComparison.Ordinal);
         Assert.Contains("/DIR=", silentArgs, StringComparison.Ordinal);

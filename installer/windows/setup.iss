@@ -44,7 +44,8 @@ PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\..\src\AiProject.Console.App\Assets\app.ico
 MinVersion=10.0
-CloseApplications=yes
+; force：檔案被占用就結束該行程。靜默安裝若略過占用中的檔案，重開仍是舊版
+CloseApplications=force
 RestartApplications=no
 
 [Languages]

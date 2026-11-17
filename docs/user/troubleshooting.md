@@ -160,6 +160,7 @@ sudo apt install libwebkit2gtk-4.1-0 libnotify4 libgtk-3-0t64 || sudo apt instal
 - 開發模式（`dotnet run`）不能用「立即更新」覆蓋。
 - 橫幅被「稍後再說」略過後，同一版號不會再煩你，直到更新的 tag。
 - 「立即更新」若打開 GitHub 頁而不是安裝程式：最新 Release 缺少你這個平台的安裝檔（Windows 要 `*-win-x64-setup.exe`；macOS／Linux 要檔名含目前 RID 的 `.zip`）。用 GitHub 操作台「發行 Release…」會先上傳 Windows，並啟動 Pack Unix；macOS／Linux 的 zip 要等 Actions 的 Pack Unix 跑完才出現。
+- 「立即更新」跑完版號沒變：安裝程式在控制台還開著時就覆寫，被占用的 exe／DLL 會被略過，然後重開舊版。請改從 Releases 手動執行 setup.exe。含這次修正的版本會等控制台結束才安裝；正在用的舊版自己不會換成這個行為。
 - 發行進度停在「編譯 Windows 執行檔」：這一步可能要 1–3 分鐘，視窗會顯示已過時間與紀錄。找不到 Inno Setup 會立刻失敗並附上安裝連結。
 - 可到設定按「檢查更新」（會問是否包含 RC）。仍沒有就打開 [Releases](https://github.com/sjvann/AI_Project_Console/releases) 對照版號。也可「從檔案更新…」選已下載的 setup／zip。
 

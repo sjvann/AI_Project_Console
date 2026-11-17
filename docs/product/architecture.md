@@ -460,7 +460,7 @@ P4 預設我們營運公開多租戶；自架仲介不是第一刀（法律與 K
 
 ## 8. GitHub Release 自動更新
 
-現況 P1：啟動後查 `releases/latest`，有新版橫幅；Windows 已安裝則下載 `*-win-x64-setup.exe` 開安裝程式；macOS／Linux 下載對應 RID 的 zip 後覆蓋（[settings.md](../user/settings.md)、[SelfUpdate.cs](../../src/AiProject.Console.Core/Update/SelfUpdate.cs)）。
+現況 P1：啟動後查 `releases/latest`，有新版橫幅；Windows 已安裝則下載 `*-win-x64-setup.exe`，先結束控制台再靜默安裝（避免占用中的檔案被略過、重開仍是舊版）；macOS／Linux 下載對應 RID 的 zip 後覆蓋（[settings.md](../user/settings.md)、[SelfUpdate.cs](../../src/AiProject.Console.Core/Update/SelfUpdate.cs)）。
 
 家族規則：
 

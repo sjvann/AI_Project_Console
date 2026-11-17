@@ -133,7 +133,7 @@ Windows 的安裝版會用安裝程式覆蓋；zip／macOS／Linux 會下載新�
 
 | 你的安裝方式 | 按「立即更新」會怎樣 |
 |--------------|----------------------|
-| Windows 安裝程式（資料夾內有 `unins*.exe`） | 下載 setup、靜默裝到目前目錄、重開控制台 |
+| Windows 安裝程式（資料夾內有 `unins*.exe`） | 下載 setup 後先結束控制台，再靜默裝到目前目錄並重開。控制台還開著就安裝時，占用中的檔案會被略過，版號不會變 |
 | macOS `.app`、Linux 已執行 `install.sh`／`.deb`、或 zip 免安裝 | 下載對應 RID 的 zip，程式結束後覆蓋並重開 |
 | `dotnet run`／從原始碼 | 不能覆蓋開發目錄；請 `git pull` 後重編，或改用 Releases |
 
