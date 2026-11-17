@@ -1517,6 +1517,7 @@ public sealed partial class ConsoleSession : IDisposable
         _iconUrlCache.Clear();
         Catalog = next;
         ReloadLog();
+        RefreshDocs(keepSelection: true);
         _ = RefreshRuntimeAttentionAsync();
     }
 
@@ -2847,6 +2848,8 @@ public sealed partial class ConsoleSession : IDisposable
         AuditPanelOpen = false;
         if (Catalog is not null && WorkspaceRuntimeManifest.Declared(Catalog))
             await ProbeRuntimeIntoSessionAsync().ConfigureAwait(false);
+        if (Catalog is not null)
+            RefreshDocs(keepSelection: true);
         DoctorView = DoctorSnapshot.Build(Catalog, RuntimeReport);
         DoctorHint = DoctorView;
         _doctorHintUtc = DateTimeOffset.UtcNow;
